@@ -1,0 +1,21 @@
+.gameSummary {
+  display: flex;
+  flex-direction: row;
+  border-top: 1px dashed black;
+  color: var(--gray-foreground);
+}
+
+.gameSummary div {
+  white-space: nowrap;
+}
+
+.gameSummary .mid {
+  flex-grow: 1;
+  color: cornflowerblue;
+}
+
+.gameSummary .stats {
+  text-align: center;
+  width: 10rem;
+  flex-shrink: 0;
+}

@@ -1,0 +1,25 @@
+.sideBarNav {
+  padding-inline: 1rem;
+  display: flex;
+  flex-direction: column;
+  width: 200px;
+  gap: 1rem;
+  padding-block: 1rem;
+  background-color: var(--gray-background);
+  grid-area: sidebar;
+}
+
+.menu_button {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 2.5rem;
+  width: 100%;
+  border-radius: 0.5rem;
+  color: cornflowerblue;
+  text-decoration: none;
+}
+
+.menu_selected {
+  background: #cccccc;
+}

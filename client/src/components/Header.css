@@ -1,0 +1,16 @@
+.header {
+  display: grid;
+  align-items: center;
+  height: 3rem;
+  gap: 0.5rem;
+  padding-inline: 1rem;
+  grid-template-columns: 1fr repeat(3, max-content);
+  width: 100%;
+  background: var(--gray-background);
+  grid-area: header;
+}
+
+.title {
+  font-size: 1.5rem;
+  font-weight: 800;
+}

@@ -1,0 +1,20 @@
+/* Visit https://www.typescriptlang.org/tsconfig/ to learn about this file */
+{
+  "compilerOptions": {
+    /* Basic configuration */
+    "lib": ["ES2024"],
+    "module": "node18",
+    "skipLibCheck": true,
+    "noEmit": true,
+
+    /* Support the use of type stripping in Node */
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+
+    /* Linting */
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true
+  },
+  "include": ["."]
+}

@@ -1,0 +1,26 @@
+.gamePanel {
+  padding: 1rem;
+  padding-right: 0;
+  display: grid;
+  grid-template-rows: max-content 1fr;
+}
+
+.gameRoster {
+  position: relative;
+}
+
+.gameRoster button {
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+
+.gameFrame {
+  border: 1px solid black;
+  border-radius: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.gameFrame.waiting {
+  background-color: var(--gray-background);
+}

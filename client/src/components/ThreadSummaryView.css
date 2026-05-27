@@ -1,0 +1,22 @@
+.threadSummary {
+  display: flex;
+  flex-direction: row;
+  border-top: 1px dashed black;
+  color: var(--gray-foreground);
+}
+
+.threadSummary div {
+  white-space: nowrap;
+}
+
+.threadSummary .postStats {
+  text-align: center;
+  width: 5rem;
+  flex-shrink: 0;
+  flex-grow: 0;
+}
+
+.threadSummary .mid {
+  flex-grow: 1;
+  color: cornflowerblue;
+}
