@@ -1,0 +1,7 @@
+# Database migrations
+server/migrations/ @zachhh13
+
+# AI service
+server/src/services/ai* @shuyan-ke
+server/src/services/inference* @shuyan-ke
+server/src/services/training* @shuyan-ke
