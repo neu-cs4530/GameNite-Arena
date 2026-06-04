@@ -72,7 +72,7 @@ export function updateRating(player: Glicko2Rating, results: Glicko2GameResult[]
   }
 
   // convert opponents to internal scale
-  const opps = results.map(r => ({
+  const opps = results.map((r) => ({
     mu: (r.opponentRating - 1500) / SCALE,
     phi: r.opponentRd / SCALE,
     score: r.score,
@@ -99,7 +99,9 @@ export function updateRating(player: Glicko2Rating, results: Glicko2GameResult[]
   const f = (x: number): number => {
     const ex = Math.exp(x);
     const denom = phi * phi + v + ex;
-    return (ex * (delta * delta - phi * phi - v - ex)) / (2 * denom * denom) - (x - alpha) / (TAU * TAU);
+    return (
+      (ex * (delta * delta - phi * phi - v - ex)) / (2 * denom * denom) - (x - alpha) / (TAU * TAU)
+    );
   };
 
   let A = alpha;
