@@ -6,7 +6,7 @@ import {
   type MatchRecord,
   type RecordedMove,
   type ReplayRecord,
-} from '@gamenite/shared';
+} from "@gamenite/shared";
 
 export interface MatchRepo {
   // Insert a row in matches when a game begins
@@ -30,38 +30,42 @@ export interface MatchRepo {
 
 // Used by unit tests and fine for local dev before the real schema is created
 export class InMemoryMatchRepo implements MatchRepo {
-  readonly matchRecords  = new Map<string, MatchRecord>();
-  readonly movesByGame   = new Map<string, RecordedMove[]>();
+  readonly matchRecords = new Map<string, MatchRecord>();
+  readonly movesByGame = new Map<string, RecordedMove[]>();
   readonly replaysByGame = new Map<string, ReplayRecord>();
 
-  async createMatch(matchRecord: MatchRecord): Promise<void> {
+  createMatch(matchRecord: MatchRecord): Promise<void> {
     this.matchRecords.set(matchRecord.gameId, { ...matchRecord });
     this.movesByGame.set(matchRecord.gameId, []);
+    return Promise.resolve();
   }
 
-  async saveMove(gameId: string, move: RecordedMove): Promise<void> {
+  saveMove(gameId: string, move: RecordedMove): Promise<void> {
     const movesForThisGame = this.movesByGame.get(gameId);
     if (!movesForThisGame) {
       throw new Error(`saveMove called for unknown game ${gameId}`);
     }
     movesForThisGame.push({ ...move });
+    return Promise.resolve();
   }
 
-  async closeMatch(
+  closeMatch(
     gameId: string,
     finalDetails: { endedAt: number; outcome: MatchOutcome; totalMoves: number },
   ): Promise<void> {
     const matchRecord = this.matchRecords.get(gameId);
     if (!matchRecord) throw new Error(`closeMatch called for unknown game ${gameId}`);
-    matchRecord.endedAt    = finalDetails.endedAt;
-    matchRecord.outcome    = finalDetails.outcome;
+    matchRecord.endedAt = finalDetails.endedAt;
+    matchRecord.outcome = finalDetails.outcome;
     matchRecord.totalMoves = finalDetails.totalMoves;
+    return Promise.resolve();
   }
 
-  async saveReplay(replay: ReplayRecord): Promise<void> {
+  saveReplay(replay: ReplayRecord): Promise<void> {
     this.replaysByGame.set(replay.gameId, {
       ...replay,
       moveHistory: [...replay.moveHistory],
     });
+    return Promise.resolve();
   }
 }

@@ -1,8 +1,7 @@
 // How a match ended, `aborted` covers disconnects or FF's
-export type MatchOutcome = 'player_one_wins' | 'player_two_wins' | 'draw' | 'aborted';
+export type MatchOutcome = "player_one_wins" | "player_two_wins" | "draw" | "aborted";
 
-
-// One move made by a player. 
+// One move made by a player.
 export interface RecordedMove {
   // 0 index of this turn in the match
   userMove: number;
@@ -16,7 +15,7 @@ export interface RecordedMove {
   playedAt: number;
 }
 
-// Everything the matches table needs 
+// Everything the matches table needs
 export interface MatchRecord {
   gameId: string;
   gameType: string;
@@ -26,7 +25,6 @@ export interface MatchRecord {
   outcome?: MatchOutcome;
   totalMoves: number;
 }
-
 
 // The blob the replay viewer
 export interface ReplayRecord {
@@ -39,7 +37,7 @@ export interface ReplayRecord {
   moveHistory: RecordedMove[];
 }
 
-// Needed to open a new match 
+// Needed to open a new match
 export interface StartMatchInput {
   gameId: string;
   gameType: string;

@@ -9,8 +9,8 @@ import {
   type RecordedMove,
   type ReplayRecord,
   type StartMatchInput,
-} from '@gamenite/shared';
-import { type MatchRepo } from './matchRepo.service.ts';
+} from "@gamenite/shared";
+import { type MatchRepo } from "./matchRepo.service.ts";
 
 // Everything the recorder needs when building
 export interface RecorderDependencies {
@@ -27,15 +27,15 @@ interface MatchInProgress {
 }
 
 export class MatchRecorder {
-  private readonly database: MatchRepo;
-  private readonly getCurrentTime: () => number;
+  private readonly _database: MatchRepo;
+  private readonly _getCurrentTime: () => number;
 
   // All games we're actively recording, keyed by gameId
-  private readonly ongoingMatches = new Map<string, MatchInProgress>();
+  private readonly _ongoingMatches = new Map<string, MatchInProgress>();
 
   constructor(deps: RecorderDependencies) {
-    this.database       = deps.database;
-    this.getCurrentTime = deps.getCurrentTime ?? (() => Date.now());
+    this._database = deps.database;
+    this._getCurrentTime = deps.getCurrentTime ?? (() => Date.now());
   }
 
   /**
@@ -43,22 +43,22 @@ export class MatchRecorder {
    * before its first move still shows up as aborted rather than disappearing.
    */
   async startMatch(matchDetails: StartMatchInput): Promise<void> {
-    if (this.ongoingMatches.has(matchDetails.gameId)) {
+    if (this._ongoingMatches.has(matchDetails.gameId)) {
       throw new Error(`Game ${matchDetails.gameId} is already being recorded`);
     }
 
     const matchRecord: MatchRecord = {
-      gameId:     matchDetails.gameId,
-      gameType:   matchDetails.gameType,
-      players:    matchDetails.players,
-      startedAt:  this.getCurrentTime(),
+      gameId: matchDetails.gameId,
+      gameType: matchDetails.gameType,
+      players: matchDetails.players,
+      startedAt: this._getCurrentTime(),
       totalMoves: 0,
     };
 
-    await this.database.createMatch(matchRecord);
-    this.ongoingMatches.set(matchDetails.gameId, {
+    await this._database.createMatch(matchRecord);
+    this._ongoingMatches.set(matchDetails.gameId, {
       matchRecord,
-      movesBuffered:    [],
+      movesBuffered: [],
       nextExpectedMove: 0,
     });
   }
@@ -66,9 +66,9 @@ export class MatchRecorder {
   // Record a single move. Persisted to the DB.
   async recordMove(
     gameId: string,
-    moveDetails: Omit<RecordedMove, 'userMove' | 'playedAt'> & { userMove?: number },
+    moveDetails: Omit<RecordedMove, "userMove" | "playedAt"> & { userMove?: number },
   ): Promise<void> {
-    const matchInProgress = this.ongoingMatches.get(gameId);
+    const matchInProgress = this._ongoingMatches.get(gameId);
     if (!matchInProgress) {
       throw new Error(`recordMove called for game ${gameId} that isn't active`);
     }
@@ -79,20 +79,20 @@ export class MatchRecorder {
     ) {
       throw new Error(
         `Out-of-order move for game ${gameId}: ` +
-        `expected userMove ${matchInProgress.nextExpectedMove}, ` +
-        `but got ${moveDetails.userMove}`,
+          `expected userMove ${matchInProgress.nextExpectedMove}, ` +
+          `but got ${moveDetails.userMove}`,
       );
     }
 
     const savedMove: RecordedMove = {
-      userMove:      matchInProgress.nextExpectedMove,
-      playedBy:      moveDetails.playedBy,
-      moveNotation:  moveDetails.moveNotation,
+      userMove: matchInProgress.nextExpectedMove,
+      playedBy: moveDetails.playedBy,
+      moveNotation: moveDetails.moveNotation,
       boardChecksum: moveDetails.boardChecksum,
-      playedAt:      this.getCurrentTime(),
+      playedAt: this._getCurrentTime(),
     };
 
-    await this.database.saveMove(gameId, savedMove);
+    await this._database.saveMove(gameId, savedMove);
 
     // Only advance in-memory state AFTER the write succeeds. A failed DB
     // write won't push nextExpectedMove ahead of what's actually stored.
@@ -106,14 +106,14 @@ export class MatchRecorder {
    * Returns the assembled replay so callers and tests can inspect it.
    */
   async endMatch(gameId: string, outcome: MatchOutcome): Promise<ReplayRecord> {
-    const matchInProgress = this.ongoingMatches.get(gameId);
+    const matchInProgress = this._ongoingMatches.get(gameId);
     if (!matchInProgress) {
       throw new Error(`endMatch called for game ${gameId} that isn't active`);
     }
 
-    const endedAt = this.getCurrentTime();
+    const endedAt = this._getCurrentTime();
 
-    await this.database.closeMatch(gameId, {
+    await this._database.closeMatch(gameId, {
       endedAt,
       outcome,
       totalMoves: matchInProgress.movesBuffered.length,
@@ -121,21 +121,21 @@ export class MatchRecorder {
 
     const replayRecord: ReplayRecord = {
       gameId,
-      gameType:    matchInProgress.matchRecord.gameType,
-      players:     matchInProgress.matchRecord.players,
+      gameType: matchInProgress.matchRecord.gameType,
+      players: matchInProgress.matchRecord.players,
       outcome,
-      startedAt:   matchInProgress.matchRecord.startedAt,
+      startedAt: matchInProgress.matchRecord.startedAt,
       endedAt,
       moveHistory: [...matchInProgress.movesBuffered],
     };
-    await this.database.saveReplay(replayRecord);
+    await this._database.saveReplay(replayRecord);
 
-    this.ongoingMatches.delete(gameId);
+    this._ongoingMatches.delete(gameId);
     return replayRecord;
   }
 
   // True if we're currently recording this game
   isRecording(gameId: string): boolean {
-    return this.ongoingMatches.has(gameId);
+    return this._ongoingMatches.has(gameId);
   }
 }
