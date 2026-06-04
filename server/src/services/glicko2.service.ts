@@ -104,34 +104,34 @@ export function updateRating(player: Glicko2Rating, results: Glicko2GameResult[]
     );
   };
 
-  let A = alpha;
-  let B: number;
+  let lo = alpha;
+  let hi: number;
   if (delta * delta > phi * phi + v) {
-    B = Math.log(delta * delta - phi * phi - v);
+    hi = Math.log(delta * delta - phi * phi - v);
   } else {
     let k = 1;
     while (f(alpha - k * TAU) < 0) {
       k++;
     }
-    B = alpha - k * TAU;
+    hi = alpha - k * TAU;
   }
 
-  let fA = f(A);
-  let fB = f(B);
-  while (Math.abs(B - A) > EPSILON) {
-    const C = A + ((A - B) * fA) / (fB - fA);
-    const fC = f(C);
-    if (fC * fB <= 0) {
-      A = B;
-      fA = fB;
+  let fLo = f(lo);
+  let fHi = f(hi);
+  while (Math.abs(hi - lo) > EPSILON) {
+    const mid = lo + ((lo - hi) * fLo) / (fHi - fLo);
+    const fMid = f(mid);
+    if (fMid * fHi <= 0) {
+      lo = hi;
+      fLo = fHi;
     } else {
-      fA /= 2;
+      fLo /= 2;
     }
-    B = C;
-    fB = fC;
+    hi = mid;
+    fHi = fMid;
   }
 
-  const newVol = Math.exp(A / 2);
+  const newVol = Math.exp(lo / 2);
 
   // step 6: update RD
   const phiStar = Math.sqrt(phi * phi + newVol * newVol);
