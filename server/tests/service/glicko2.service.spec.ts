@@ -69,7 +69,10 @@ describe("updateRating", () => {
     const player = newRating();
     const opponent = { opponentRating: 1500, opponentRd: 100, score: 0.5 };
     const oneGame = updateRating(player, [opponent]);
-    const tenGames = updateRating(player, Array.from({ length: 10 }, () => opponent));
+    const tenGames = updateRating(
+      player,
+      Array.from({ length: 10 }, () => opponent),
+    );
     expect(tenGames.rd).toBeLessThan(oneGame.rd);
   });
 
