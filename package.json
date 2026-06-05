@@ -20,5 +20,9 @@
   },
   "devDependencies": {
     "concurrently": "^9.2.1"
+  },
+  "dependencies": {
+    "bullmq": "^5.78.0",
+    "ioredis": "^5.11.1"
   }
 }
