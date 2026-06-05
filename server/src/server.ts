@@ -9,6 +9,9 @@ import "dotenv/config";
 import { app, httpServer } from "./app.ts";
 import { resetEverythingToDefaults } from "./initRepository.ts";
 import { createRepo, setDbInitializer } from "./keyv.ts";
+import { trainingProcessor } from "./services/trainingWorker.ts";
+import { registerTrainingWorker } from "./services/trainingQueue.service.ts";
+import type { TrainingProcessor } from "./services/trainingQueue.service.ts";
 
 // If a MONGO_STR environment variable is given (or set in `server/.env`),
 // then use MongoDB to create the repository.
@@ -62,4 +65,5 @@ if (process.env.MODE === "production") {
 const PORT = parseInt(process.env.PORT || "8000");
 httpServer.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
+  registerTrainingWorker(trainingProcessor as TrainingProcessor);
 });
