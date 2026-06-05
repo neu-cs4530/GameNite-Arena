@@ -16,6 +16,30 @@ programming language, using React for the user interface.
 Run `npm install` in the root directory to install all dependencies for the
 `client`, `server`, and `shared` folders.
 
+### Local infrastructure (Redis and MongoDB)
+
+The server talks to MongoDB (for the keyv data store) and Redis (for the
+BullMQ training queue and the WebSocket bridge). The repo ships a
+`docker-compose.yml` at the root that spins up both with sensible defaults so
+you do not have to install or configure either one manually.
+
+Prerequisites: Docker Desktop installed and running.
+
+```bash
+docker compose up -d                      # start Redis on :6379, MongoDB on :27017
+cp server/.env.example server/.env        # copy the env file (matches the compose defaults)
+npm install
+npm run -w server migrate                 # apply any pending schema migrations
+npm run dev                               # start the client and server
+```
+
+To stop the services later: `docker compose down` (keeps data volumes), or
+`docker compose down -v` (also wipes Redis and Mongo data).
+
+If you prefer to use your own Redis or Mongo instances (for example Upstash or
+a hosted Mongo Atlas cluster), edit `server/.env` and point `MONGO_STR` and
+`REDIS_URL` at them; the rest of the workflow is unchanged.
+
 ### Working on the application
 
 While you're working on the application, it's useful to run it in "development

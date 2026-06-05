@@ -1,0 +1,61 @@
+# GameNite Arena - local development infrastructure.
+#
+# Spins up the two services the Node app talks to: Redis (BullMQ training
+# queue) and MongoDB (keyv data store). The Node app itself stays on the
+# host via `npm run dev` for fast iteration.
+#
+# Quick start:
+#   docker compose up -d
+#   cp server/.env.example server/.env
+#   npm run -w server migrate
+#   npm run dev
+#
+# Stop:
+#   docker compose down            # keeps data volumes
+#   docker compose down -v         # wipes Redis + Mongo data
+
+name: gamenite-arena
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: gamenite-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    # appendonly persists writes between container restarts so BullMQ job
+    # state survives a `docker compose restart`.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 2s
+
+  mongo:
+    image: mongo:7
+    container_name: gamenite-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      # mongosh ships with the image; exit non-zero if the server isn't ready.
+      test:
+        - "CMD"
+        - "mongosh"
+        - "--quiet"
+        - "--eval"
+        - "db.runCommand({ ping: 1 }).ok ? 0 : 1"
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  redis_data:
+  mongo_data:
