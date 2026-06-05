@@ -1,3 +1,4 @@
+/* eslint no-console: "off" */
 // The BullMQ training queue.
 //   the upload endpoint calls submitTrainingJob() to add work
 //   Richard's worker calls registerTrainingWorker() to process it
