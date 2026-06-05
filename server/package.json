@@ -9,7 +9,10 @@
     "prettier:fix": "prettier --ignore-path ../.gitignore --write .",
     "test": "vitest run --coverage",
     "dev": "node --watch ./src/server.ts",
-    "start": "MODE=production node ./src/server.ts"
+    "start": "MODE=production node ./src/server.ts",
+    "migrate": "node ./src/migrate.ts up",
+    "migrate:status": "node ./src/migrate.ts status",
+    "migrate:create": "node ./src/migrate.ts create"
   },
   "dependencies": {
     "@gamenite/shared": "^1.0.0",

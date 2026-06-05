@@ -40,6 +40,9 @@ export async function createUser(
     username,
     createdAt: createdAt.toISOString(),
     display: username,
+    puzzleRating: { rating: 1500, rd: 350, vol: 0.06 },
+    puzzleStreak: { current: 0, best: 0 },
+    following: [],
   });
   await updateAuth(username, password, id);
   return {
