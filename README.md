@@ -46,6 +46,27 @@ following commands from the repository root:
 - `npm run test` - Runs Vitest tests on all three projects and end-to-end
   Playwright tests
 
+### Database migrations
+
+GameNite stores its data as JSON documents in MongoDB via the `keyv` library.
+Because there is no enforced schema, every schema change ships as a small
+idempotent TypeScript migration under `server/src/migrations/`. The migration
+runner records applied migrations in `MigrationLogRepo` so every developer's
+MongoDB instance converges on the current shape.
+
+The first thing to do after pulling teammate changes (and before
+`npm run dev`) is bring your local DB up to date:
+
+- `npm run -w server migrate:status` - show which migrations are applied vs
+  pending
+- `npm run -w server migrate` - apply every pending migration (safe to re-run)
+- `npm run -w server migrate:create <name>` - scaffold a new migration when
+  you add a field to a record type
+
+The full migration framework documentation lives at
+[`server/src/migrations/README.md`](./server/src/migrations/README.md). The
+human-readable schema reference is at [`db/SCHEMA.md`](./db/SCHEMA.md).
+
 ### Building the application
 
 If you want to deploy the application or build it in production mode, running
@@ -106,7 +127,9 @@ server is detailed in `shared/src/socket.types.ts`.
 ## Data Architecture
 
 This web application stores information about users, forum posts, and games.
-The structure of the data can be described by this diagram:
+The full, current schema (including the GameNite Arena Sprint 1 extensions for
+AI models, ratings, matches, annotations, puzzles, and broadcasts) lives at
+[`db/SCHEMA.md`](./db/SCHEMA.md). The starter-code subset is shown below:
 
 ```mermaid
 erDiagram

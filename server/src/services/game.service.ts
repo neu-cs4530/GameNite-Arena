@@ -55,6 +55,8 @@ export async function createGame(
     createdAt: createdAt.toISOString(),
     createdBy: user.userId,
     players: [user.userId],
+    aiPlayers: [],
+    rated: false,
   });
   return populateGameInfo(gameId);
 }
