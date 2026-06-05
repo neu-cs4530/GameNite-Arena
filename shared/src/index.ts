@@ -16,3 +16,4 @@ export * from "./socket.types.ts";
 export * from "./thread.types.ts";
 export * from "./user.types.ts";
 export * from "./matchRecorder.types.ts";
+export * from "./trainingQueue.types.ts";
