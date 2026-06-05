@@ -1,6 +1,6 @@
 /**
  * server/src/services/trainingWorker.ts
- * =======================================
+ *
  * Register at startup in server.ts:
  *   import { trainingProcessor } from "./services/trainingWorker.ts";
  *   import { registerTrainingWorker } from "./services/trainingQueue.service.ts";
@@ -9,7 +9,7 @@
 
 import { spawn } from "node:child_process";
 import * as path from "node:path";
-import type { TrainingJobData } from "@gamenite/shared";
+import type { TrainingJobData, TrainingJobResult } from "@gamenite/shared";
 import type { TrainingProcessor } from "./trainingQueue.service.ts";
 import { ModelRepo, TrainingJobRepo } from "../repository.ts";
 
@@ -18,7 +18,15 @@ const MODEL_STORE = path.resolve("models");
 
 // Processor
 
-export const trainingProcessor: TrainingProcessor = async (data, reportProgress) => {
+export const trainingProcessor: TrainingProcessor = async (
+  data: TrainingJobData,
+  reportProgress: (update: {
+    progress: number;
+    epoch?: number;
+    metrics?: Record<string, number>;
+    message?: string;
+  }) => Promise<void>,
+): Promise<TrainingJobResult> => {
   const { jobId, modelId, config } = data;
 
   await updateJobStatus(jobId, "running");
