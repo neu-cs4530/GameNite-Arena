@@ -64,6 +64,5 @@ if (process.env.MODE === "production") {
 const PORT = parseInt(process.env.PORT || "8000");
 httpServer.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
   registerTrainingWorker(trainingProcessor);
 });
