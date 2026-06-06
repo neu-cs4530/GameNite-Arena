@@ -56,7 +56,7 @@ app.use(
         .get("/:id", model.getById)
         .post("/:id/deploy", model.postDeploy)
         .patch("/deployment/:id", model.patchDeploymentStatus),
-    ),
+    )
     .use("/leaderboard", express.Router().get("/:gameKey", leaderboard.getByGame)),
 );
 
