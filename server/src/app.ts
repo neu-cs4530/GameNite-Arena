@@ -9,6 +9,7 @@ import * as game from "./controllers/game.controller.ts";
 import * as leaderboard from "./controllers/leaderboard.controller.ts";
 import * as user from "./controllers/user.controller.ts";
 import * as thread from "./controllers/thread.controller.ts";
+import * as puzzle from "./controllers/puzzle.controller.ts";
 import { type GameServer } from "./types.ts";
 
 export const app = express();
@@ -46,7 +47,14 @@ app.use(
         .post("/:username", user.postByUsername)
         .get("/:username", user.getByUsername),
     )
-    .use("/leaderboard", express.Router().get("/:gameKey", leaderboard.getByGame)),
+    .use("/leaderboard", express.Router().get("/:gameKey", leaderboard.getByGame))
+    .use(
+      "/puzzle",
+      express
+        .Router()
+        .get("/:gameKey", puzzle.getToday)
+        .post("/:gameKey/attempt", puzzle.postAttempt),
+    ),
 );
 
 io.on("connection", (socket) => {
