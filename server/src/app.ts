@@ -8,6 +8,7 @@ import * as chat from "./controllers/chat.controller.ts";
 import * as game from "./controllers/game.controller.ts";
 import * as leaderboard from "./controllers/leaderboard.controller.ts";
 import * as user from "./controllers/user.controller.ts";
+import * as model from "./controllers/model.controller.ts";
 import * as thread from "./controllers/thread.controller.ts";
 import * as puzzle from "./controllers/puzzle.controller.ts";
 import { type GameServer } from "./types.ts";
@@ -46,6 +47,16 @@ app.use(
         .post("/signup", user.postSignup)
         .post("/:username", user.postByUsername)
         .get("/:username", user.getByUsername),
+    )
+    .use(
+      "/model",
+      express
+        .Router()
+        .post("/upload", model.uploadMiddleware, model.postUpload)
+        .get("/user/:username", model.getByUsername)
+        .get("/:id", model.getById)
+        .post("/:id/deploy", model.postDeploy)
+        .patch("/deployment/:id", model.patchDeploymentStatus),
     )
     .use("/leaderboard", express.Router().get("/:gameKey", leaderboard.getByGame))
     .use(

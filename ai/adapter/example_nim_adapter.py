@@ -21,7 +21,7 @@ import gymnasium as gym
 from gymnasium import spaces
 from stable_baselines3.common.env_util import make_vec_env
 
-from ai.base_adapter import GameNiteAdapter
+from base_adapter import GameNiteAdapter
 
 STARTING_PILE = 21   # matches GameNite default
 
