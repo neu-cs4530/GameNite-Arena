@@ -6,6 +6,7 @@ import { z } from "zod";
 import * as http from "node:http";
 import * as chat from "./controllers/chat.controller.ts";
 import * as game from "./controllers/game.controller.ts";
+import * as leaderboard from "./controllers/leaderboard.controller.ts";
 import * as user from "./controllers/user.controller.ts";
 import * as thread from "./controllers/thread.controller.ts";
 import { type GameServer } from "./types.ts";
@@ -44,7 +45,8 @@ app.use(
         .post("/signup", user.postSignup)
         .post("/:username", user.postByUsername)
         .get("/:username", user.getByUsername),
-    ),
+    )
+    .use("/leaderboard", express.Router().get("/:gameKey", leaderboard.getByGame)),
 );
 
 io.on("connection", (socket) => {

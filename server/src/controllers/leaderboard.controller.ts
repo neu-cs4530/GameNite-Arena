@@ -1,0 +1,43 @@
+import { zGameKey } from "@gamenite/shared";
+import { z } from "zod";
+import { getLeaderboard, type LeaderboardPage } from "../services/leaderboard.service.ts";
+import { type RestAPI } from "../types.ts";
+
+const zLeaderboardQuery = z.object({
+  type: z.enum(["human", "ai", "all"]).default("all"),
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(50),
+});
+
+/**
+ * GET /api/leaderboard/:gameKey
+ *
+ * Query params:
+ *   type  - "human" | "ai" | "all" (default "all")
+ *   page  - 1-indexed page number (default 1)
+ *   limit - entries per page, max 100 (default 50)
+ *
+ * @returns A paginated LeaderboardPage.
+ */
+export const getByGame: RestAPI<LeaderboardPage, { gameKey: string }> = async (req, res) => {
+  const gameKey = zGameKey.safeParse(req.params.gameKey);
+  if (!gameKey.success) {
+    res.status(400).send({ error: "Unknown game" });
+    return;
+  }
+
+  const query = zLeaderboardQuery.safeParse(req.query);
+  if (!query.success) {
+    res.status(400).send({ error: "Invalid query parameters" });
+    return;
+  }
+
+  const result = await getLeaderboard({
+    gameKey: gameKey.data,
+    entityType: query.data.type,
+    page: query.data.page,
+    limit: query.data.limit,
+  });
+
+  res.send(result);
+};
