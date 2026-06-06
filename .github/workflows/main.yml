@@ -10,6 +10,14 @@ jobs:
   basic-checks:
     runs-on: ubuntu-24.04
 
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
+
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -38,3 +46,5 @@ jobs:
         env:
           REDIS_URL: ${{ secrets.REDIS_URL }}
         run: npm run test
+        env:
+          REDIS_URL: redis://localhost:6379
