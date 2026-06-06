@@ -9,6 +9,7 @@ import "dotenv/config";
 import { app, httpServer } from "./app.ts";
 import { resetEverythingToDefaults } from "./initRepository.ts";
 import { createRepo, setDbInitializer } from "./keyv.ts";
+import { scheduleDailyPuzzleJob, registerPuzzleWorker } from "./services/puzzleQueue.service.ts";
 
 // If a MONGO_STR environment variable is given (or set in `server/.env`),
 // then use MongoDB to create the repository.
@@ -57,6 +58,10 @@ if (process.env.MODE === "production") {
     res.end();
   });
 }
+
+// wire up the daily puzzle cron and start the worker
+await scheduleDailyPuzzleJob();
+registerPuzzleWorker();
 
 // Actually start the server
 const PORT = parseInt(process.env.PORT || "8000");
