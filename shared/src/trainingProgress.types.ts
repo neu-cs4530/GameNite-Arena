@@ -27,7 +27,7 @@ export const jobRoom = (jobId: string): string => `training:job:${jobId}`;
 // Redis key holding the last event for a job, used to catch up reconnecting clients
 export const lastEventKey = (jobId: string): string => `training:progress:last:${jobId}`;
 
-export const SOCKET_EVENTS = {
+export const SocketEvents = {
   // client -> server: start sending me updates for this job
   subscribe: "training:subscribe",
   // client -> server: stop sending me updates

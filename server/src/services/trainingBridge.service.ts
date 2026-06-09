@@ -4,7 +4,7 @@
 // pub/sub sits in the middle. per-job rooms keep fan-out cheap.
 
 import {
-  SOCKET_EVENTS,
+  SocketEvents,
   TRAINING_PROGRESS_CHANNEL,
   jobRoom,
   lastEventKey,
@@ -53,7 +53,7 @@ export class TrainingProgressBridge {
       if (channel !== TRAINING_PROGRESS_CHANNEL) return;
       const event = this._parseEvent(message);
       if (!event) return;
-      this._emitter.to(jobRoom(event.jobId)).emit(SOCKET_EVENTS.progress, event);
+      this._emitter.to(jobRoom(event.jobId)).emit(SocketEvents.progress, event);
     });
 
     await this._subscriber.subscribe(TRAINING_PROGRESS_CHANNEL);
@@ -63,7 +63,7 @@ export class TrainingProgressBridge {
   registerClient(socket: ClientSocket): void {
     const joinedRooms = new Set<string>();
 
-    socket.on(SOCKET_EVENTS.subscribe, (payload) => {
+    socket.on(SocketEvents.subscribe, (payload) => {
       const jobId = (payload as { jobId?: string })?.jobId;
       if (!jobId) {
         this._logger.warn("[training-bridge] subscribe with no jobId, ignoring");
@@ -75,7 +75,7 @@ export class TrainingProgressBridge {
       void this._replayLastEvent(socket, jobId);
     });
 
-    socket.on(SOCKET_EVENTS.unsubscribe, (payload) => {
+    socket.on(SocketEvents.unsubscribe, (payload) => {
       const jobId = (payload as { jobId?: string })?.jobId;
       if (!jobId) return;
       socket.leave(jobRoom(jobId));
@@ -93,7 +93,7 @@ export class TrainingProgressBridge {
       const raw = await this._snapshots.get(lastEventKey(jobId));
       if (!raw) return;
       const event = this._parseEvent(raw);
-      if (event) socket.emit(SOCKET_EVENTS.progress, event);
+      if (event) socket.emit(SocketEvents.progress, event);
     } catch (err) {
       this._logger.warn(`[training-bridge] snapshot fetch failed for ${jobId}: ${String(err)}`);
     }

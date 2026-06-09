@@ -28,7 +28,7 @@ export async function createTrainingProgressBridge(
     emitter: {
       to: (room) => ({
         emit: (event, payload) => {
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
           (io.to(room) as any).emit(event, payload);
         },
       }),

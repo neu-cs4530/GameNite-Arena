@@ -2,10 +2,13 @@
 // everything runs through fakes of the small interfaces in trainingProgress.types.ts.
 
 import { describe, expect, it, beforeEach } from "vitest";
-import { TrainingProgressBridge, type ClientSocket } from "../../src/services/trainingBridge.service.ts";
+import {
+  TrainingProgressBridge,
+  type ClientSocket,
+} from "../../src/services/trainingBridge.service.ts";
 import { publishTrainingProgress } from "../../src/services/trainingPublish.service.ts";
 import {
-  SOCKET_EVENTS,
+  SocketEvents,
   TRAINING_PROGRESS_CHANNEL,
   jobRoom,
   lastEventKey,
@@ -118,7 +121,7 @@ describe("TrainingProgressBridge", () => {
     subscriber.push(TRAINING_PROGRESS_CHANNEL, JSON.stringify(sampleEvent({ jobId: "abc" })));
     expect(emitter.sent).toHaveLength(1);
     expect(emitter.sent[0].room).toBe(jobRoom("abc"));
-    expect(emitter.sent[0].event).toBe(SOCKET_EVENTS.progress);
+    expect(emitter.sent[0].event).toBe(SocketEvents.progress);
     expect((emitter.sent[0].payload as TrainingProgressEvent).progress).toBe(0.5);
   });
 
@@ -129,14 +132,16 @@ describe("TrainingProgressBridge", () => {
 
   it("should drop malformed payloads without throwing", () => {
     expect(() => subscriber.push(TRAINING_PROGRESS_CHANNEL, "not json")).not.toThrow();
-    expect(() => subscriber.push(TRAINING_PROGRESS_CHANNEL, JSON.stringify({ nope: true }))).not.toThrow();
+    expect(() =>
+      subscriber.push(TRAINING_PROGRESS_CHANNEL, JSON.stringify({ nope: true })),
+    ).not.toThrow();
     expect(emitter.sent).toHaveLength(0);
   });
 
   it("should join a client to the job room on subscribe", () => {
     const socket = new FakeSocket();
     bridge.registerClient(socket);
-    socket.fire(SOCKET_EVENTS.subscribe, { jobId: "job-1" });
+    socket.fire(SocketEvents.subscribe, { jobId: "job-1" });
     expect(socket.rooms.has(jobRoom("job-1"))).toBe(true);
   });
 
@@ -144,7 +149,7 @@ describe("TrainingProgressBridge", () => {
     snapshots.set(lastEventKey("job-1"), JSON.stringify(sampleEvent({ progress: 0.8 })));
     const socket = new FakeSocket();
     bridge.registerClient(socket);
-    socket.fire(SOCKET_EVENTS.subscribe, { jobId: "job-1" });
+    socket.fire(SocketEvents.subscribe, { jobId: "job-1" });
     // replay is async inside the handler, let the microtask queue flush
     await Promise.resolve();
     expect(socket.emitted).toHaveLength(1);
@@ -154,7 +159,7 @@ describe("TrainingProgressBridge", () => {
   it("should send nothing on subscribe when there is no snapshot", async () => {
     const socket = new FakeSocket();
     bridge.registerClient(socket);
-    socket.fire(SOCKET_EVENTS.subscribe, { jobId: "brand-new" });
+    socket.fire(SocketEvents.subscribe, { jobId: "brand-new" });
     await Promise.resolve();
     expect(socket.emitted).toHaveLength(0);
   });
@@ -162,15 +167,15 @@ describe("TrainingProgressBridge", () => {
   it("should leave the room on unsubscribe", () => {
     const socket = new FakeSocket();
     bridge.registerClient(socket);
-    socket.fire(SOCKET_EVENTS.subscribe, { jobId: "job-1" });
-    socket.fire(SOCKET_EVENTS.unsubscribe, { jobId: "job-1" });
+    socket.fire(SocketEvents.subscribe, { jobId: "job-1" });
+    socket.fire(SocketEvents.unsubscribe, { jobId: "job-1" });
     expect(socket.rooms.has(jobRoom("job-1"))).toBe(false);
   });
 
   it("should ignore a subscribe with no jobId", () => {
     const socket = new FakeSocket();
     bridge.registerClient(socket);
-    socket.fire(SOCKET_EVENTS.subscribe, {});
+    socket.fire(SocketEvents.subscribe, {});
     expect(socket.rooms.size).toBe(0);
   });
 });
