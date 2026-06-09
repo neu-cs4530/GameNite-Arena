@@ -23,7 +23,7 @@ export interface ReplayStore {
   setWatchCount(matchId: string, count: number): Promise<void>;
 }
 
-class InMemoryReplayStore implements ReplayStore {
+export class InMemoryReplayStore implements ReplayStore {
   private readonly _byId = new Map<string, ReplayDetail>();
 
   constructor(seed: ReplayDetail[]) {
