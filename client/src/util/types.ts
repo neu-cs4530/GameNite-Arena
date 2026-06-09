@@ -354,50 +354,39 @@ export interface ModelListPage {
 }
 
 /**
- * Live metrics payload — mirrors the backend's `metrics` object exactly.
- * Loss is reported every event but not yet surfaced in any chart.
- */
-export interface TrainingLiveMetrics {
-  loss: number;
-  meanReward: number;
-  winRate: number;
-}
-
-/**
- * Shared payload for every event the training WebSocket emits. Matches the
- * backend contract: `{ progress, epoch, metrics, message }` plus a jobId and
- * timestamp we attach in the transport adapter.
+ * Live-progress contract — mirrors `shared/src/trainingProgress.types.ts`
+ * from the `training-progress-bridge` branch (PR #64). Once that lands on
+ * main, swap the local declarations below for `import { TrainingProgressEvent,
+ * TrainingStatus } from "@gamenite/shared"` and delete this block; no
+ * consumer changes will be needed.
  *
- * Field naming note (from backend): live events use `epoch`; the persisted
- * `TrainingJobSummary` / `TrainingJobDetail` record uses `episodes` for the
- * equivalent counter.
+ * Field-naming note: live events use `epoch`; the persisted job record
+ * uses `episodes` for the equivalent counter.
  */
-interface TrainingEventBase {
+export type TrainingStatus = "queued" | "running" | "completed" | "failed";
+
+export interface TrainingProgressEvent {
   jobId: string;
-  /** Overall completion fraction, 0..1. */
-  progress: number;
-  /** Current epoch index reported by the trainer. */
-  epoch: number;
-  metrics: TrainingLiveMetrics;
-  /** Human-readable status line ("Epoch 7/12 — meanReward 0.61"). */
-  message: string;
-  timestamp: string;
+  modelId: string;
+  status: TrainingStatus;
+  /** Completion fraction, 0..1. Omitted on `queued` events. */
+  progress?: number;
+  epoch?: number;
+  totalEpochs?: number;
+  /**
+   * Open metric bag — the worker can report any numeric metric without a
+   * shared type change. The trainer worker emits `loss`, `meanReward`,
+   * `winRate` today (see server/src/services/trainingWorker.ts), so consumers
+   * read those keys defensively with `?? 0` for safety.
+   */
+  metrics?: Record<string, number>;
+  message?: string;
+  /** Epoch milliseconds — lets the client order events. */
+  timestamp: number;
 }
 
-/** Lifecycle event emitted once the WS connects and the run begins (progress = 0). */
-export type TrainingStartedEvent = TrainingEventBase & { kind: "started" };
-/** Periodic progress sample emitted during training. */
-export type TrainingProgressEvent = TrainingEventBase & { kind: "progress" };
-/** Lifecycle event emitted on a clean finish (progress = 1). */
-export type TrainingCompleteEvent = TrainingEventBase & { kind: "complete" };
-/** Lifecycle event emitted on a crash / abort. `error` is always populated. */
-export type TrainingFailedEvent = TrainingEventBase & { kind: "failed"; error: string };
-
-export type TrainingStreamEvent =
-  | TrainingStartedEvent
-  | TrainingProgressEvent
-  | TrainingCompleteEvent
-  | TrainingFailedEvent;
+/** Backwards-compat alias for the union name we used before the realignment. */
+export type TrainingStreamEvent = TrainingProgressEvent;
 
 /** Training job summary used in list views. */
 export interface TrainingJobSummary {

@@ -1342,6 +1342,11 @@ const EMIT_INTERVAL_MS = 400;
 const TOTAL_PROGRESS_EVENTS = 12;
 const PROGRESS_EPISODE_STEP = 1_000;
 
+/**
+ * Stand-in for the real `training:progress` socket.io stream. Emits the same
+ * payload shape as the backend bridge (PR #64) so the consumers exercise the
+ * production code paths in dev.
+ */
 export function subscribeMockProgress(
   jobId: string,
   cb: (event: TrainingStreamEvent) => void,
@@ -1357,17 +1362,20 @@ export function subscribeMockProgress(
   let count = 0;
   let epoch = job.progressEpisodes;
   const baseLoss = 1.2;
+  const totalEpochs = job.targetEpisodes;
+  const modelId = job.modelId;
 
-  // Lifecycle: started → progress*N → complete. Matches the real backend WS
-  // contract so a consumer breakage shows up here, not at integration time.
+  // Worker bootstrap: status flips queued → running with progress = 0.
   cb({
-    kind: "started",
     jobId,
+    modelId,
+    status: "running",
     progress: 0,
     epoch,
+    totalEpochs,
     metrics: { loss: baseLoss, meanReward: 0.2, winRate: 0.3 },
     message: "Training run starting",
-    timestamp: new Date().toISOString(),
+    timestamp: Date.now(),
   });
 
   function emit() {
@@ -1379,28 +1387,21 @@ export function subscribeMockProgress(
     const winRate = +Math.max(0, Math.min(1, 0.3 + 0.4 * t + noise * 0.5)).toFixed(3);
     const loss = +Math.max(0.01, baseLoss * (1 - 0.85 * t) + Math.abs(noise)).toFixed(3);
     epoch += PROGRESS_EPISODE_STEP;
-    if (count >= TOTAL_PROGRESS_EVENTS) {
-      cb({
-        kind: "complete",
-        jobId,
-        progress: 1,
-        epoch,
-        metrics: { loss, meanReward: 0.92, winRate: 0.7 },
-        message: "Training complete",
-        timestamp: new Date().toISOString(),
-      });
-      if (interval) clearInterval(interval);
-      return;
-    }
+    const isFinal = count >= TOTAL_PROGRESS_EVENTS;
     cb({
-      kind: "progress",
       jobId,
-      progress: t,
+      modelId,
+      status: isFinal ? "completed" : "running",
+      progress: isFinal ? 1 : t,
       epoch,
-      metrics: { loss, meanReward, winRate },
-      message: `Epoch ${epoch.toLocaleString()} — reward ${meanReward.toFixed(2)}`,
-      timestamp: new Date().toISOString(),
+      totalEpochs,
+      metrics: isFinal ? { loss, meanReward: 0.92, winRate: 0.7 } : { loss, meanReward, winRate },
+      message: isFinal
+        ? "Training complete"
+        : `Epoch ${epoch.toLocaleString()} — reward ${meanReward.toFixed(2)}`,
+      timestamp: Date.now(),
     });
+    if (isFinal && interval) clearInterval(interval);
   }
 
   interval = setInterval(emit, EMIT_INTERVAL_MS);

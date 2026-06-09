@@ -1,12 +1,12 @@
 import "./JobMetricsPanel.css";
 import { useContext, type JSX } from "react";
 import { TimeContext } from "../../contexts/TimeContext.tsx";
-import type { TrainingJobDetail, TrainingStreamEvent } from "../../util/types.ts";
+import type { TrainingJobDetail, TrainingProgressEvent } from "../../util/types.ts";
 
 interface JobMetricsPanelProps {
   job: TrainingJobDetail;
   /** When provided, the latest live event overrides the static job metrics. */
-  liveLatest?: TrainingStreamEvent | null;
+  liveLatest?: TrainingProgressEvent | null;
 }
 
 function formatEtaSeconds(s: number): string {
@@ -20,9 +20,11 @@ function formatEtaSeconds(s: number): string {
 export default function JobMetricsPanel({ job, liveLatest }: JobMetricsPanelProps): JSX.Element {
   const now = useContext(TimeContext);
   // Persisted job record uses `episodes`; the live WS event uses `epoch`.
+  // Both `epoch` and metric keys are optional on the shared contract, so fall
+  // back to the persisted job snapshot whenever the worker hasn't reported yet.
   const episodes = liveLatest?.epoch ?? job.progressEpisodes;
-  const meanReward = liveLatest?.metrics.meanReward ?? job.currentMeanReward;
-  const winRate = liveLatest?.metrics.winRate ?? job.currentWinRate;
+  const meanReward = liveLatest?.metrics?.meanReward ?? job.currentMeanReward;
+  const winRate = liveLatest?.metrics?.winRate ?? job.currentWinRate;
 
   // Average step time = total elapsed / episodes. Mocked when no startedAt.
   // Use TimeContext as a pure source of "now" rather than calling Date.now()

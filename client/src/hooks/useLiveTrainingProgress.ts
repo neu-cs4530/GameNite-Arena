@@ -1,20 +1,18 @@
 import { useEffect, useMemo, useReducer, useRef } from "react";
 import { subscribeLiveProgress } from "../services/trainingService.ts";
-import type { TrainingProgressEvent, TrainingStreamEvent } from "../util/types.ts";
+import type { TrainingProgressEvent } from "../util/types.ts";
 
 interface LiveProgressState {
-  /**
-   * Accumulated "progress" samples for chart history. `started` and `complete`
-   * carry the same shape but are tracked through `latest` / `isComplete` so the
-   * chart doesn't double up on the zero point or repeat the final sample.
-   */
+  /** Every event received while the run was active (status === "running"). */
   events: TrainingProgressEvent[];
-  /** Most recent event of any kind — drives metrics panel and log stream tail. */
-  latest: TrainingStreamEvent | null;
+  /** Most recent event of any status — drives the metrics panel + log tail. */
+  latest: TrainingProgressEvent | null;
   isLive: boolean;
   isComplete: boolean;
   hasFailed: boolean;
+  /** Populated when a `failed` event arrives — sourced from event.message. */
   error?: string;
+  /** Snapshot of final metrics, populated once status flips to "completed". */
   finalMeanReward?: number;
   finalWinRate?: number;
 }
@@ -30,10 +28,9 @@ const initialState: LiveProgressState = {
 type Action =
   | { type: "reset" }
   | { type: "connect" }
-  | { type: "started"; event: TrainingStreamEvent }
-  | { type: "progress"; event: TrainingProgressEvent }
-  | { type: "complete"; event: TrainingStreamEvent; finalMeanReward: number; finalWinRate: number }
-  | { type: "failed"; event: TrainingStreamEvent; error: string };
+  | { type: "running"; event: TrainingProgressEvent }
+  | { type: "completed"; event: TrainingProgressEvent }
+  | { type: "failed"; event: TrainingProgressEvent };
 
 function reducer(state: LiveProgressState, action: Action): LiveProgressState {
   switch (action.type) {
@@ -41,9 +38,7 @@ function reducer(state: LiveProgressState, action: Action): LiveProgressState {
       return { ...initialState };
     case "connect":
       return { ...state, isLive: true, isComplete: false, hasFailed: false, error: undefined };
-    case "started":
-      return { ...state, latest: action.event, isLive: true, isComplete: false };
-    case "progress":
+    case "running":
       return {
         ...state,
         events: [...state.events, action.event],
@@ -51,14 +46,14 @@ function reducer(state: LiveProgressState, action: Action): LiveProgressState {
         isLive: true,
         isComplete: false,
       };
-    case "complete":
+    case "completed":
       return {
         ...state,
         latest: action.event,
         isLive: false,
         isComplete: true,
-        finalMeanReward: action.finalMeanReward,
-        finalWinRate: action.finalWinRate,
+        finalMeanReward: action.event.metrics?.meanReward,
+        finalWinRate: action.event.metrics?.winRate,
       };
     case "failed":
       return {
@@ -67,15 +62,17 @@ function reducer(state: LiveProgressState, action: Action): LiveProgressState {
         isLive: false,
         isComplete: false,
         hasFailed: true,
-        error: action.error,
+        error: action.event.message ?? "Training run failed",
       };
   }
 }
 
 /**
- * Subscribes to the live progress WebSocket for the given job. Accumulates
- * progress events, surfaces the most recent of any kind through `latest`, and
- * flips `isComplete` / `hasFailed` on terminal lifecycle events.
+ * Subscribes to the live training progress stream. Each event carries a
+ * `status` discriminator; this hook routes by status, accumulates running
+ * samples for the chart, and surfaces terminal state through `isComplete` /
+ * `hasFailed`. The transport (mock today, socket.io tomorrow) is encapsulated
+ * inside `subscribeLiveProgress`; this hook is shape-agnostic to the wire.
  */
 export default function useLiveTrainingProgress(jobId: string | undefined): LiveProgressState & {
   disconnect: () => void;
@@ -90,24 +87,17 @@ export default function useLiveTrainingProgress(jobId: string | undefined): Live
     }
     dispatch({ type: "reset" });
     dispatch({ type: "connect" });
-    const unsubscribe = subscribeLiveProgress(jobId, (event: TrainingStreamEvent) => {
-      switch (event.kind) {
-        case "started":
-          dispatch({ type: "started", event });
+    const unsubscribe = subscribeLiveProgress(jobId, (event: TrainingProgressEvent) => {
+      switch (event.status) {
+        case "queued":
+        case "running":
+          dispatch({ type: "running", event });
           return;
-        case "progress":
-          dispatch({ type: "progress", event });
-          return;
-        case "complete":
-          dispatch({
-            type: "complete",
-            event,
-            finalMeanReward: event.metrics.meanReward,
-            finalWinRate: event.metrics.winRate,
-          });
+        case "completed":
+          dispatch({ type: "completed", event });
           return;
         case "failed":
-          dispatch({ type: "failed", event, error: event.error });
+          dispatch({ type: "failed", event });
           return;
       }
     });

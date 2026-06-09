@@ -98,9 +98,10 @@ export default function TrainingJobLive(): JSX.Element {
     const baseR = job.meanRewardSeries.slice();
     const baseW = job.winRateSeries.slice();
     for (const e of live.events) {
+      if (e.epoch === undefined) continue;
       baseE.push(e.epoch);
-      baseR.push(e.metrics.meanReward);
-      baseW.push(e.metrics.winRate);
+      baseR.push(e.metrics?.meanReward ?? 0);
+      baseW.push(e.metrics?.winRate ?? 0);
     }
     return { episodes: baseE, meanReward: baseR, winRate: baseW };
   }, [job, live.events]);
@@ -221,7 +222,7 @@ export default function TrainingJobLive(): JSX.Element {
           <div className="ga-live-job__projection" data-testid="stop-now-projection">
             If you stop now, projected final win rate:{" "}
             <strong>
-              {((live.latest?.metrics.winRate ?? job.currentWinRate) * 100).toFixed(1)}%
+              {((live.latest?.metrics?.winRate ?? job.currentWinRate) * 100).toFixed(1)}%
             </strong>
           </div>
           <NotifyOnCompleteToggleAdapter jobId={job.id} />
