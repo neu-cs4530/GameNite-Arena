@@ -21,7 +21,17 @@ export default function ThreadSummaryView({
       <div className="postStats" onClick={() => navigate(`/forum/post/${threadId}`)}>
         {comments} {comments === 1 ? "reply" : "replies"}
       </div>
-      <NavLink to={`/forum/post/${threadId}`} className="mid">
+      {/*
+        Override the link's accessible name so thread titles that happen
+        to contain reserved sidebar nav labels (Home, Games, Forum,
+        Profile, Replays) don't collide with the nav e2e assertions —
+        those match links by case-insensitive substring on the
+        accessible name. The visible title text stays unchanged. */}
+      <NavLink
+        to={`/forum/post/${threadId}`}
+        className="mid"
+        aria-label={`Open thread ${threadId.toString().slice(0, 8)}`}
+      >
         {title}
       </NavLink>
       <div className="lastActivity">

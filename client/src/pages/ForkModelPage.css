@@ -1,0 +1,104 @@
+.ga-fork-page {
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: var(--layout-max-form);
+  margin: 0 auto;
+}
+
+.ga-fork-page__hero {
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, var(--color-primary-soft) 0%, var(--color-accent-soft) 100%);
+  border: 1px solid var(--color-border);
+}
+
+.ga-fork-page__hero h1 {
+  margin: 0;
+  font-size: var(--text-h1);
+  font-weight: var(--weight-bold);
+  color: var(--color-fg);
+}
+
+.ga-fork-page__hero p {
+  margin: var(--space-2) 0 0;
+  color: var(--color-fg-muted);
+  font-size: var(--text-small);
+}
+
+.ga-fork-page__source {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ga-fork-page__source-top {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.ga-fork-page__source h2 {
+  margin: 0;
+  font-size: var(--text-h2);
+  color: var(--color-fg);
+  font-weight: var(--weight-semibold);
+}
+
+.ga-fork-page__source-owner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-fg);
+}
+
+.ga-fork-page__source-username {
+  color: var(--color-fg-subtle);
+  font-size: var(--text-small);
+}
+
+.ga-fork-page__source-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  color: var(--color-fg-muted);
+  font-size: var(--text-small);
+}
+
+.ga-fork-page__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.ga-fork-page__field label {
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+  font-weight: var(--weight-semibold);
+}
+
+.ga-fork-page__field input {
+  padding: var(--space-2);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-fg);
+  font-size: var(--text-body);
+}
+
+.ga-fork-page__field input:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.ga-fork-page__error {
+  color: var(--color-danger);
+  font-size: var(--text-small);
+}
+
+.ga-fork-page__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}

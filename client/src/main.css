@@ -1,110 +1,366 @@
-/* Styles used across the site */
+/* ============================================================================
+ * GameNite Arena - Design Tokens
+ * Source of truth for all colors, spacing, typography, radii, shadows, motion.
+ * Components must consume `var(--token)` instead of hardcoding values.
+ * The TS mirror at `client/src/util/tokens.ts` keeps the JS-readable subset.
+ * ============================================================================ */
 
-/** Core fonts **/
-* {
-  font-family: Arial, Helvetica, sans-serif;
-  --gray-background: #f7f7f7;
-  --gray-foreground: #555;
+:root {
+  /* Color tokens - light mode (default) */
+  --color-bg: #ffffff;
+  --color-bg-elevated: #f7f9fc;
+  --color-surface: #f1f4f9;
+  --color-surface-2: #e8ecf3;
+  --color-border: #e3e8f0;
+  --color-border-strong: #c9d1de;
+
+  --color-fg: #0e1726;
+  --color-fg-muted: #5a6478;
+  --color-fg-subtle: #8089a0;
+
+  --color-primary: #4c6ef5;
+  --color-primary-hover: #3f5fe0;
+  --color-primary-pressed: #324dc7;
+  --color-primary-soft: #e8edff;
+
+  --color-secondary: #7c4cf5;
+  --color-secondary-soft: #ede4ff;
+
+  --color-accent: #14b8a6;
+  --color-accent-soft: #d1faf3;
+
+  --color-success: #15803d;
+  --color-success-soft: #d4f4dd;
+  --color-warning: #b45309;
+  --color-warning-soft: #fdebc8;
+  --color-danger: #dc2626;
+  --color-danger-soft: #fde0e0;
+  --color-info: #2563eb;
+  --color-info-soft: #dde8ff;
+
+  --color-human: #4c6ef5;
+  --color-human-soft: #e8edff;
+  --color-ai: #14b8a6;
+  --color-ai-soft: #d1faf3;
+
+  --color-tier-bronze: #b06a2a;
+  --color-tier-bronze-soft: #f7e4cd;
+  --color-tier-silver: #6b7280;
+  --color-tier-silver-soft: #e5e7eb;
+  --color-tier-gold: #b58105;
+  --color-tier-gold-soft: #fdebc8;
+  --color-tier-platinum: #0e7c8e;
+  --color-tier-platinum-soft: #cdeef3;
+  --color-tier-diamond: #6d28d9;
+  --color-tier-diamond-soft: #e8defe;
+
+  --color-marker-good: #15803d;
+  --color-marker-interesting: #0e7c8e;
+  --color-marker-questionable: #b45309;
+  --color-marker-bad: #dc2626;
+  --color-marker-winning: #6d28d9;
+
+  --color-focus: #4c6ef5;
+  --color-overlay: rgba(14, 23, 38, 0.55);
+
+  /* Chart series */
+  --color-chart-1: #4c6ef5;
+  --color-chart-2: #14b8a6;
+  --color-chart-3: #b45309;
+  --color-chart-4: #6d28d9;
+
+  /* Chart structural tokens (grid + axis) used by JobProgressChart. */
+  --color-chart-grid: rgba(14, 23, 38, 0.08);
+  --color-chart-axis: var(--color-border-strong);
+
+  /* Spacing scale (in rem so it scales with root font-size) */
+  --space-0: 0;
+  --space-1: 0.25rem; /* 4px */
+  --space-2: 0.5rem; /* 8px */
+  --space-3: 0.75rem; /* 12px */
+  --space-4: 1rem; /* 16px */
+  --space-5: 1.25rem; /* 20px */
+  --space-6: 1.5rem; /* 24px */
+  --space-8: 2rem; /* 32px */
+  --space-10: 2.5rem; /* 40px */
+  --space-12: 3rem; /* 48px */
+  --space-16: 4rem; /* 64px */
+  --space-20: 5rem; /* 80px */
+
+  /* Border radii */
+  --radius-xs: 0.25rem; /* 4px */
+  --radius-sm: 0.375rem; /* 6px */
+  --radius-md: 0.625rem; /* 10px */
+  --radius-lg: 0.875rem; /* 14px */
+  --radius-xl: 1.25rem; /* 20px */
+  --radius-pill: 999px;
+
+  /* Typography */
+  --font-sans:
+    "Inter", "Helvetica Neue", Arial, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, "SFMono-Regular", monospace;
+
+  --text-display: 3.5rem; /* 56px */
+  --text-h1: 2.25rem; /* 36px */
+  --text-h2: 1.5rem; /* 24px */
+  --text-h3: 1.125rem; /* 18px */
+  --text-body: 0.9375rem; /* 15px */
+  --text-small: 0.8125rem; /* 13px */
+  --text-micro: 0.6875rem; /* 11px */
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(14, 23, 38, 0.06);
+  --shadow-md: 0 4px 12px -2px rgba(14, 23, 38, 0.08);
+  --shadow-lg: 0 12px 32px -8px rgba(14, 23, 38, 0.18);
+
+  /* Motion */
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 280ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0.2, 1);
+  --ease-emphasis: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Layout */
+  --layout-max-content: 1240px;
+  --layout-sidebar-width: 220px;
+  --layout-topbar-height: 56px;
+
+  /* Z-index scale */
+  --z-base: 0;
+  --z-sticky: 100;
+  --z-overlay: 800;
+  --z-modal: 900;
+  --z-toast: 1000;
+
+  /* Legacy starter aliases (kept for unmigrated components) */
+  --gray-background: var(--color-surface);
+  --gray-foreground: var(--color-fg-muted);
 }
 
-/** Buttons **/
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #0e1726;
+    --color-bg-elevated: #141d2e;
+    --color-surface: #1a2336;
+    --color-surface-2: #232d44;
+    --color-border: #2a3550;
+    --color-border-strong: #3c4a6a;
+
+    --color-fg: #eef2fa;
+    --color-fg-muted: #a9b2c6;
+    --color-fg-subtle: #7a849a;
+
+    --color-primary: #7090ff;
+    --color-primary-hover: #87a3ff;
+    --color-primary-pressed: #5d7bee;
+    --color-primary-soft: rgba(112, 144, 255, 0.18);
+
+    --color-secondary: #a07cff;
+    --color-secondary-soft: rgba(160, 124, 255, 0.18);
+
+    --color-accent: #2dd4bf;
+    --color-accent-soft: rgba(45, 212, 191, 0.18);
+
+    --color-success: #4ade80;
+    --color-success-soft: rgba(74, 222, 128, 0.18);
+    --color-warning: #fbbf24;
+    --color-warning-soft: rgba(251, 191, 36, 0.18);
+    --color-danger: #ff6b6b;
+    --color-danger-soft: rgba(255, 107, 107, 0.18);
+    --color-info: #60a5fa;
+    --color-info-soft: rgba(96, 165, 250, 0.18);
+
+    --color-human: #7090ff;
+    --color-human-soft: rgba(112, 144, 255, 0.18);
+    --color-ai: #2dd4bf;
+    --color-ai-soft: rgba(45, 212, 191, 0.18);
+
+    --color-tier-bronze: #d9914a;
+    --color-tier-bronze-soft: rgba(217, 145, 74, 0.2);
+    --color-tier-silver: #b0b8c4;
+    --color-tier-silver-soft: rgba(176, 184, 196, 0.2);
+    --color-tier-gold: #f0c050;
+    --color-tier-gold-soft: rgba(240, 192, 80, 0.2);
+    --color-tier-platinum: #4dcad9;
+    --color-tier-platinum-soft: rgba(77, 202, 217, 0.2);
+    --color-tier-diamond: #b794ff;
+    --color-tier-diamond-soft: rgba(183, 148, 255, 0.2);
+
+    --color-marker-good: #4ade80;
+    --color-marker-interesting: #4dcad9;
+    --color-marker-questionable: #fbbf24;
+    --color-marker-bad: #ff6b6b;
+    --color-marker-winning: #b794ff;
+
+    --color-focus: #7090ff;
+    --color-overlay: rgba(0, 0, 0, 0.65);
+
+    --color-chart-1: #7090ff;
+    --color-chart-2: #2dd4bf;
+    --color-chart-3: #fbbf24;
+    --color-chart-4: #b794ff;
+
+    --color-chart-grid: rgba(238, 242, 250, 0.08);
+    --color-chart-axis: var(--color-border-strong);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.45);
+    --shadow-lg: 0 12px 32px -8px rgba(0, 0, 0, 0.55);
+  }
+}
+
+/* ============================================================================
+ * Base styles
+ * ============================================================================ */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: 1.55;
+}
+
+a {
+  color: var(--color-primary);
+}
+
+a:hover {
+  color: var(--color-primary-hover);
+}
+
+/* ============================================================================
+ * Buttons (legacy starter classes - kept for unmigrated forms)
+ * ============================================================================ */
+
 button {
   cursor: pointer;
 }
 
 button.widefill {
   color: #fff;
-  background-color: oklch(0.45 0.1 260);
-  border-radius: 0.5rem;
+  background-color: var(--color-primary);
+  border-radius: var(--radius-md);
   width: 100%;
   border: none;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   min-height: 2.5rem;
 }
 
 button.narrowcenter {
-  border-radius: 0.5rem;
-  padding-inline: 1rem;
+  border-radius: var(--radius-md);
+  padding-inline: var(--space-4);
   margin-inline: auto;
   border: none;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   min-height: 2.5rem;
 }
 
 button.narrow {
-  border-radius: 0.5rem;
-  padding-inline: 1rem;
+  border-radius: var(--radius-md);
+  padding-inline: var(--space-4);
   border: none;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   min-height: 2.5rem;
 }
 
 button.primary {
   color: #fff;
-  background-color: oklch(0.55 0.1 260);
+  background-color: var(--color-primary);
 }
 
 button.primary:hover {
-  background-color: oklch(0.45 0.1 260);
+  background-color: var(--color-primary-hover);
 }
 
 button.secondary {
   color: #fff;
-  background-color: oklch(0.55 0.1 140);
+  background-color: var(--color-accent);
 }
 
 button.secondary:hover {
-  background-color: oklch(0.45 0.1 140);
+  background-color: var(--color-accent);
+  filter: brightness(0.92);
 }
 
 button.secondary:disabled {
-  background-color: oklch(0.75 0 0);
-  color: oklch(0.9 0 0);
+  background-color: var(--color-surface-2);
+  color: var(--color-fg-subtle);
 }
 
-/** Input fields **/
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* ============================================================================
+ * Inputs (legacy starter classes)
+ * ============================================================================ */
+
 textarea {
   resize: block;
-  border-radius: 0.5rem;
-  padding: 0.5rem;
-  border: 1px solid var(--gray-foreground);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+  border: 1px solid var(--color-border-strong);
   min-height: 2.5rem;
+  background: var(--color-bg-elevated);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
 }
 
 input.widefill {
-  border-radius: 0.5rem;
-  border: 1px solid var(--gray-foreground);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-strong);
   width: 100%;
   min-height: 2.5rem;
-  padding-inline: 0.5rem;
+  padding-inline: var(--space-2);
+  background: var(--color-bg-elevated);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
 }
 
-/** Other UI defaults **/
+/* ============================================================================
+ * Other UI defaults
+ * ============================================================================ */
+
 hr {
   border: 0;
-  border-top: 1px dashed black;
-  margin-top: 0.5rem;
-  margin-bottom: 0.5rem;
+  border-top: 1px dashed var(--color-border-strong);
+  margin-top: var(--space-2);
+  margin-bottom: var(--space-2);
 }
 
-/** Error reporting **/
 .error-message {
-  color: red;
-  font-size: 14px;
+  color: var(--color-danger);
+  font-size: var(--text-small);
 }
 
-/** Default content settings **/
+/* Default content settings */
 .content {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  padding: 1rem;
+  gap: var(--space-4);
+  padding: var(--space-4);
 }
 
 .spacedSection {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .tightSection {
@@ -113,7 +369,7 @@ hr {
   gap: 0;
 }
 
-/** Functional classes **/
+/* Functional classes */
 .centered {
   text-align: center;
 }
@@ -133,11 +389,11 @@ hr {
 .dottedListItem {
   display: flex;
   flex-direction: row;
-  border-top: #000000 1px dashed;
+  border-top: var(--color-border-strong) 1px dashed;
 }
 
 .dottedList {
-  border-bottom: #000000 1px dashed;
+  border-bottom: var(--color-border-strong) 1px dashed;
 }
 
 .notTooWide {
@@ -145,6 +401,6 @@ hr {
 }
 
 .smallAndGray {
-  font-size: 0.75rem;
-  color: var(--gray-foreground);
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
 }

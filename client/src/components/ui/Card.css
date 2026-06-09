@@ -1,0 +1,38 @@
+.ga-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.ga-card--default {
+  padding: var(--space-4);
+  gap: var(--space-3);
+}
+
+.ga-card--compact {
+  padding: var(--space-3);
+  gap: var(--space-2);
+}
+
+.ga-card--interactive {
+  cursor: pointer;
+  transition:
+    transform var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+.ga-card--interactive:hover {
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.ga-card--interactive:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
+}
