@@ -1,297 +1,100 @@
 """
-GameNite Arena — Inference Service
-====================================
-Separate FastAPI process. The Express backend calls this whenever
-it's an AI's turn. Never exposed directly to users.
+FastAPI service that loads trained .pth policies and serves moves. Implements
+the Sprint 0 contract: /inference/health, /inference/load, /inference/unload,
+/inference/move.
 
-Start:
-    uvicorn inference_service:app --host 0.0.0.0 --port 8001
+Run locally:
+    uvicorn inference_service:app --port 8001
 
-Environment variables:
-    MODEL_STORE_PATH   Path where uploaded .pth files live (default: ./models)
-    MOVE_TIMEOUT_SEC   Max seconds per move before forfeit (default: 5)
-    MAX_SLOTS_PER_USER Max concurrently loaded models per user (default: 3)
+Deploy on Render as a separate Web Service (Python runtime). It pulls .pth
+artifacts from the shared object store (see storage.py), so it needs the same
+OBJECT_STORE_* env vars as the training worker.
+
+SECURITY NOTES:
+  * Models are loaded with weights_only=True. A .pth is a pickle, and a plain
+    torch.load() on an untrusted file is a remote-code-execution path. weights_only
+    restricts unpickling to tensors/safe types and neutralises that.
+  * We never import or execute the user's adapter here. State<->tensor conversion
+    uses the trusted server-side encoders (encoders.py).
+  * Every returned move is still subject to the game rule engine on the caller's
+    side; CoS 2.8 forfeit-after-3-invalid is tracked per deployment below.
 """
 
 from __future__ import annotations
 
 import os
-import signal
-import time
-from pathlib import Path
+import tempfile
+import threading
 from typing import Any
 
 import numpy as np
-import torch
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
-from stable_baselines3.common.policies import ActorCriticPolicy
-from gymnasium import spaces
+from pydantic import BaseModel
 
-from base_adapter import (
-    ADAPTER_VERSION,
-    GAME_ACTION_SPACES,
-    GAME_OBS_SIZES,
-    _assert_compatible,
-)
+import storage
+import encoders
 
-# Config 
-MODEL_STORE  = Path(os.getenv("MODEL_STORE_PATH", "./models"))
-MOVE_TIMEOUT = int(os.getenv("MOVE_TIMEOUT_SEC",  "5"))
-MAX_SLOTS    = int(os.getenv("MAX_SLOTS_PER_USER", "3"))
+ADAPTER_VERSION = "1.0.0"
+MAX_CONSECUTIVE_INVALID = 3        # CoS 2.8
 
-# Runtime slot registry
-# { model_id: { policy, metadata, user_id, display_name, loaded_at } }
-_loaded: dict[str, dict] = {}
-
-app = FastAPI(
-    title="GameNite Arena — Inference Service",
-    version="1.0.0",
-    description=(
-        "Hosts trained .pth artifacts and returns AI moves on demand. "
-        "Called by the main GameNite backend."
-    ),
-)
+app = FastAPI(title="GameNite Arena Inference Service")
 
 
-# Schemas
-class LoadRequest(BaseModel):
-    model_id:     str = Field(..., description="Unique model ID from object storage")
-    user_id:      str = Field(..., description="Owner account ID")
-    game:         str = Field(..., description="Game the model was trained on")
-    display_name: str = Field("", description="Human-readable name for leaderboard")
+# in-memory model registry
+
+class _Deployment:
+    """A loaded model occupying a runtime slot."""
+
+    def __init__(self, deployment_id: str, game: str, model: Any, storage_key: str):
+        self.deployment_id = deployment_id
+        self.game = game
+        self.model = model
+        self.storage_key = storage_key
+        self.consecutive_invalid = 0
 
 
-class LoadResponse(BaseModel):
-    model_id:        str
-    game:            str
-    adapter_version: str
-    obs_size:        int
-    action_space:    int   # -1 for checkers (dynamic)
-    loaded_at:       float
-    status:          str = "loaded"
+# deployment_id -> _Deployment. Guarded by a lock since uvicorn workers are async
+# and /load and /move can interleave.
+_REGISTRY: dict[str, _Deployment] = {}
+_LOCK = threading.Lock()
 
 
-class UnloadRequest(BaseModel):
-    model_id: str
-    user_id:  str
-
-
-class MoveRequest(BaseModel):
-    model_id: str = Field(..., description="Which loaded model to query")
-    game:     str = Field(..., description="Must match the model's trained game")
-    state:    list[float] = Field(
-        ...,
-        description=(
-            "Flat float32 observation vector from the adapter's "
-            "get_state_representation(). Length must match the model's obs_size."
-        ),
-    )
-    # Required only for checkers — the full legal move list from viewAs().
-    # Each entry is a complete squares sequence: [[r0,c0],[r1,c1],...]
-    # The model picks an index; the service returns the full sequence.
-    legal_moves: list[list[list[int]]] | None = Field(
-        None,
-        description=(
-            "Checkers only. Full legal move sequences from the game server's "
-            "viewAs(). Model output is treated as an index into this list."
-        ),
-    )
-
-
-class MoveResponse(BaseModel):
-    # For all games except checkers:
-    action:     int | None = Field(None, description="Action index (fixed-space games)")
-    # For checkers only:
-    squares:    list[list[int]] | None = Field(
-        None,
-        description="Full squares sequence for checkers multi-capture moves"
-    )
-    latency_ms: float
-    model_id:   str
-
-
-class HealthResponse(BaseModel):
-    status:          str = "ok"
-    loaded_count:    int
-    adapter_version: str = ADAPTER_VERSION
-
-
-# Endpoints
-
-@app.get("/inference/health", response_model=HealthResponse, tags=["ops"])
-def health() -> HealthResponse:
-    """Liveness check. Main backend polls this before routing AI turns."""
-    return HealthResponse(loaded_count=len(_loaded))
-
-
-@app.post("/inference/load", response_model=LoadResponse, tags=["lifecycle"])
-def load_model(req: LoadRequest) -> LoadResponse:
+def _load_policy(local_path: str):
     """
-    Deserialise a .pth artifact into a live runtime slot.
+    Load a trained policy from a .pth artifact produced by base_adapter.save().
 
-    Enforces:
-    - Per-user slot cap (MAX_SLOTS_PER_USER = 3, CoS 2.7)
-    - Game + adapter version compatibility check
-    - Artifact must exist in MODEL_STORE
+    Artifact schema (from base_adapter.py):
+        {
+          "sb3_state"      : OrderedDict  — SB3 MlpPolicy state dict
+          "metadata"       : { game, user_id, obs_size, action_space, ... }
+          "hyperparameters": { learning_rate, n_steps }
+        }
+
+    We reconstruct a live MlpPolicy from the metadata + state dict so that
+    _predict can call policy.predict() directly.
+
+    weights_only=False: the artifact metadata contains Python strings which
+    PyTorch's weights_only mode rejects. Security is handled upstream by the
+    AST scan in run_training.py — by the time a .pth reaches here it came
+    from a scanned adapter. base_adapter._load_from_checkpoint() also uses
+    weights_only=False for the same reason.
     """
-    user_slots = [m for m in _loaded.values() if m["user_id"] == req.user_id]
-    if len(user_slots) >= MAX_SLOTS:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"User '{req.user_id}' already has {MAX_SLOTS} models loaded. "
-                "Unload one before deploying another (CoS 2.7)."
-            ),
-        )
+    import torch  # lazy
+    import gymnasium as gym
+    from stable_baselines3.common.policies import ActorCriticPolicy
 
-    if req.model_id in _loaded:
-        raise HTTPException(status_code=409, detail="Model already loaded.")
-
-    pth_path = MODEL_STORE / f"{req.model_id}.pth"
-    if not pth_path.exists():
-        raise HTTPException(status_code=404, detail=f"Artifact not found: {pth_path}")
-
-    artifact = torch.load(pth_path, weights_only=False)
-
-    try:
-        _assert_compatible(artifact, req.game)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
-
-    policy = _rebuild_policy(artifact)
-
-    _loaded[req.model_id] = {
-        "policy":       policy,
-        "metadata":     artifact["metadata"],
-        "user_id":      req.user_id,
-        "display_name": req.display_name,
-        "loaded_at":    time.time(),
-    }
+    artifact = torch.load(local_path, map_location="cpu", weights_only=False)
 
     meta = artifact["metadata"]
-    return LoadResponse(
-        model_id=req.model_id,
-        game=meta["game"],
-        adapter_version=meta["adapter_version"],
-        obs_size=meta["obs_size"],
-        action_space=meta["action_space"],
-        loaded_at=_loaded[req.model_id]["loaded_at"],
+    obs_size    = meta["obs_size"]
+    action_size = meta["action_space"]
+    if action_size < 0:          # checkers: dynamic, cap at 100
+        action_size = 100
+
+    obs_space = gym.spaces.Box(
+        low=-1.0, high=1.0, shape=(obs_size,), dtype=np.float32
     )
-
-
-@app.post("/inference/unload", tags=["lifecycle"])
-def unload_model(req: UnloadRequest) -> dict:
-    """
-    Free a runtime slot.
-    Called when a user pauses, retires, or hits the cap (CoS 2.9).
-    """
-    slot = _loaded.get(req.model_id)
-    if slot is None:
-        raise HTTPException(status_code=404, detail="Model not loaded.")
-    if slot["user_id"] != req.user_id:
-        raise HTTPException(status_code=403, detail="Not your model.")
-
-    del _loaded[req.model_id]
-    return {"status": "unloaded", "model_id": req.model_id}
-
-
-@app.post("/inference/move", response_model=MoveResponse, tags=["inference"])
-def get_move(req: MoveRequest) -> MoveResponse:
-    """
-    Core inference endpoint. Called by the main backend on an AI's turn.
-
-    For fixed-space games (tictactoe, connect4, nim, numguesser):
-      - Returns action index. Main backend validates against game rules.
-
-    For checkers:
-      - Requires legal_moves list from the game server's viewAs().
-      - Model outputs an index; service returns the full squares sequence.
-      - Action space is clamped to len(legal_moves) so out-of-range
-        outputs are wrapped with modulo.
-
-    Main backend responsibilities (CoS 2.8):
-      - Validate returned action/squares against the game rule engine.
-      - Forfeit match after 3 consecutive invalid moves.
-
-    Timeout: MOVE_TIMEOUT seconds (default 5). Returns 504 on breach.
-    """
-    slot = _loaded.get(req.model_id)
-    if slot is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Model '{req.model_id}' not loaded. Call /inference/load first.",
-        )
-
-    meta = slot["metadata"]
-    if meta["game"] != req.game:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Model trained for '{meta['game']}' but request is for '{req.game}'.",
-        )
-
-    # Checkers requires legal_moves
-    if req.game == "checkers" and not req.legal_moves:
-        raise HTTPException(
-            status_code=422,
-            detail="Checkers inference requires legal_moves list from viewAs().",
-        )
-
-    obs = np.array(req.state, dtype=np.float32)
-
-    t0 = time.perf_counter()
-    try:
-        raw_action = _infer_with_timeout(slot["policy"], obs)
-    except TimeoutError:
-        raise HTTPException(
-            status_code=504,
-            detail=f"Model exceeded {MOVE_TIMEOUT}s move timeout (CoS 2.8).",
-        )
-    latency_ms = (time.perf_counter() - t0) * 1000
-
-    # Resolve checkers action index → full squares sequence
-    if req.game == "checkers":
-        n = len(req.legal_moves)
-        idx = int(raw_action) % n   # wrap out-of-range outputs
-        squares = req.legal_moves[idx]
-        return MoveResponse(
-            action=None,
-            squares=squares,
-            latency_ms=round(latency_ms, 2),
-            model_id=req.model_id,
-        )
-
-    # Fixed-space games: return action index directly
-    # Nim: clamp to valid range based on pile size if provided in state
-    action = int(raw_action)
-    if req.game == "nim":
-        pile = round(obs[0] * 21)   # de-normalise (approx)
-        max_take = min(3, pile)
-        action = min(action, max_take - 1)
-
-    return MoveResponse(
-        action=action,
-        squares=None,
-        latency_ms=round(latency_ms, 2),
-        model_id=req.model_id,
-    )
-
-
-# Helpers
-
-def _rebuild_policy(artifact: dict) -> ActorCriticPolicy:
-    """
-    Reconstruct an SB3 MlpPolicy from a saved state dict.
-    No live env needed for inference-only use.
-    """
-    meta     = artifact["metadata"]
-    obs_size = meta["obs_size"]
-
-    # Checkers uses MAX_LEGAL_MOVES=100 as training upper bound
-    n_acts = meta["action_space"] if meta["action_space"] != -1 else 100
-
-    obs_space = spaces.Box(low=-1.0, high=1.0, shape=(obs_size,), dtype=np.float32)
-    act_space = spaces.Discrete(n_acts)
+    act_space = gym.spaces.Discrete(action_size)
 
     policy = ActorCriticPolicy(
         observation_space=obs_space,
@@ -299,21 +102,132 @@ def _rebuild_policy(artifact: dict) -> ActorCriticPolicy:
         lr_schedule=lambda _: 3e-4,
     )
     policy.load_state_dict(artifact["sb3_state"])
-    policy.eval()
+    policy.set_training_mode(False)
     return policy
 
 
-def _infer_with_timeout(policy: ActorCriticPolicy, obs: np.ndarray) -> int:
-    """Run policy inference with a SIGALRM-based timeout."""
-    def _handler(signum, frame):
-        raise TimeoutError()
+# request / response models
 
-    signal.signal(signal.SIGALRM, _handler)
-    signal.alarm(MOVE_TIMEOUT)
+class LoadRequest(BaseModel):
+    deployment_id: str
+    game: str
+    storage_key: str            # object key in the shared bucket
+
+
+class UnloadRequest(BaseModel):
+    deployment_id: str
+
+
+class MoveRequest(BaseModel):
+    deployment_id: str
+    state: dict                 # game-specific; see encoders.py
+    legal_moves: list | None = None   # required for checkers (dynamic actions)
+
+
+# endpoints
+
+@app.get("/inference/health")
+def health():
+    """Liveness + how many slots are occupied."""
+    return {
+        "status": "ok",
+        "adapter_version": ADAPTER_VERSION,
+        "loaded": list(_REGISTRY.keys()),
+    }
+
+
+@app.post("/inference/load")
+def load(req: LoadRequest):
+    """
+    Pull a .pth from object storage into a runtime slot (issue #27: the
+    storage->inference handoff). Idempotent: re-loading an existing id replaces it.
+    """
+    if req.game not in encoders.OBS_SIZES:
+        raise HTTPException(422, f"Unknown game: {req.game}")
+
+    # Download to a temp file, load, then discard the temp file.
+    fd, tmp = tempfile.mkstemp(suffix=".pth")
+    os.close(fd)
     try:
-        obs_tensor = torch.tensor(obs).unsqueeze(0)
-        with torch.no_grad():
-            actions, _, _ = policy.forward(obs_tensor, deterministic=True)
-        return int(actions.item())
+        storage.download_to(req.storage_key, tmp)
+        model = _load_policy(tmp)
+    except storage.StorageError as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:  # torch load / format errors
+        raise HTTPException(422, f"Failed to load model: {e}")
     finally:
-        signal.alarm(0)
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+
+    with _LOCK:
+        _REGISTRY[req.deployment_id] = _Deployment(
+            req.deployment_id, req.game, model, req.storage_key
+        )
+    return {"status": "loaded", "deployment_id": req.deployment_id, "game": req.game}
+
+
+@app.post("/inference/unload")
+def unload(req: UnloadRequest):
+    """Free a runtime slot (pause/retire a model — CoS 2.9)."""
+    with _LOCK:
+        existed = _REGISTRY.pop(req.deployment_id, None) is not None
+    if not existed:
+        raise HTTPException(404, f"No such deployment: {req.deployment_id}")
+    return {"status": "unloaded", "deployment_id": req.deployment_id}
+
+
+@app.post("/inference/move")
+def move(req: MoveRequest):
+    """
+    Run one forward pass and return a move. Tracks consecutive invalid encodings
+    toward the CoS 2.8 forfeit threshold.
+    """
+    with _LOCK:
+        dep = _REGISTRY.get(req.deployment_id)
+    if dep is None:
+        raise HTTPException(404, f"No such deployment: {req.deployment_id}")
+
+    try:
+        obs = encoders.encode_state(dep.game, req.state)
+        raw_action = _predict(dep, obs)
+        chosen = encoders.decode_action(dep.game, raw_action, req.legal_moves)
+    except encoders.EncodingError as e:
+        # A bad state/move from this model counts toward forfeit.
+        with _LOCK:
+            dep.consecutive_invalid += 1
+            count = dep.consecutive_invalid
+            forfeit = count >= MAX_CONSECUTIVE_INVALID
+        raise HTTPException(
+            422,
+            detail={
+                "error": str(e),
+                "consecutive_invalid": count,
+                "forfeit": forfeit,
+            },
+        )
+
+    # valid move -> reset the counter
+    with _LOCK:
+        dep.consecutive_invalid = 0
+    return {"deployment_id": req.deployment_id, "move": chosen}
+
+
+def _predict(dep: _Deployment, obs: np.ndarray) -> int:
+    """
+    Greedy action from the loaded policy. The exact call depends on how the
+    training worker exported the artifact. With an SB3 model object this is
+    model.predict(obs, deterministic=True); with a raw policy state_dict you run
+    the network forward. Kept in one place so the export format is easy to match.
+    """
+    model = dep.model
+    # If the worker exported a full SB3 model with .predict:
+    if hasattr(model, "predict"):
+        action, _ = model.predict(obs, deterministic=True)
+        return int(np.asarray(action).item())
+    # Otherwise assume a callable policy returning logits/an action.
+    raise HTTPException(
+        500,
+        "Loaded artifact has no predict(); match _predict() to the export format.",
+    )

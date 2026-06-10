@@ -1,8 +1,14 @@
 /**
- * server/src/services/model.service.ts
- * =====================================
+ *
  * Business logic for AI model upload, validation, and deployment management.
  * Uses ModelRecord (trained artifact) + DeploymentRecord (runtime slot).
+ *
+ * Sprint 2 changes (local train + upload decision):
+ *   - uploadModel: uploads .pth to R2 (objectStorage) instead of keeping local path.
+ *     artifactRef is now the R2 object key, not a local filesystem path.
+ *   - deployModel: calls inferenceClient.loadModel() after creating the
+ *     DeploymentRecord so the inference service actually loads the model.
+ *   - updateDeploymentStatus: calls inferenceClient.unloadModel() on retire.
  */
 
 import * as fs from "node:fs";
@@ -11,6 +17,8 @@ import type { DeploymentRecord, RecordId } from "../models.ts";
 import { ModelRepo, DeploymentRepo } from "../repository.ts";
 import { populateSafeUserInfo } from "./user.service.ts";
 import type { UserWithId } from "../types.ts";
+import * as objectStorage from "./objectStorage.ts";
+import * as inferenceClient from "./inferenceClient.ts";
 
 // Constants
 
@@ -19,7 +27,7 @@ const SUPPORTED_GAME_KEYS: GameKey[] = [
   "connect4",
   "checkers",
   "nim",
-  "numguesser",
+  "guess",
 ] as GameKey[];
 
 const CURRENT_ADAPTER_VERSION = "1.0.0";
@@ -85,15 +93,9 @@ async function populateDeploymentInfo(deploymentId: RecordId): Promise<Deploymen
 /**
  * Validate and store an uploaded .pth artifact as a ModelRecord.
  *
- * Validates:
- * - Game key is supported
- * - Adapter version matches current
- *
- * @param user        - Authenticated uploader
- * @param filePath    - Absolute path where multer saved the .pth file
- * @param sourceRef   - Path to the uploaded .py heuristic file (same as filePath for now)
- * @param displayName - Human-readable model name
- * @param metadata    - Parsed metadata from the .pth artifact
+ * Sprint 2: uploads the .pth to R2 and stores the object key as artifactRef,
+ * replacing the old local-path approach. The local temp file is always cleaned
+ * up after upload (success or failure).
  */
 export async function uploadModel(
   user: UserWithId,
@@ -122,13 +124,26 @@ export async function uploadModel(
     );
   }
 
+  // Upload to R2 — key includes userId so artifacts are namespaced per user.
+  const objectKey = `models/${user.userId}/${Date.now()}-${metadata.game}.pth`;
+  try {
+    await objectStorage.uploadFile(filePath, objectKey);
+  } finally {
+    // Always remove the multer temp file, whether upload succeeded or not.
+    try {
+      fs.unlinkSync(filePath);
+    } catch {
+      /* already gone */
+    }
+  }
+
   const now = new Date().toISOString();
   const modelId = await ModelRepo.add({
     userId: user.userId,
     gameKey: metadata.game as GameKey,
     displayName: displayName.trim() || `${metadata.game}-model`,
-    sourceRef: filePath, // .py heuristic (same file for now)
-    artifactRef: filePath, // .pth artifact
+    sourceRef: objectKey,
+    artifactRef: objectKey, // R2 object key, not a local path
     visibility: "private",
     createdAt: now,
     updatedAt: now,
@@ -165,8 +180,9 @@ export async function getModelsByUser(userId: RecordId): Promise<ModelInfo[]> {
 }
 
 /**
- * Deploy a model — creates a DeploymentRecord (runtime slot).
- * Enforces the 3-active-deployments-per-game cap (CoS 2.7).
+ * Deploy a model — creates a DeploymentRecord and loads it into the inference
+ * service. Sprint 2: adds the inferenceClient.loadModel() call so the model
+ * is actually available to serve moves.
  */
 export async function deployModel(
   user: UserWithId,
@@ -210,11 +226,31 @@ export async function deployModel(
     updatedAt: now,
   });
 
+  // Load the model into the inference service (storage -> inference handoff, #27).
+  // If this fails, roll back the DeploymentRecord so the DB stays consistent.
+  try {
+    await inferenceClient.loadModel({
+      deploymentId,
+      game: model.gameKey,
+      storageKey: model.artifactRef,
+    });
+  } catch (err) {
+    // Roll back: mark the deployment as retired so it doesn't appear as active.
+    const dep = await DeploymentRepo.find(deploymentId);
+    if (dep) {
+      dep.status = "retired";
+      dep.updatedAt = new Date().toISOString();
+      await DeploymentRepo.set(deploymentId, dep);
+    }
+    throw new Error(`Deployment created but inference load failed: ${(err as Error).message}`);
+  }
+
   return populateDeploymentInfo(deploymentId);
 }
 
 /**
  * Update deployment status (pause, retire). Owner only (CoS 2.9).
+ * Retiring unloads the model from the inference service.
  */
 export async function updateDeploymentStatus(
   deploymentId: RecordId,
@@ -225,6 +261,16 @@ export async function updateDeploymentStatus(
   if (!record) throw new Error(`Deployment ${deploymentId} not found`);
   if (record.userId !== user.userId) {
     throw new Error(`User ${user.username} does not own deployment ${deploymentId}`);
+  }
+
+  // Unload from inference service when retiring (CoS 2.9).
+  // Best-effort: if inference already dropped it, that's fine.
+  if (newStatus === "retired") {
+    try {
+      await inferenceClient.unloadModel(deploymentId);
+    } catch (err) {
+      if ((err as inferenceClient.InferenceError).status !== 404) throw err;
+    }
   }
 
   record.status = newStatus;
