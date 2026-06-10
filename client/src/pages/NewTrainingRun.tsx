@@ -17,6 +17,7 @@ import type { HeuristicSourceMode } from "../components/trainer/HeuristicSourceP
 import { hyperparamPresets, trainerGameNames } from "../components/trainer/trainerConsts.ts";
 import { getHelloWorldTemplate } from "../services/modelService.ts";
 import { submitJob } from "../services/trainingService.ts";
+import useAuth from "../hooks/useAuth.ts";
 import useUploadHeuristic from "../hooks/useUploadHeuristic.ts";
 import useLoginContext from "../hooks/useLoginContext.ts";
 import {
@@ -34,6 +35,7 @@ const GAME_OPTIONS = ALL_GAME_KEYS.map((g) => ({ value: g, label: trainerGameNam
 export default function NewTrainingRun(): JSX.Element {
   const navigate = useNavigate();
   const { user } = useLoginContext();
+  const auth = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const fromCheckpoint = searchParams.get("fromCheckpoint");
   const fromTemplate = searchParams.get("fromTemplate");
@@ -150,14 +152,17 @@ export default function NewTrainingRun(): JSX.Element {
         const c = checkpoints.find((cp) => cp.id === selectedCheckpoint);
         if (c) modelId = c.modelId;
       }
-      const { jobId } = await submitJob({
-        modelId,
-        checkpointId: mode === "checkpoint" ? (selectedCheckpoint ?? undefined) : undefined,
-        gameKey: game,
-        modelDisplayName: name || "New training run",
-        hyperparameters: hp,
-        notifyOnComplete,
-      });
+      const { jobId } = await submitJob(
+        {
+          modelId,
+          checkpointId: mode === "checkpoint" ? (selectedCheckpoint ?? undefined) : undefined,
+          gameKey: game,
+          modelDisplayName: name || "New training run",
+          hyperparameters: hp,
+          notifyOnComplete,
+        },
+        auth,
+      );
       // Persist auto-deploy preference for the live page badge.
       if (typeof window !== "undefined" && autoDeploy) {
         window.localStorage.setItem(`gnarena:autoDeploy:${jobId}`, "true");

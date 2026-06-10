@@ -5,6 +5,7 @@ import Section from "../components/ui/Section.tsx";
 import Button from "../components/ui/Button.tsx";
 import EmptyState from "../components/ui/EmptyState.tsx";
 import ErrorState from "../components/ui/ErrorState.tsx";
+import Badge from "../components/ui/Badge.tsx";
 
 import useLoginContext from "../hooks/useLoginContext.ts";
 import useJobs from "../hooks/useJobs.ts";
@@ -38,7 +39,7 @@ import {
 } from "../components/trainer/index.ts";
 import useModelFilters from "../hooks/useModelFilters.ts";
 import useDeploymentFilters from "../hooks/useDeploymentFilters.ts";
-import { downloadArtifact, getJob } from "../services/trainingService.ts";
+import { downloadArtifact, getJob, USING_REAL_TRAINING_API } from "../services/trainingService.ts";
 import { createDeployment, updateDeploymentStatus } from "../services/deploymentService.ts";
 import { countActiveDeploymentsForGame } from "../__mocks__/training.ts";
 
@@ -149,7 +150,14 @@ function Hero({ username: _username }: { username: string }): JSX.Element {
     <header className="ga-trainer__hero">
       <div className="ga-trainer__hero-row">
         <div>
-          <h1>AI Trainer</h1>
+          <h1>
+            AI Trainer{" "}
+            {USING_REAL_TRAINING_API && (
+              <Badge variant="warning" testId="real-training-mode-badge">
+                Real training mode
+              </Badge>
+            )}
+          </h1>
           <p>Upload heuristics, train new models, and manage live deployments.</p>
         </div>
         <div className="ga-trainer__hero-actions">

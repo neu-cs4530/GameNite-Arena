@@ -1,10 +1,21 @@
 /**
  * Trainer training-job service functions.
  *
- * All MOCKED. Pattern mirrors `replayService`. Real `api.*` calls are commented
- * out for swap-in once the server endpoints land.
+ * Two transports:
+ *  - MOCK (default): deterministic fixtures, used by the Playwright e2e suite.
+ *  - REAL (`VITE_REAL_TRAINING=1` at dev-server start): the local-training
+ *    session API (`/api/training/...`) plus the socket.io progress bridge.
+ *    Sessions are normally created by a run on the user's machine via
+ *    `ai/session_reporter.py`; see docs/local-training.md.
  */
 
+import { io as connectSocket, type Socket } from "socket.io-client";
+import {
+  SocketEvents,
+  type TrainingSessionInfo,
+  type TrainingSessionListPage,
+  type UserAuth,
+} from "@gamenite/shared";
 import type {
   JobFilters,
   JobListPage,
@@ -13,7 +24,8 @@ import type {
   TrainingJobSummary,
   TrainingStreamEvent,
 } from "../util/types.ts";
-// import { api } from "./api.ts";
+import { api } from "./api.ts";
+import { mapSessionToJobDetail, mapSessionToJobSummary } from "./trainingMapper.ts";
 import {
   filterMockJobs,
   findMockJob,
@@ -25,6 +37,22 @@ import {
   trainingModeByGame,
 } from "../__mocks__/training.ts";
 
+/**
+ * Build-time switch: `VITE_REAL_TRAINING=1 npm run dev` serves the trainer
+ * pages off the real session API. Baked in at dev-server start (Vite env),
+ * so kill a flagged dev server before running the e2e suite locally —
+ * Playwright reuses an existing server on :4530 and the suite asserts on
+ * mock fixture ids.
+ */
+export const USING_REAL_TRAINING_API = import.meta.env.VITE_REAL_TRAINING === "1";
+
+/** Lazy socket dedicated to training progress (the app socket lives in App.tsx). */
+let trainingSocket: Socket | null = null;
+function getTrainingSocket(): Socket {
+  if (trainingSocket === null) trainingSocket = connectSocket();
+  return trainingSocket;
+}
+
 const MOCK_LATENCY_MS = 80;
 function delay<T>(value: T, ms = MOCK_LATENCY_MS): Promise<T> {
   return new Promise((resolve) => setTimeout(() => resolve(value), ms));
@@ -32,14 +60,38 @@ function delay<T>(value: T, ms = MOCK_LATENCY_MS): Promise<T> {
 
 /** Paginated, filtered job list. */
 export async function listJobs(filters: JobFilters): Promise<JobListPage> {
-  // TODO(@team): real endpoint pending — `GET /api/training/list`.
+  if (USING_REAL_TRAINING_API) {
+    const { data } = await api.get<TrainingSessionListPage>("/api/training/list", {
+      params: { username: filters.viewerUsername, pageSize: 100 },
+    });
+    // The server returns newest-first; statuses/games are the filters the
+    // dashboard tabs actually use, so those are applied here and the rest of
+    // the rich mock-side filtering is a non-goal in real mode.
+    let jobs: TrainingJobSummary[] = data.jobs.map(mapSessionToJobSummary);
+    if (filters.statuses.length > 0) {
+      jobs = jobs.filter((job) => filters.statuses.includes(job.status));
+    }
+    if (filters.games.length > 0) {
+      jobs = jobs.filter((job) => filters.games.includes(job.gameKey));
+    }
+    const start = (filters.page - 1) * filters.pageSize;
+    return {
+      jobs: jobs.slice(start, start + filters.pageSize),
+      total: jobs.length,
+      page: filters.page,
+      pageSize: filters.pageSize,
+    };
+  }
   const { jobs, total } = filterMockJobs(filters);
   return delay({ jobs, total, page: filters.page, pageSize: filters.pageSize });
 }
 
-/** Fetches full detail for one job. Increments the views counter. */
+/** Fetches full detail for one job. Increments the views counter (mock only). */
 export async function getJob(jobId: string): Promise<TrainingJobDetail> {
-  // TODO(@team): real endpoint pending — `GET /api/training/:jobId`.
+  if (USING_REAL_TRAINING_API) {
+    const { data } = await api.get<TrainingSessionInfo>(`/api/training/${jobId}`);
+    return mapSessionToJobDetail(data);
+  }
   const job = findMockJob(jobId);
   if (!job) return Promise.reject(new Error(`Job not found: ${jobId}`));
   incrementJobViews(jobId);
@@ -52,9 +104,33 @@ export async function getJob(jobId: string): Promise<TrainingJobDetail> {
   });
 }
 
-/** Submits a new training job. Returns the new job id. */
-export async function submitJob(payload: SubmitJobPayload): Promise<{ jobId: string }> {
-  // TODO(@team): real endpoint pending — `POST /api/training/submit`.
+/**
+ * Submits a new training job. Returns the new job id.
+ *
+ * Real mode registers a session that sits "queued" until a local trainer
+ * picks the model up and starts reporting (`ai/session_reporter.py` with
+ * `model_id`); `auth` is required for the real path and ignored by the mock.
+ */
+export async function submitJob(
+  payload: SubmitJobPayload,
+  auth?: UserAuth,
+): Promise<{ jobId: string }> {
+  if (USING_REAL_TRAINING_API && auth) {
+    const { data } = await api.post<TrainingSessionInfo>("/api/training/submit", {
+      auth,
+      payload: {
+        gameKey: payload.gameKey,
+        modelId: payload.modelId,
+        modelDisplayName: payload.modelDisplayName,
+        config: {
+          episodes: payload.hyperparameters.episodes,
+          learningRate: payload.hyperparameters.learningRate,
+          extra: payload.hyperparameters.extraConfig,
+        },
+      },
+    });
+    return { jobId: data.jobId };
+  }
   const id = `mock-job-${MOCK_JOBS.length + 1}`;
   const modelId = payload.modelId ?? `mock-model-${id.replace("mock-job-", "")}`;
   const job: TrainingJobDetail = {
@@ -83,16 +159,28 @@ export async function submitJob(payload: SubmitJobPayload): Promise<{ jobId: str
   return delay({ jobId: id });
 }
 
-/** Cancels a running or queued job. */
-export async function cancelJob(jobId: string): Promise<void> {
-  // TODO(@team): real endpoint pending — `POST /api/training/:jobId/cancel`.
+/**
+ * Cancels a running or queued job. The local trainer finds out on its next
+ * progress report (the response status is the cancel control channel);
+ * `auth` is required for the real path and ignored by the mock.
+ */
+export async function cancelJob(jobId: string, auth?: UserAuth): Promise<void> {
+  if (USING_REAL_TRAINING_API && auth) {
+    await api.post(`/api/training/${jobId}/cancel`, { auth, payload: {} });
+    return;
+  }
   setJobStatus(jobId, "canceled");
   return delay(undefined);
 }
 
-/** Returns a synthetic `.pth` artifact blob. */
+/** Returns the trained `.pth` artifact blob. */
 export async function downloadArtifact(jobId: string): Promise<Blob> {
-  // TODO(@team): real endpoint pending — `GET /api/training/:jobId/artifact`.
+  if (USING_REAL_TRAINING_API) {
+    const { data } = await api.get<Blob>(`/api/training/${jobId}/artifact`, {
+      responseType: "blob",
+    });
+    return data;
+  }
   const job = findMockJob(jobId);
   if (!job) return Promise.reject(new Error(`Job not found: ${jobId}`));
   if (!job.hasArtifact) return Promise.reject(new Error(`Job has no artifact: ${jobId}`));
@@ -112,12 +200,28 @@ export async function downloadArtifact(jobId: string): Promise<Blob> {
   return new Blob([payload], { type: "application/octet-stream" });
 }
 
-/** Subscribes to the live progress mock WebSocket. */
+/**
+ * Subscribes to live progress. Real mode joins the per-job socket.io room
+ * served by the training progress bridge (trainingBridge.service.ts) and
+ * receives the snapshot replay plus every later event; the unsubscribe
+ * callback leaves the room and detaches the listener.
+ */
 export function subscribeLiveProgress(
   jobId: string,
   cb: (event: TrainingStreamEvent) => void,
 ): () => void {
-  // TODO(@team): real WebSocket pending — `ws://.../training/:jobId/progress`.
+  if (USING_REAL_TRAINING_API) {
+    const socket = getTrainingSocket();
+    const handler = (event: TrainingStreamEvent) => {
+      if (event.jobId === jobId) cb(event);
+    };
+    socket.on(SocketEvents.progress, handler);
+    socket.emit(SocketEvents.subscribe, { jobId });
+    return () => {
+      socket.emit(SocketEvents.unsubscribe, { jobId });
+      socket.off(SocketEvents.progress, handler);
+    };
+  }
   return subscribeMockProgress(jobId, cb);
 }
 

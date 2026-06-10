@@ -19,10 +19,15 @@ import {
   NotifyOnCompleteToggle,
 } from "../components/trainer/index.ts";
 import { trainerGameNames } from "../components/trainer/trainerConsts.ts";
+import useAuth from "../hooks/useAuth.ts";
 import useJob from "../hooks/useJob.ts";
 import useLiveTrainingProgress from "../hooks/useLiveTrainingProgress.ts";
 import useLoginContext from "../hooks/useLoginContext.ts";
-import { cancelJob, downloadArtifact } from "../services/trainingService.ts";
+import {
+  cancelJob,
+  downloadArtifact,
+  USING_REAL_TRAINING_API,
+} from "../services/trainingService.ts";
 import { createDeployment } from "../services/deploymentService.ts";
 import { countActiveDeploymentsForGame } from "../__mocks__/training.ts";
 import { DeploymentCapExceededError } from "../util/types.ts";
@@ -31,8 +36,27 @@ export default function TrainingJobLive(): JSX.Element {
   const { jobId } = useParams();
   const navigate = useNavigate();
   const { user } = useLoginContext();
+  const auth = useAuth();
   const { job, loading, error, refetch } = useJob(jobId);
-  const live = useLiveTrainingProgress(job?.status === "running" ? jobId : undefined);
+  // Real local-training sessions start "queued" until the trainer's first
+  // report, so in real mode the page must already be subscribed at that
+  // point or the run would stream into the void. Mock fixtures are pre-set
+  // to "running", so mock behavior (and the e2e suite) is unchanged.
+  const liveEligible =
+    job !== null &&
+    (job.status === "running" || (USING_REAL_TRAINING_API && job.status === "queued"));
+  const live = useLiveTrainingProgress(liveEligible ? jobId : undefined);
+
+  // The fetched record drives the status pill and the action bar, so re-read
+  // it when the live stream reports a state the record does not know yet:
+  // queued -> running on the first report, and any terminal transition.
+  const liveStatus = live.latest?.status;
+  useEffect(() => {
+    if (live.isComplete || live.hasFailed) refetch();
+  }, [live.isComplete, live.hasFailed, refetch]);
+  useEffect(() => {
+    if (job?.status === "queued" && liveStatus === "running") refetch();
+  }, [job?.status, liveStatus, refetch]);
   const [cancelArmed, setCancelArmed] = useState(false);
   const [deployError, setDeployError] = useState<DeploymentCapExceededError | null>(null);
   const [autoDeployActive] = useState<boolean>(() => {
@@ -64,7 +88,7 @@ export default function TrainingJobLive(): JSX.Element {
 
   async function handleCancel() {
     if (!jobId) return;
-    await cancelJob(jobId);
+    await cancelJob(jobId, auth);
     refetch();
     setCancelArmed(false);
   }
@@ -159,6 +183,11 @@ export default function TrainingJobLive(): JSX.Element {
           <h1>{job.modelDisplayName}</h1>
           <div className="ga-live-job__meta">
             <span className="ga-live-job__id">#{job.id}</span>
+            {USING_REAL_TRAINING_API && (
+              <Badge variant="warning" testId="real-training-mode-badge">
+                Real training mode
+              </Badge>
+            )}
             <Badge variant="default" testId="training-job-game">
               {trainerGameNames[job.gameKey]}
             </Badge>

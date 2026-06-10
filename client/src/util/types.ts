@@ -4,6 +4,7 @@ import type {
   MessageInfo,
   SafeUserInfo,
   ServerToClientEvents,
+  TrainingProgressEvent,
 } from "@gamenite/shared";
 import type { Socket } from "socket.io-client";
 
@@ -354,36 +355,14 @@ export interface ModelListPage {
 }
 
 /**
- * Live-progress contract — mirrors `shared/src/trainingProgress.types.ts`
- * from the `training-progress-bridge` branch (PR #64). Once that lands on
- * main, swap the local declarations below for `import { TrainingProgressEvent,
- * TrainingStatus } from "@gamenite/shared"` and delete this block; no
- * consumer changes will be needed.
+ * Live-progress contract — PR #64 landed on main, so the canonical
+ * declarations now come from `shared/src/trainingProgress.types.ts` and are
+ * re-exported here so existing consumer imports keep working.
  *
  * Field-naming note: live events use `epoch`; the persisted job record
  * uses `episodes` for the equivalent counter.
  */
-export type TrainingStatus = "queued" | "running" | "completed" | "failed";
-
-export interface TrainingProgressEvent {
-  jobId: string;
-  modelId: string;
-  status: TrainingStatus;
-  /** Completion fraction, 0..1. Omitted on `queued` events. */
-  progress?: number;
-  epoch?: number;
-  totalEpochs?: number;
-  /**
-   * Open metric bag — the worker can report any numeric metric without a
-   * shared type change. The trainer worker emits `loss`, `meanReward`,
-   * `winRate` today (see server/src/services/trainingWorker.ts), so consumers
-   * read those keys defensively with `?? 0` for safety.
-   */
-  metrics?: Record<string, number>;
-  message?: string;
-  /** Epoch milliseconds — lets the client order events. */
-  timestamp: number;
-}
+export type { TrainingProgressEvent, TrainingStatus } from "@gamenite/shared";
 
 /** Backwards-compat alias for the union name we used before the realignment. */
 export type TrainingStreamEvent = TrainingProgressEvent;
