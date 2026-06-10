@@ -11,7 +11,8 @@ import {
   type TrainingJobData,
   type TrainingJobResult,
 } from "@gamenite/shared";
-import { bullConnection } from "./redis.ts";
+import { bullConnection, createRedisConnection } from "./redis.ts";
+import { publishTrainingProgress } from "./trainingPublish.service.ts";
 
 // the queue itself, adding a job just pushes onto Redis
 const trainingQueue = new Queue<TrainingJobData, TrainingJobResult>(TRAINING_QUEUE_NAME, {
@@ -50,12 +51,21 @@ export type TrainingProcessor = (
 export function registerTrainingWorker(
   processor: TrainingProcessor,
 ): Worker<TrainingJobData, TrainingJobResult> {
+  // dedicated connection for progress publishing; can't share the queue's
+  const publisherClient = createRedisConnection();
+
   // worker needs its own connection, can't share the queue's
   const worker = new Worker<TrainingJobData, TrainingJobResult>(
     TRAINING_QUEUE_NAME,
     async (job: Job<TrainingJobData, TrainingJobResult>) => {
       return processor(job.data, async (update) => {
         await job.updateProgress(update.progress);
+        await publishTrainingProgress(publisherClient, {
+          jobId: job.data.jobId,
+          modelId: job.data.modelId,
+          status: "running",
+          ...update,
+        });
       });
     },
     {
@@ -67,9 +77,23 @@ export function registerTrainingWorker(
 
   worker.on("failed", (job, err) => {
     console.error(`[training-worker] job ${job?.id} failed:`, err.message);
+    if (job) {
+      void publishTrainingProgress(publisherClient, {
+        jobId: job.data.jobId,
+        modelId: job.data.modelId,
+        status: "failed",
+        message: err.message,
+      });
+    }
   });
   worker.on("completed", (job) => {
     console.log(`[training-worker] job ${job.id} completed`);
+    void publishTrainingProgress(publisherClient, {
+      jobId: job.data.jobId,
+      modelId: job.data.modelId,
+      status: "completed",
+      progress: 1,
+    });
   });
 
   return worker;
