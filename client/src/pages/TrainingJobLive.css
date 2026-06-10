@@ -119,3 +119,89 @@
   text-decoration: underline;
   font-size: var(--text-small);
 }
+
+
+/* --- Rework: lean metrics + disclosures ---------------------------------- */
+
+.ga-live-job__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.ga-live-job__meta h1 {
+  margin: 0;
+  font-size: var(--text-h2);
+}
+
+.ga-live-job__chart-note {
+  margin: var(--space-1) 0 0;
+  color: var(--color-fg-subtle);
+  font-size: var(--text-micro);
+}
+
+.ga-live-job__metrics {
+  display: flex;
+  gap: var(--space-6);
+  margin-top: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.ga-live-job__metric {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.ga-live-job__metric-label {
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-fg-subtle);
+}
+
+.ga-live-job__metric-value {
+  font-size: var(--text-h3);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.ga-live-job__count {
+  color: var(--color-fg-muted);
+  font-size: var(--text-small);
+}
+
+.ga-live-job__failure {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  border-radius: var(--radius-md);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ga-live-job__advanced {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ga-live-job__advanced pre {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  overflow-x: auto;
+  max-height: 360px;
+}
+
+.ga-live-job__deploy-error {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--text-small);
+}

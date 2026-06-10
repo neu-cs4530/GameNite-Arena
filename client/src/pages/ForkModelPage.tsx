@@ -1,6 +1,7 @@
 import "./ForkModelPage.css";
 import { useState, type FormEvent, type JSX } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import useAuth from "../hooks/useAuth.ts";
 import Avatar from "../components/ui/Avatar.tsx";
 import Badge from "../components/ui/Badge.tsx";
 import Button from "../components/ui/Button.tsx";
@@ -20,6 +21,7 @@ const defaultHp: TrainingHyperparameters = { episodes: 100_000, learningRate: 3e
 export default function ForkModelPage(): JSX.Element {
   const { modelId } = useParams();
   const navigate = useNavigate();
+  const auth = useAuth();
   const { model, loading, error, refetch } = useModel(modelId);
   const [nameOverride, setNameOverride] = useState<string | null>(null);
   const [hp, setHp] = useState<TrainingHyperparameters>(defaultHp);
@@ -39,12 +41,15 @@ export default function ForkModelPage(): JSX.Element {
         displayName: name.trim() || `Fork of ${model.displayName}`,
         visibility: "private",
       });
-      const submitted = await submitJob({
-        modelId: fork.modelId,
-        gameKey: model.gameKey,
-        modelDisplayName: name.trim() || `Fork of ${model.displayName}`,
-        hyperparameters: hp,
-      });
+      const submitted = await submitJob(
+        {
+          modelId: fork.modelId,
+          gameKey: model.gameKey,
+          modelDisplayName: name.trim() || `Fork of ${model.displayName}`,
+          hyperparameters: hp,
+        },
+        auth,
+      );
       void navigate(`/trainer/jobs/${submitted.jobId}`);
     } catch (err: unknown) {
       const e2 = err instanceof Error ? err : new Error(String(err));

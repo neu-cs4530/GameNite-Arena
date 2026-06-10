@@ -59,6 +59,17 @@ describe("mapSessionToJobDetail", () => {
     expect(detail.completedAt).toBeUndefined();
   });
 
+  it("carries artifact integrity and failure reason through", () => {
+    const detail = mapSessionToJobDetail({
+      ...baseInfo,
+      status: "failed",
+      error: "loss diverged",
+      artifactMeta: { bytes: 2048, sha256: "a".repeat(64), uploadedAt: "2026-06-09T13:00:00.000Z" },
+    });
+    expect(detail.error).toBe("loss diverged");
+    expect(detail.artifactMeta?.bytes).toBe(2048);
+  });
+
   it("carries terminal fields through", () => {
     const detail = mapSessionToJobDetail({
       ...baseInfo,

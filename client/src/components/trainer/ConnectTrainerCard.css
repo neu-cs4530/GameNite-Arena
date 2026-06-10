@@ -1,0 +1,24 @@
+.ga-connect-trainer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ga-connect-trainer h2 {
+  margin: 0;
+  font-size: var(--text-h3);
+}
+
+.ga-connect-trainer p {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: var(--text-small);
+}
+
+.ga-connect-trainer__hint code {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  background: var(--color-surface);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-xs);
+}

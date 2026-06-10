@@ -1,0 +1,104 @@
+.ga-disclosure {
+  border-radius: var(--radius-md);
+}
+
+.ga-disclosure__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.ga-disclosure__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  padding: var(--space-2) var(--space-1);
+  font: inherit;
+  color: var(--color-fg);
+  cursor: pointer;
+  text-align: left;
+  border-radius: var(--radius-sm);
+}
+
+.ga-disclosure__toggle:hover {
+  background: var(--color-surface);
+}
+
+.ga-disclosure__toggle:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.ga-disclosure__chevron {
+  display: inline-block;
+  flex: none;
+  color: var(--color-fg-subtle);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.ga-disclosure--open > .ga-disclosure__header .ga-disclosure__chevron {
+  transform: rotate(90deg);
+}
+
+.ga-disclosure__summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ga-disclosure__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+}
+
+/* Section level: dashboard groups */
+.ga-disclosure--section {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  padding: var(--space-2) var(--space-4);
+}
+
+.ga-disclosure--section > .ga-disclosure__header .ga-disclosure__summary {
+  font-size: var(--text-h3);
+  font-weight: var(--weight-semibold);
+}
+
+.ga-disclosure--section > .ga-disclosure__body {
+  padding: var(--space-3) var(--space-1) var(--space-2);
+}
+
+/* Row level: per-record expanders inside a list */
+.ga-disclosure--row {
+  border-bottom: 1px solid var(--color-border);
+  border-radius: 0;
+}
+
+.ga-disclosure--row:last-child {
+  border-bottom: none;
+}
+
+.ga-disclosure--row > .ga-disclosure__body {
+  padding: var(--space-2) var(--space-6) var(--space-3);
+}
+
+/* Inline level: nested advanced panels (raw JSON etc.) */
+.ga-disclosure--inline > .ga-disclosure__header .ga-disclosure__summary {
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}
+
+.ga-disclosure--inline > .ga-disclosure__body {
+  padding: var(--space-2) 0;
+}
+
+.ga-disclosure--highlight {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}

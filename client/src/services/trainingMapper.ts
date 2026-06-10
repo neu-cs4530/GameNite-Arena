@@ -30,6 +30,8 @@ export function mapSessionToJobDetail(info: TrainingSessionInfo): TrainingJobDet
     startedAt: undefined,
     completedAt: info.completedAt,
     hasArtifact: info.hasArtifact,
+    artifactMeta: info.artifactMeta,
+    error: info.error,
     hasCheckpoint: false,
     checkpoints: [],
     episodesSeries: [],

@@ -146,3 +146,6 @@ CLAUDE.md
 # Python virtual environments
 .venv/
 ai/.venv/
+
+# Redis persistence files from local runs
+dump.rdb

@@ -398,6 +398,10 @@ export interface TrainingJobSummary {
   completedAt?: string;
   /** True if .pth artifact is downloadable (status === completed). */
   hasArtifact: boolean;
+  /** Integrity metadata recorded when the artifact was stored (real runs). */
+  artifactMeta?: { bytes: number; sha256: string; uploadedAt: string };
+  /** Failure reason reported by the trainer (status === failed). */
+  error?: string;
   /** True if at least one checkpoint exists. */
   hasCheckpoint: boolean;
   /** Optional notify-on-complete flag mirrored from localStorage. */
