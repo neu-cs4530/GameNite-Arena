@@ -6,12 +6,21 @@ import IconButton from "../ui/IconButton.tsx";
 interface FilterBarProps {
   children: ReactNode;
   onClear: () => void;
-  /** Optional preset slot rendered above the controls (Filter presets bar). */
+  /**
+   * Optional preset slot rendered ABOVE the compact header. Always visible,
+   * even while the controls panel is collapsed.
+   */
   presets?: ReactNode;
   /** Always-visible summary row shown to the left of the Filters toggle. */
   compactSummary?: ReactNode;
   /** Number of currently-active filters; shown as a badge on the toggle. */
   activeCount?: number;
+  /**
+   * Overrides when the "Clear all" button is shown. Defaults to
+   * `activeCount > 0`; consumers with preset defaults pass this so Clear all
+   * also appears when a non-default preset is selected without extra filters.
+   */
+  clearable?: boolean;
   /** Whether the panel can be collapsed. Defaults to true. */
   collapsible?: boolean;
   /** Initial open state when collapsible. Defaults to false (closed). */
@@ -35,6 +44,7 @@ export default function FilterBar({
   presets,
   compactSummary,
   activeCount = 0,
+  clearable,
   collapsible = true,
   defaultOpen = false,
   open,
@@ -53,6 +63,7 @@ export default function FilterBar({
   }
 
   const hasActive = activeCount > 0;
+  const showClear = clearable ?? hasActive;
 
   return (
     <section
@@ -60,6 +71,11 @@ export default function FilterBar({
       data-testid={testId}
       aria-label="Filters"
     >
+      {presets ? (
+        <div className="ga-filter-bar__presets" data-testid="filter-bar-presets">
+          {presets}
+        </div>
+      ) : null}
       <header className="ga-filter-bar__header">
         <div className="ga-filter-bar__compact" data-testid="filter-bar-compact">
           {compactSummary}
@@ -86,7 +102,7 @@ export default function FilterBar({
               ) : null}
             </Button>
           )}
-          {hasActive ? (
+          {showClear ? (
             <Button variant="ghost" size="sm" onClick={onClear} data-testid="filter-clear-all">
               Clear all
             </Button>
@@ -102,7 +118,6 @@ export default function FilterBar({
           role="region"
           aria-label="Filter controls"
         >
-          {presets ? <div className="ga-filter-bar__presets">{presets}</div> : null}
           <div className="ga-filter-bar__controls">{children}</div>
           <div className="ga-filter-bar__footer">
             <span className="ga-filter-bar__footer-hint">

@@ -7,6 +7,11 @@ import DateRangePicker from "./DateRangePicker.tsx";
 import SearchInput from "./SearchInput.tsx";
 import Toggle from "./Toggle.tsx";
 import FilterPresetsBar from "./FilterPresetsBar.tsx";
+import {
+  DEFAULT_REPLAY_PRESET_KEY,
+  matchReplayPreset,
+  type ReplayPresetDef,
+} from "./replayPresets.ts";
 import type {
   DateRangePreset,
   ParticipantType,
@@ -23,7 +28,12 @@ interface ReplayFilterBarProps {
   setFilter: <K extends keyof ReplayFilters>(key: K, value: ReplayFilters[K]) => void;
   setFilters: (next: Partial<ReplayFilters>) => void;
   onClear: () => void;
-  /** Show the filter-presets bar above controls. */
+  /**
+   * Show the always-visible preset pill row above the header. Also switches
+   * the chips / count baseline to the preset defaults (`defaultReplayFilters`,
+   * i.e. "Popular this week"); without it the baseline stays the neutral
+   * newest / all-time used by user-scoped lists.
+   */
   showPresets?: boolean;
 }
 
@@ -77,6 +87,7 @@ function buildChips(
   filters: ReplayFilters,
   setFilter: ReplayFilterBarProps["setFilter"],
   setFilters: ReplayFilterBarProps["setFilters"],
+  activePreset: ReplayPresetDef | undefined,
 ): Chip[] {
   const chips: Chip[] = [];
   if (filters.games.length > 0) {
@@ -87,7 +98,10 @@ function buildChips(
       onRemove: () => setFilter("games", []),
     });
   }
-  if (filters.participantType !== "all") {
+  // Participant type, date and the "upsets" flag are preset-controlled: when
+  // a preset is active it fully explains them (the matching requires
+  // equality), so the pill communicates the state and no chip is shown.
+  if (filters.participantType !== "all" && !activePreset) {
     const opt = PARTICIPANT_TYPE_OPTIONS.find((o) => o.value === filters.participantType);
     chips.push({
       key: "participant",
@@ -117,7 +131,7 @@ function buildChips(
         }),
     });
   }
-  if (filters.date !== "all") {
+  if (filters.date !== "all" && !activePreset) {
     chips.push({
       key: "date",
       label: dateLabels[filters.date] ?? filters.date,
@@ -152,6 +166,15 @@ function buildChips(
       onRemove: () => setFilter("ratedOnly", false),
     });
   }
+  if (filters.preset === "upsets" && !activePreset) {
+    // Leftover "upsets" flag after the Upsets pill was deselected by another
+    // filter change — surface it so the state stays visible and removable.
+    chips.push({
+      key: "upsets",
+      label: "Upsets",
+      onRemove: () => setFilter("preset", undefined),
+    });
+  }
   return chips;
 }
 
@@ -172,17 +195,28 @@ export default function ReplayFilterBar({
   onClear,
   showPresets,
 }: ReplayFilterBarProps): JSX.Element {
+  // With presets, the active pill is derived from the filters and explains
+  // the preset-controlled fields; the sort baseline is the default preset's
+  // sort. Without presets (user-scoped lists) the neutral "newest" baseline
+  // applies and no preset matching happens.
+  const activePreset = showPresets ? matchReplayPreset(filters) : undefined;
+  const baselineSort: ReplaySort = showPresets ? defaultReplayFilters.sort : "newest";
+
   const chips = useMemo(
-    () => buildChips(filters, setFilter, setFilters),
-    [filters, setFilter, setFilters],
+    () => buildChips(filters, setFilter, setFilters, activePreset),
+    [filters, setFilter, setFilters, activePreset],
   );
-  const sortChanged = filters.sort !== defaultReplayFilters.sort;
+  const sortChanged = !activePreset && filters.sort !== baselineSort;
   const count = activeCount(chips, sortChanged);
+  // Pristine default = default preset active with nothing else applied;
+  // everywhere else "Clear all" must offer the way back to that default.
+  const pristineDefault = activePreset?.key === DEFAULT_REPLAY_PRESET_KEY && count === 0;
 
   return (
     <FilterBar
       onClear={onClear}
       activeCount={count}
+      clearable={showPresets ? !pristineDefault : undefined}
       compactSummary={
         <>
           <SortSelect

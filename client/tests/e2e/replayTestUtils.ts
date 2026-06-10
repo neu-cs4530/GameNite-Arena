@@ -22,10 +22,14 @@ import { expect, type Page } from "@playwright/test";
  *    first page is full.
  *  - At least 13 of user0's replays so profile pagination triggers
  *    (12 per page).
- *  - At least one replay tagged so that it appears in EACH of these featured
- *    strips:
- *      "Most viewed today" / "Trending now (last 7 days)" /
- *      "Notable AI vs Human matches" / "Highest-rated this week"
+ *  - The discovery page defaults to the "Popular this week" preset
+ *    (sort=most-viewed, date=week), so at least one replay must have
+ *    completed within the last 7 days — and at least one TODAY so the
+ *    "Most viewed today" preset is non-empty. (Use relative timestamps,
+ *    e.g. `daysAgo(n)` / `hoursAgo(n)`.)
+ *  - At least one mixed Human-vs-AI replay (for the "AI vs Human" preset)
+ *    and at least one "upset" (lower-Elo winner by a margin, for the
+ *    "Upsets" preset).
  *  - At least one replay with `rated === true` and at least one with
  *    `rated === false`, both belonging to user0, so the "rated only" filter
  *    is observable on the profile.

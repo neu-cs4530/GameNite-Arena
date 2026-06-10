@@ -9,3 +9,10 @@ export { default as SearchInput } from "./SearchInput.tsx";
 export { default as Toggle } from "./Toggle.tsx";
 export { default as FilterPresetsBar } from "./FilterPresetsBar.tsx";
 export { default as ReplayFilterBar } from "./ReplayFilterBar.tsx";
+export {
+  DEFAULT_REPLAY_PRESET_KEY,
+  REPLAY_PRESETS,
+  matchReplayPreset,
+  presetToFilterChanges,
+} from "./replayPresets.ts";
+export type { ReplayPresetDef, ReplayPresetExpansion, ReplayPresetKey } from "./replayPresets.ts";

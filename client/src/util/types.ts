@@ -144,14 +144,22 @@ export interface ReplayFilters {
   forUser?: string;
 }
 
+/**
+ * Default filter state for the replay discovery feed. The `sort` + `date`
+ * pair is the expansion of the default "Popular this week" preset (see
+ * `components/filters/replayPresets.ts`), so a pristine `/replays` URL and
+ * "Clear all" both land on that preset. User-scoped lists (e.g. the profile
+ * page) keep a neutral newest/all-time baseline by NOT passing `defaults`
+ * to `useReplayFilters` — they are unaffected by these two values.
+ */
 export const defaultReplayFilters: ReplayFilters = {
-  sort: "newest",
+  sort: "most-viewed",
   games: [],
   participantType: "all",
   results: [],
   minElo: 800,
   maxElo: 2400,
-  date: "all",
+  date: "week",
   minMoves: 1,
   maxMoves: 200,
   participantSearch: "",

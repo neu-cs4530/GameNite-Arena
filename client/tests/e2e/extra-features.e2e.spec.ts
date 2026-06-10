@@ -282,31 +282,30 @@ test.describe("Spec extras: filter presets bar", () => {
   });
 
   /**
-   * Design contract:
-   *   - The discovery page renders a row of preset chips above the filter
-   *     bar:
-   *       "Popular today", "AI vs AI", "Upset matches" (lower-Elo winner).
-   *   - Clicking a preset applies a known filter combo and reflects it in
-   *     the URL (e.g. AI vs AI -> participantType=ai).
+   * Design contract (single-grid rework):
+   *   - The discovery page renders a row of single-select preset pills
+   *     above the filter bar: Popular this week (default), Most viewed
+   *     today, AI vs Human, Top rated, Upsets, Newest.
+   *   - Clicking a preset expands client-side into concrete filter values
+   *     and reflects them in the URL.
    */
-  test("'AI vs AI' preset applies a participant-type filter", async ({ page }) => {
+  test("'AI vs Human' preset applies a participant-type filter", async ({ page }) => {
     await page.goto("/replays");
-    await page.getByRole("button", { name: "AI vs AI" }).click();
-    await page.waitForURL(/participantType=ai/);
+    await page.getByTestId("filter-preset-ai-vs-human").click();
+    await page.waitForURL(/participantType=mixed/);
   });
 
-  test("'Upset matches' preset applies a custom filter combo", async ({ page }) => {
+  test("'Upsets' preset applies a custom filter combo", async ({ page }) => {
     await page.goto("/replays");
-    await page.getByRole("button", { name: "Upset matches" }).click();
+    await page.getByTestId("filter-preset-upsets").click();
     // Preset is opaque; we accept any URL change as long as it sets an
     // identifying query param.
     await page.waitForURL(/preset=upsets/);
   });
 
-  test("'Popular today' preset sorts by most-viewed within today", async ({ page }) => {
+  test("'Most viewed today' preset sorts by most-viewed within today", async ({ page }) => {
     await page.goto("/replays");
-    await page.getByRole("button", { name: "Popular today" }).click();
-    await page.waitForURL(/sort=most-viewed/);
+    await page.getByTestId("filter-preset-most-viewed-today").click();
     await page.waitForURL(/date=today/);
   });
 });

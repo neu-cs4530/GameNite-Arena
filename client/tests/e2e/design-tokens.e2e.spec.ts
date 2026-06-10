@@ -80,12 +80,14 @@ test.describe("Design tokens", () => {
   test("a primary button's computed background-color matches --color-primary", async ({ page }) => {
     await page.goto("/replays");
 
-    // We use the "Clear all" button on the filter bar because the spec
-    // mandates the FilterBar primitive renders a primary-styled CTA. If the
-    // code agent prefers a different button, it's free to use any other
-    // primary-styled button; either way the assertion is the same: the
-    // computed color must match the CSS variable.
-    const button = page.getByRole("button", { name: "Clear all" });
+    // We use the filter panel's primary "Done" button because the spec
+    // mandates the FilterBar primitive renders a primary-styled CTA.
+    // ("Clear all" is hidden at the pristine default preset, so it can't
+    // be relied on for a fresh page load.)
+    await page.getByTestId("filter-toggle").click();
+    // exact: true — role-name matching is substring-based and "Done" would
+    // also match the "Abandoned" result filter pill inside the open panel.
+    const button = page.getByRole("button", { name: "Done", exact: true });
     await expect(button).toBeVisible();
 
     const [computed, tokenValue] = await Promise.all([

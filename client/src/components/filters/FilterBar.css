@@ -16,6 +16,16 @@
   box-shadow: var(--shadow-md);
 }
 
+/* -- Preset pill row (always visible, above the compact header) -- */
+.ga-filter-bar__presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
 /* -- Compact header (always visible) -- */
 .ga-filter-bar__header {
   display: flex;
@@ -91,12 +101,6 @@
     opacity: 1;
     transform: translateY(0);
   }
-}
-
-.ga-filter-bar__presets {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
 }
 
 /* Two columns on desktop, single column on narrow screens. Each cell gets

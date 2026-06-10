@@ -44,7 +44,10 @@ export const mockFeatured: Record<string, FeaturedStrip[]> = {};
  * Helpers
  * ------------------------------------------------------------------------- */
 
-const NOW = new Date("2026-05-15T18:00:00.000Z");
+// Captured at module load (not pinned) so date-window filters — the
+// discovery tab defaults to "Popular this week" — always have matches.
+// All fixture timestamps are offsets from this instant.
+const NOW = new Date();
 
 function daysAgo(n: number): string {
   return new Date(NOW.getTime() - n * 24 * 60 * 60 * 1000).toISOString();

@@ -1,6 +1,7 @@
 import "./FilterPresetsBar.css";
 import type { JSX } from "react";
 import type { ReplayFilters } from "../../util/types.ts";
+import { REPLAY_PRESETS, matchReplayPreset, presetToFilterChanges } from "./replayPresets.ts";
 
 interface FilterPresetsBarProps {
   filters: ReplayFilters;
@@ -8,20 +9,21 @@ interface FilterPresetsBarProps {
 }
 
 /**
- * Filter presets — one-click filter combos surfaced above the regular
- * FilterBar. Tied to the test agent's contract:
- *  - "Popular today" sets sort=most-viewed and date=today.
- *  - "AI vs AI" sets participantType=ais (URL value).
- *  - "Upset matches" sets preset=upsets; the mock layer matches replays
- *     where the lower-Elo participant won by a margin.
+ * Single-select preset pill row for the replay discovery feed. Always
+ * visible above the FilterBar header (see `FilterBar`'s `presets` slot).
+ *
+ * Selecting a pill expands client-side into concrete filter values (sort /
+ * date / participant type, plus the "upsets" mock flag) and overwrites those
+ * fields; the active pill is *derived* from the current filters, so manually
+ * changing any preset-controlled filter deselects it. Re-clicking the active
+ * pill is a no-op (radio semantics). Orthogonal filters (game, Elo, etc.)
+ * compose with the active preset.
  */
 export default function FilterPresetsBar({
   filters,
   setFilters,
 }: FilterPresetsBarProps): JSX.Element {
-  const popularActive = filters.sort === "most-viewed" && filters.date === "today";
-  const aiVsAiActive = filters.participantType === "ais";
-  const upsetActive = filters.preset === "upsets";
+  const active = matchReplayPreset(filters);
 
   return (
     <div
@@ -30,37 +32,24 @@ export default function FilterPresetsBar({
       aria-label="Filter presets"
       data-testid="filter-presets"
     >
-      <button
-        type="button"
-        className={`ga-filter-presets__btn ${popularActive ? "ga-filter-presets__btn--active" : ""}`}
-        onClick={() => {
-          if (popularActive) setFilters({ sort: "newest", date: "all" });
-          else setFilters({ sort: "most-viewed", date: "today" });
-        }}
-        aria-pressed={popularActive}
-      >
-        Popular today
-      </button>
-      <button
-        type="button"
-        className={`ga-filter-presets__btn ${aiVsAiActive ? "ga-filter-presets__btn--active" : ""}`}
-        onClick={() => {
-          setFilters({ participantType: aiVsAiActive ? "all" : "ais" });
-        }}
-        aria-pressed={aiVsAiActive}
-      >
-        AI vs AI
-      </button>
-      <button
-        type="button"
-        className={`ga-filter-presets__btn ${upsetActive ? "ga-filter-presets__btn--active" : ""}`}
-        onClick={() => {
-          setFilters({ preset: upsetActive ? undefined : "upsets" });
-        }}
-        aria-pressed={upsetActive}
-      >
-        Upset matches
-      </button>
+      {REPLAY_PRESETS.map((p) => {
+        const isActive = active?.key === p.key;
+        return (
+          <button
+            key={p.key}
+            type="button"
+            className={`ga-filter-presets__btn ${isActive ? "ga-filter-presets__btn--active" : ""}`.trim()}
+            onClick={() => {
+              if (!isActive) setFilters(presetToFilterChanges(p));
+            }}
+            aria-pressed={isActive}
+            title={p.description}
+            data-testid={`filter-preset-${p.key}`}
+          >
+            {p.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

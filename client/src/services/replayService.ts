@@ -18,14 +18,12 @@
 
 import { AxiosError } from "axios";
 import { api } from "./api.ts";
-import type { ReplayDetail, ReplayFilters, ReplayListPage, ReplaySummary } from "../util/types.ts";
+import type { ReplayDetail, ReplayFilters, ReplayListPage } from "../util/types.ts";
 import {
-  featuredReplays as fetchFeatured,
   filterMockReplays,
   findMockReplay,
   incrementWatchCount,
   MOCK_REPLAYS,
-  type FeaturedStrip,
 } from "../__mocks__/replays.ts";
 
 function isNotFound(err: unknown): boolean {
@@ -127,14 +125,6 @@ export async function downloadReplay(matchId: string): Promise<Blob> {
   const replay = await getReplay(matchId);
   const json = JSON.stringify(replay, null, 2);
   return new Blob([json], { type: "application/json" });
-}
-
-/**
- * Featured strips ("most viewed today", "notable AI vs human") are derived
- * client-side from the discovery list until a dedicated endpoint exists.
- */
-export function listFeaturedReplays(strip: FeaturedStrip): Promise<ReplaySummary[]> {
-  return Promise.resolve(fetchFeatured(strip));
 }
 
 /** Exposed for test diagnostics. */

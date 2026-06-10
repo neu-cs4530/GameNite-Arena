@@ -42,6 +42,11 @@ const KEY_RATED = "rated";
 const KEY_PAGE = "page";
 const KEY_PRESET = "preset";
 
+/**
+ * Values an empty URL resolves to under the NEUTRAL baseline (no `defaults`
+ * option passed). Pages that pass `defaults` (the discovery feed) substitute
+ * their own `sort` / `date`.
+ */
 const paramDefaults: Record<string, string> = {
   [KEY_SORT]: "newest",
   [KEY_PARTICIPANT_TYPE]: "all",
@@ -71,14 +76,26 @@ function parseListOf<T extends string>(value: string | null, valid: readonly T[]
 /**
  * Reads / writes the `ReplayFilters` shape through React Router's
  * `useSearchParams`. Defaults are omitted from the URL to keep it tidy.
+ *
+ * `options.defaults` sets the baseline `sort` / `date` an empty URL resolves
+ * to (and which are stripped back out of the URL when re-selected). The
+ * discovery page passes `defaultReplayFilters`' values so its pristine state
+ * is the "Popular this week" preset; callers that omit it (the profile page)
+ * keep the neutral newest / all-time baseline.
  */
-export default function useReplayFilters(options: { pageSize: number; forUser?: string }): {
+export default function useReplayFilters(options: {
+  pageSize: number;
+  forUser?: string;
+  defaults?: { sort?: ReplaySort; date?: DateRangePreset };
+}): {
   filters: ReplayFilters;
   setFilter: <K extends keyof ReplayFilters>(key: K, value: ReplayFilters[K]) => void;
   setFilters: (next: Partial<ReplayFilters>) => void;
   clearFilters: () => void;
 } {
   const [searchParams, setSearchParams] = useSearchParams();
+  const baselineSort: ReplaySort = options.defaults?.sort ?? "newest";
+  const baselineDate: DateRangePreset = options.defaults?.date ?? "all";
 
   const filters: ReplayFilters = useMemo(() => {
     const sort = searchParams.get(KEY_SORT);
@@ -100,7 +117,7 @@ export default function useReplayFilters(options: { pageSize: number; forUser?: 
     return {
       sort: (VALID_SORTS as readonly string[]).includes(sort ?? "")
         ? (sort as ReplaySort)
-        : defaultReplayFilters.sort,
+        : baselineSort,
       games: parseListOf<ReplayGameKey>(gameRaw, ALL_GAME_KEYS),
       participantType: VALID_PARTICIPANT_TYPES.includes(ptype as ParticipantType)
         ? (ptype as ParticipantType)
@@ -110,7 +127,7 @@ export default function useReplayFilters(options: { pageSize: number; forUser?: 
       maxElo,
       date: VALID_DATE_PRESETS.includes(dateRaw as DateRangePreset)
         ? (dateRaw as DateRangePreset)
-        : defaultReplayFilters.date,
+        : baselineDate,
       dateFrom,
       dateTo,
       minMoves,
@@ -122,14 +139,14 @@ export default function useReplayFilters(options: { pageSize: number; forUser?: 
       preset: preset === "upsets" ? preset : undefined,
       forUser: options.forUser,
     };
-  }, [searchParams, options.pageSize, options.forUser]);
+  }, [searchParams, options.pageSize, options.forUser, baselineSort, baselineDate]);
 
   const setFilter = useCallback(
     <K extends keyof ReplayFilters>(key: K, value: ReplayFilters[K]) => {
       setSearchParams(
         (prev) => {
           const next = new URLSearchParams(prev);
-          writeFilter(next, key, value);
+          writeFilter(next, key, value, baselineSort, baselineDate);
           // Any filter mutation other than `page` resets pagination.
           if (key !== "page") next.delete(KEY_PAGE);
           return next;
@@ -137,7 +154,7 @@ export default function useReplayFilters(options: { pageSize: number; forUser?: 
         { replace: false },
       );
     },
-    [setSearchParams],
+    [setSearchParams, baselineSort, baselineDate],
   );
 
   const setFilters = useCallback(
@@ -148,9 +165,9 @@ export default function useReplayFilters(options: { pageSize: number; forUser?: 
           (Object.keys(changes) as (keyof ReplayFilters)[]).forEach((k) => {
             const value = changes[k];
             if (value === undefined) {
-              writeFilter(next, k, undefined);
+              writeFilter(next, k, undefined, baselineSort, baselineDate);
             } else {
-              writeFilter(next, k, value);
+              writeFilter(next, k, value, baselineSort, baselineDate);
             }
           });
           // Mutations other than just `page` reset pagination.
@@ -161,7 +178,7 @@ export default function useReplayFilters(options: { pageSize: number; forUser?: 
         { replace: false },
       );
     },
-    [setSearchParams],
+    [setSearchParams, baselineSort, baselineDate],
   );
 
   const clearFilters = useCallback(() => {
@@ -175,11 +192,13 @@ function writeFilter<K extends keyof ReplayFilters>(
   params: URLSearchParams,
   key: K,
   value: ReplayFilters[K],
+  baselineSort: ReplaySort,
+  baselineDate: DateRangePreset,
 ): void {
   switch (key) {
     case "sort": {
       const v = value as ReplaySort;
-      if (v === defaultReplayFilters.sort) params.delete(KEY_SORT);
+      if (v === baselineSort) params.delete(KEY_SORT);
       else params.set(KEY_SORT, v);
       break;
     }
@@ -210,7 +229,9 @@ function writeFilter<K extends keyof ReplayFilters>(
       else params.set(KEY_MAX_ELO, String(value));
       break;
     case "date":
-      if (value === "all") params.delete(KEY_DATE);
+      // Strip the param only when it matches the page's baseline; "all" must
+      // be written explicitly when the baseline is narrower (e.g. "week").
+      if (value === baselineDate) params.delete(KEY_DATE);
       else params.set(KEY_DATE, value as DateRangePreset);
       break;
     case "dateFrom":
