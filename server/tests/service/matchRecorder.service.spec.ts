@@ -140,4 +140,64 @@ describe("MatchRecorder", () => {
       displayName: "u-alice",
     });
   });
+
+  it("records the first move's stateBeforeMove as the match's initialState", async () => {
+    const initial = { remaining: 21, nextPlayer: 0 };
+    await recorder.captureMove(baseGame, "game-001", "u-alice", 3, false, initial);
+    // Later moves' pre-states must not overwrite the initial one.
+    await recorder.captureMove(baseGame, "game-001", "u-bob", 3, true, {
+      remaining: 18,
+      nextPlayer: 1,
+    });
+    expect(database.matches.get("game-001")!.initialState).toEqual(initial);
+  });
+
+  it("drops moves arriving after finalize has begun (concurrent duplicate of the final move)", async () => {
+    // Slow repo: finalize stays in-flight until we release it, so the
+    // duplicate arrives mid-finalize like a real double-submit race.
+    let releaseSave!: () => void;
+    const slowSave = new Promise<void>((resolve) => {
+      releaseSave = resolve;
+    });
+    const slowRepo = new InMemoryMatchRepo();
+    const slowDatabase = {
+      saveMatch: async (record: Parameters<InMemoryMatchRepo["saveMatch"]>[0]) => {
+        await slowSave;
+        await slowRepo.saveMatch(record);
+      },
+    };
+    const racingRecorder = new MatchRecorder({
+      database: slowDatabase,
+      resolveDisplayName,
+      getCurrentTime,
+    });
+
+    await racingRecorder.captureMove(baseGame, "game-001", "u-alice", 3, false);
+    const finalize = racingRecorder.captureMove(baseGame, "game-001", "u-bob", 3, true);
+    // Duplicate of the final move lands while saveMatch is still pending.
+    const duplicate = racingRecorder.captureMove(baseGame, "game-001", "u-bob", 3, true);
+    releaseSave();
+    await Promise.all([finalize, duplicate]);
+
+    const stored = slowRepo.matches.get("game-001")!;
+    expect(stored.moves).toHaveLength(2);
+  });
+
+  it("ignores captures for an already-finalized game entirely", async () => {
+    await recorder.captureMove(baseGame, "game-001", "u-alice", 3, true);
+    const before = database.matches.get("game-001")!;
+    await recorder.captureMove(baseGame, "game-001", "u-bob", 2, true);
+    const after = database.matches.get("game-001")!;
+    expect(after.moves).toHaveLength(1);
+    expect(after).toEqual(before);
+    expect(recorder.isRecording("game-001")).toBe(false);
+  });
+
+  it("resetForTests clears both tracking and the finalized guard", async () => {
+    await recorder.captureMove(baseGame, "game-001", "u-alice", 3, true);
+    recorder.resetForTests();
+    // After reset the same gameId can be recorded fresh.
+    await recorder.captureMove(baseGame, "game-001", "u-alice", 2, true);
+    expect(database.matches.get("game-001")!.moves.map((m) => m.move)).toEqual([2]);
+  });
 });

@@ -2,8 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import express from "express";
 import supertest from "supertest";
 import * as replay from "../../src/controllers/replay.controller.ts";
-import { InMemoryReplayStore, replaceStoreForTests } from "../../src/services/replay.service.ts";
-import { SEED_REPLAYS } from "../../src/__fixtures__/replays.fixture.ts";
+import {
+  InMemoryReplayStore,
+  makeDefaultStore,
+  replaceStoreForTests,
+} from "../../src/services/replay.service.ts";
 
 /* ---------------------------------------------------------------------------
  * We mount only the replay router (not the full `app`, which transitively
@@ -84,7 +87,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  replaceStoreForTests(new InMemoryReplayStore(SEED_REPLAYS));
+  replaceStoreForTests(makeDefaultStore());
 });
 
 describe("GET /api/replay/list", () => {
@@ -214,28 +217,5 @@ describe("POST /api/replay/:matchId/view", () => {
   });
 });
 
-/* ---------------------------------------------------------------------------
- * Pipeline integration: game lifecycle → MatchRepo → /api/replay/*
- *
- * These tests document the wiring gap that today prevents real games from
- * ever showing up in the replay viewer. The recorder code (`MatchRecorder`,
- * `MatchRepo` interface in matchRepo.service.ts) exists and is unit-tested,
- * but nothing in `server/src/services/game.service.ts` instantiates or
- * calls it — so finished games are never persisted. Until that hook lands,
- * the replay endpoints will only ever serve the dev seed fixture, never
- * actual gameplay.
- *
- * Convert these to `it(...)` (and implement) once the recorder is wired
- * into the game lifecycle.
- * ------------------------------------------------------------------------ */
-describe("[wiring gap] gameplay → replay pipeline", () => {
-  it.todo("startGame() should call recorder.startMatch() so the match row exists");
-  it.todo("updateGame() should call recorder.recordMove() for every accepted move");
-  it.todo("updateGame() should call recorder.endMatch() exactly once when result.done flips true");
-  it.todo(
-    "after a finished game, GET /api/replay/:gameId returns the match with its full move list",
-  );
-  it.todo(
-    "after a finished game, GET /api/replay/list includes the new match in the discovery feed",
-  );
-});
+// The gameplay → replay pipeline (game.service → MatchRecorder → MatchRepo →
+// /api/replay/*) is covered end-to-end in tests/integration/gameToReplay.spec.ts.

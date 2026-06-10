@@ -4,10 +4,10 @@ import {
   InMemoryReplayStore,
   getReplay,
   listReplays,
+  makeDefaultStore,
   recordWatch,
   replaceStoreForTests,
 } from "../../src/services/replay.service.ts";
-import { SEED_REPLAYS } from "../../src/__fixtures__/replays.fixture.ts";
 
 /* ---------------------------------------------------------------------------
  * Test fixture
@@ -118,8 +118,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  // Restore the seed-backed store other tests / runtime expect.
-  replaceStoreForTests(new InMemoryReplayStore(SEED_REPLAYS));
+  // Restore the production store stack.
+  replaceStoreForTests(makeDefaultStore());
 });
 
 describe("getReplay", () => {
