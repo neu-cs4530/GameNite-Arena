@@ -116,10 +116,9 @@ describe("GET /api/deployment/list", () => {
     await seedDeployment(user1, theirs);
 
     const res = await supertest(app).get("/api/deployment/list?username=user0");
-    expect(res.body.total).toBe(2);
-    expect(
-      res.body.deployments.map((d: { modelDisplayName: string }) => d.modelDisplayName),
-    ).toEqual(["new-bot", "old-bot"]);
+    const body = res.body as { total: number; deployments: { modelDisplayName: string }[] };
+    expect(body.total).toBe(2);
+    expect(body.deployments.map((d) => d.modelDisplayName)).toEqual(["new-bot", "old-bot"]);
   });
 
   it("survives deployments whose model or owner records are gone", async () => {
