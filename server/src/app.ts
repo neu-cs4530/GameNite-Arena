@@ -14,6 +14,7 @@ import * as thread from "./controllers/thread.controller.ts";
 import * as puzzle from "./controllers/puzzle.controller.ts";
 import * as replay from "./controllers/replay.controller.ts";
 import * as training from "./controllers/training.controller.ts";
+import * as deployment from "./controllers/deployment.controller.ts";
 import { type GameServer } from "./types.ts";
 
 export const app = express();
@@ -77,7 +78,8 @@ app.use(
         .get("/:matchId", replay.getById)
         .post("/:matchId/view", replay.postView),
     )
-    .use("/training", training.trainingRouter()),
+    .use("/training", training.trainingRouter())
+    .use("/deployment", deployment.deploymentRouter()),
 );
 
 io.on("connection", (socket) => {

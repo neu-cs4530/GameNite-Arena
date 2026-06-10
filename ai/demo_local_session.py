@@ -46,6 +46,9 @@ def main() -> int:
     parser.add_argument("--base-url", default="http://localhost:8000")
     parser.add_argument("--username", required=True)
     parser.add_argument("--password", required=True)
+    parser.add_argument("--job-id", default=None,
+                        help="Attach to a session registered in the web UI "
+                             "instead of creating a new one")
     parser.add_argument("--game", default="nim",
                         choices=["nim", "guess", "checkers", "connect4", "tictactoe"])
     parser.add_argument("--name", default=None, help="Model display name")
@@ -62,9 +65,13 @@ def main() -> int:
     session = GameNiteSession(args.base_url, args.username, args.password)
     name = args.name or f"{args.game}-local-demo"
 
-    job_id = session.start(args.game, episodes=args.episodes,
-                           learning_rate=3e-4, model_display_name=name)
-    print(f"[demo] session registered: {job_id}")
+    if args.job_id:
+        job_id = session.attach(args.job_id)
+        print(f"[demo] attached to web-registered session: {job_id}")
+    else:
+        job_id = session.start(args.game, episodes=args.episodes,
+                               learning_rate=3e-4, model_display_name=name)
+        print(f"[demo] session registered: {job_id}")
     print(f"[demo] watch it live at {args.base_url.replace(':8000', ':4530')}"
           f"/trainer/jobs/{job_id}")
 
