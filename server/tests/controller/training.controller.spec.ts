@@ -24,21 +24,19 @@ function makeApp(): express.Express {
 
 const AUTH0 = { username: "user0", password: "pwd0000" };
 const AUTH1 = { username: "user1", password: "pwd1111" };
-const BAD_AUTH = { username: "user0", password: "wrong" };
+const badAuth = { username: "user0", password: "wrong" };
 
-const START_PAYLOAD = {
+const startPayload = {
   gameKey: "nim",
   modelDisplayName: "ctrl-spec-bot",
   config: { episodes: 100, learningRate: 0.001 },
 };
 
 let app: express.Express;
-const uploadedFiles: string[] = [];
+const UPLOADED_FILES: string[] = [];
 
-async function submitSession(auth = AUTH0, payload = START_PAYLOAD) {
-  const res = await supertest(app)
-    .post("/api/training/submit")
-    .send({ auth, payload });
+async function submitSession(auth = AUTH0, payload = startPayload) {
+  const res = await supertest(app).post("/api/training/submit").send({ auth, payload });
   expect(res.status).toBe(201);
   return res.body as TrainingSessionInfo;
 }
@@ -51,7 +49,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
-  for (const file of uploadedFiles.splice(0)) {
+  for (const file of UPLOADED_FILES.splice(0)) {
     try {
       fs.unlinkSync(file);
     } catch {
@@ -64,7 +62,7 @@ describe("POST /api/training/submit", () => {
   it("registers a session and returns 201 with the session info", async () => {
     const res = await supertest(app)
       .post("/api/training/submit")
-      .send({ auth: AUTH0, payload: START_PAYLOAD });
+      .send({ auth: AUTH0, payload: startPayload });
 
     expect(res.status).toBe(201);
     expect(res.body.jobId).toBeDefined();
@@ -82,14 +80,14 @@ describe("POST /api/training/submit", () => {
   it("rejects unknown game keys with 400", async () => {
     const res = await supertest(app)
       .post("/api/training/submit")
-      .send({ auth: AUTH0, payload: { ...START_PAYLOAD, gameKey: "chess" } });
+      .send({ auth: AUTH0, payload: { ...startPayload, gameKey: "chess" } });
     expect(res.status).toBe(400);
   });
 
   it("rejects bad credentials with 403", async () => {
     const res = await supertest(app)
       .post("/api/training/submit")
-      .send({ auth: BAD_AUTH, payload: START_PAYLOAD });
+      .send({ auth: badAuth, payload: startPayload });
     expect(res.status).toBe(403);
   });
 });
@@ -241,7 +239,7 @@ describe("artifact upload / download", () => {
 
     const model = await ModelRepo.get(info.modelId);
     expect(model.artifactRef).toBeDefined();
-    uploadedFiles.push(model.artifactRef!);
+    UPLOADED_FILES.push(model.artifactRef!);
   });
 
   it("serves the uploaded artifact back", async () => {
@@ -251,7 +249,7 @@ describe("artifact upload / download", () => {
       .field("auth", JSON.stringify(AUTH0))
       .attach("file", Buffer.from("fake torch weights"), "trained.pth");
     const model = await ModelRepo.get(info.modelId);
-    uploadedFiles.push(model.artifactRef!);
+    UPLOADED_FILES.push(model.artifactRef!);
 
     const res = await supertest(app)
       .get(`/api/training/${info.jobId}/artifact`)
@@ -285,7 +283,7 @@ describe("artifact upload / download", () => {
     const info = await submitSession();
     const res = await supertest(app)
       .post(`/api/training/${info.jobId}/artifact`)
-      .field("auth", JSON.stringify(BAD_AUTH))
+      .field("auth", JSON.stringify(badAuth))
       .attach("file", Buffer.from("nope"), "trained.pth");
 
     expect(res.status).toBe(403);

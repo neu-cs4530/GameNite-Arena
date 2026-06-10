@@ -39,18 +39,13 @@ function makeFakePublisher() {
     published,
     snapshots,
     client: {
-      publish: async (channel: string, message: string): Promise<number> => {
+      publish: (channel: string, message: string): Promise<number> => {
         published.push({ channel, event: JSON.parse(message) as TrainingProgressEvent });
-        return 1;
+        return Promise.resolve(1);
       },
-      set: async (
-        key: string,
-        value: string,
-        _mode: "EX",
-        _ttl: number,
-      ): Promise<unknown> => {
+      set: (key: string, value: string, _mode: "EX", _ttl: number): Promise<unknown> => {
         snapshots[key] = value;
-        return "OK";
+        return Promise.resolve("OK");
       },
     },
   };
@@ -60,7 +55,7 @@ let fake: ReturnType<typeof makeFakePublisher>;
 let user0: UserWithId;
 let user1: UserWithId;
 
-const NIM_START = {
+const nimStart = {
   gameKey: "nim" as const,
   modelDisplayName: "test-nim-bot",
   config: { episodes: 100, learningRate: 0.001 },
@@ -81,7 +76,7 @@ afterEach(() => {
 
 describe("startTrainingSession", () => {
   it("creates a queued session and a fresh private model when no modelId is given", async () => {
-    const info = await startTrainingSession(user0, NIM_START);
+    const info = await startTrainingSession(user0, nimStart);
 
     expect(info.status).toBe("queued");
     expect(info.gameKey).toBe("nim");
@@ -108,7 +103,7 @@ describe("startTrainingSession", () => {
   });
 
   it("publishes a queued progress event keyed to the new job", async () => {
-    const info = await startTrainingSession(user0, NIM_START);
+    const info = await startTrainingSession(user0, nimStart);
 
     expect(fake.published).toHaveLength(1);
     const { channel, event } = fake.published[0];
@@ -121,7 +116,7 @@ describe("startTrainingSession", () => {
   });
 
   it("reuses an existing owned model", async () => {
-    const first = await startTrainingSession(user0, NIM_START);
+    const first = await startTrainingSession(user0, nimStart);
     const second = await startTrainingSession(user0, {
       gameKey: "nim",
       modelId: first.modelId,
@@ -143,7 +138,7 @@ describe("startTrainingSession", () => {
   });
 
   it("rejects a model owned by someone else", async () => {
-    const theirs = await startTrainingSession(user1, NIM_START);
+    const theirs = await startTrainingSession(user1, nimStart);
     await expect(
       startTrainingSession(user0, {
         gameKey: "nim",
@@ -154,7 +149,7 @@ describe("startTrainingSession", () => {
   });
 
   it("rejects a gameKey that does not match the existing model's game", async () => {
-    const first = await startTrainingSession(user0, NIM_START);
+    const first = await startTrainingSession(user0, nimStart);
     await expect(
       startTrainingSession(user0, {
         gameKey: "connect4",
@@ -167,7 +162,7 @@ describe("startTrainingSession", () => {
 
 describe("reportTrainingProgress", () => {
   it("flips a queued session to running and records progress", async () => {
-    const start = await startTrainingSession(user0, NIM_START);
+    const start = await startTrainingSession(user0, nimStart);
     const info = await reportTrainingProgress(user0, start.jobId, {
       episodes: 50,
       metrics: { meanReward: 0.4, winRate: 0.6, loss: 0.2 },
@@ -181,7 +176,7 @@ describe("reportTrainingProgress", () => {
   });
 
   it("publishes a running event with a clamped progress fraction", async () => {
-    const start = await startTrainingSession(user0, NIM_START);
+    const start = await startTrainingSession(user0, nimStart);
     await reportTrainingProgress(user0, start.jobId, {
       episodes: 50,
       metrics: { winRate: 0.6 },
@@ -200,25 +195,25 @@ describe("reportTrainingProgress", () => {
   });
 
   it("defaults missing metrics to zero", async () => {
-    const start = await startTrainingSession(user0, NIM_START);
+    const start = await startTrainingSession(user0, nimStart);
     const info = await reportTrainingProgress(user0, start.jobId, { episodes: 10 });
     expect(info.progress.meanReward).toBe(0);
     expect(info.progress.winRate).toBe(0);
   });
 
   it("rejects reports for unknown or foreign sessions", async () => {
-    await expect(
-      reportTrainingProgress(user0, "no-such-job", { episodes: 1 }),
-    ).rejects.toThrow(/not found/);
+    await expect(reportTrainingProgress(user0, "no-such-job", { episodes: 1 })).rejects.toThrow(
+      /not found/,
+    );
 
-    const theirs = await startTrainingSession(user1, NIM_START);
-    await expect(
-      reportTrainingProgress(user0, theirs.jobId, { episodes: 1 }),
-    ).rejects.toThrow(/not own/);
+    const theirs = await startTrainingSession(user1, nimStart);
+    await expect(reportTrainingProgress(user0, theirs.jobId, { episodes: 1 })).rejects.toThrow(
+      /not own/,
+    );
   });
 
   it("returns the canceled session untouched so the local trainer can stop", async () => {
-    const start = await startTrainingSession(user0, NIM_START);
+    const start = await startTrainingSession(user0, nimStart);
     await reportTrainingProgress(user0, start.jobId, { episodes: 10 });
     await cancelTrainingSession(user0, start.jobId);
     const publishedBefore = fake.published.length;
@@ -231,17 +226,17 @@ describe("reportTrainingProgress", () => {
   });
 
   it("rejects reports on completed sessions", async () => {
-    const start = await startTrainingSession(user0, NIM_START);
+    const start = await startTrainingSession(user0, nimStart);
     await completeTrainingSession(user0, start.jobId, {});
-    await expect(
-      reportTrainingProgress(user0, start.jobId, { episodes: 1 }),
-    ).rejects.toThrow(/already/);
+    await expect(reportTrainingProgress(user0, start.jobId, { episodes: 1 })).rejects.toThrow(
+      /already/,
+    );
   });
 });
 
 describe("terminal transitions", () => {
   it("complete marks the session completed and publishes a final event", async () => {
-    const start = await startTrainingSession(user0, NIM_START);
+    const start = await startTrainingSession(user0, nimStart);
     await reportTrainingProgress(user0, start.jobId, { episodes: 100 });
 
     const info = await completeTrainingSession(user0, start.jobId, {
@@ -260,7 +255,7 @@ describe("terminal transitions", () => {
   });
 
   it("fail marks the session failed with the error and publishes a failed event", async () => {
-    const start = await startTrainingSession(user0, NIM_START);
+    const start = await startTrainingSession(user0, nimStart);
     const info = await failTrainingSession(user0, start.jobId, {
       error: "loss diverged",
     });
@@ -275,7 +270,7 @@ describe("terminal transitions", () => {
   });
 
   it("cancel marks the session canceled and publishes nothing", async () => {
-    const start = await startTrainingSession(user0, NIM_START);
+    const start = await startTrainingSession(user0, nimStart);
     const publishedBefore = fake.published.length;
 
     const info = await cancelTrainingSession(user0, start.jobId);
@@ -286,20 +281,20 @@ describe("terminal transitions", () => {
   });
 
   it("terminal transitions reject sessions that are already terminal", async () => {
-    const start = await startTrainingSession(user0, NIM_START);
+    const start = await startTrainingSession(user0, nimStart);
     await completeTrainingSession(user0, start.jobId, {});
 
     await expect(completeTrainingSession(user0, start.jobId, {})).rejects.toThrow(/already/);
-    await expect(
-      failTrainingSession(user0, start.jobId, { error: "x" }),
-    ).rejects.toThrow(/already/);
+    await expect(failTrainingSession(user0, start.jobId, { error: "x" })).rejects.toThrow(
+      /already/,
+    );
     await expect(cancelTrainingSession(user0, start.jobId)).rejects.toThrow(/already/);
   });
 });
 
 describe("artifacts", () => {
   it("bindSessionArtifact stores the artifact on the model", async () => {
-    const start = await startTrainingSession(user0, NIM_START);
+    const start = await startTrainingSession(user0, nimStart);
     const info = await bindSessionArtifact(user0, start.jobId, "/tmp/trained.pth");
 
     expect(info.hasArtifact).toBe(true);
@@ -309,14 +304,14 @@ describe("artifacts", () => {
   });
 
   it("only the owner can bind an artifact", async () => {
-    const start = await startTrainingSession(user0, NIM_START);
-    await expect(
-      bindSessionArtifact(user1, start.jobId, "/tmp/evil.pth"),
-    ).rejects.toThrow(/not own/);
+    const start = await startTrainingSession(user0, nimStart);
+    await expect(bindSessionArtifact(user1, start.jobId, "/tmp/evil.pth")).rejects.toThrow(
+      /not own/,
+    );
   });
 
   it("getSessionArtifactPath is null before any upload", async () => {
-    const start = await startTrainingSession(user0, NIM_START);
+    const start = await startTrainingSession(user0, nimStart);
     expect(await getSessionArtifactPath(start.jobId)).toBeNull();
   });
 });
@@ -324,15 +319,15 @@ describe("artifacts", () => {
 describe("getTrainingSession / listTrainingSessions", () => {
   it("get returns null for unknown ids and the info for known ones", async () => {
     expect(await getTrainingSession("nope")).toBeNull();
-    const start = await startTrainingSession(user0, NIM_START);
+    const start = await startTrainingSession(user0, nimStart);
     const info = await getTrainingSession(start.jobId);
     expect(info?.jobId).toBe(start.jobId);
   });
 
   it("lists newest-first with pagination metadata", async () => {
-    const a = await startTrainingSession(user0, NIM_START);
-    const b = await startTrainingSession(user0, NIM_START);
-    const c = await startTrainingSession(user0, NIM_START);
+    const a = await startTrainingSession(user0, nimStart);
+    const b = await startTrainingSession(user0, nimStart);
+    const c = await startTrainingSession(user0, nimStart);
 
     // Force a deterministic creation order.
     for (const [jobId, iso] of [
@@ -358,8 +353,8 @@ describe("getTrainingSession / listTrainingSessions", () => {
   });
 
   it("filters by owner username", async () => {
-    await startTrainingSession(user0, NIM_START);
-    await startTrainingSession(user1, NIM_START);
+    await startTrainingSession(user0, nimStart);
+    await startTrainingSession(user1, nimStart);
 
     const page = await listTrainingSessions({ username: "user1" });
     expect(page.total).toBe(1);
@@ -370,21 +365,17 @@ describe("getTrainingSession / listTrainingSessions", () => {
 describe("publisher resilience", () => {
   it("operations succeed when no publisher is wired", async () => {
     setTrainingSessionPublisher(null);
-    const start = await startTrainingSession(user0, NIM_START);
+    const start = await startTrainingSession(user0, nimStart);
     const info = await reportTrainingProgress(user0, start.jobId, { episodes: 5 });
     expect(info.status).toBe("running");
   });
 
   it("operations succeed when the publisher throws", async () => {
     setTrainingSessionPublisher({
-      publish: async () => {
-        throw new Error("redis down");
-      },
-      set: async () => {
-        throw new Error("redis down");
-      },
+      publish: () => Promise.reject(new Error("redis down")),
+      set: () => Promise.reject(new Error("redis down")),
     });
-    const start = await startTrainingSession(user0, NIM_START);
+    const start = await startTrainingSession(user0, nimStart);
     expect(start.status).toBe("queued");
   });
 });

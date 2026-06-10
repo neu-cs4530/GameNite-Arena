@@ -91,9 +91,9 @@ describe("zReportTrainingProgress", () => {
 describe("terminal payloads", () => {
   it("complete accepts empty and metric-bearing payloads", () => {
     expect(zCompleteTrainingSession.safeParse({}).success).toBe(true);
-    expect(
-      zCompleteTrainingSession.safeParse({ finalMetrics: { winRate: 0.9 } }).success,
-    ).toBe(true);
+    expect(zCompleteTrainingSession.safeParse({ finalMetrics: { winRate: 0.9 } }).success).toBe(
+      true,
+    );
   });
 
   it("fail requires a non-empty error string", () => {
