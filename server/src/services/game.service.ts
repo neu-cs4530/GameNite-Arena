@@ -1,10 +1,12 @@
 import { type GameInfo, type GameKey, type TaggedGameView } from "@gamenite/shared";
 import { createChat } from "./chat.service.ts";
+import { matchRecorder } from "./matchRecorder.service.ts";
 import { populateSafeUserInfo } from "./user.service.ts";
 import { type GameServicer } from "../games/gameServiceManager.ts";
 import { nimGameService } from "../games/nim.ts";
 import { guessGameService } from "../games/guess.ts";
 import { type GameViewUpdates, type UserWithId } from "../types.ts";
+import { type GameRecord } from "../models.ts";
 import { GameRepo } from "../repository.ts";
 /**
  * The service interface for individual games
@@ -168,11 +170,66 @@ export async function updateGame(gameId: string, user: UserWithId, move: unknown
   const result = gameServices[game.type].update(game.state, move, playerIndex, game.players);
   if (!result) throw new Error(`user ${user.username} made an invalid move in ${game.type}`);
 
+  const stateBeforeMove = game.state;
   game.state = result.state;
   game.done = game.done || result.done;
+  // models.ts contract: a finished game points at its MatchRecord, which the
+  // recorder stores under the gameId.
+  if (result.done) game.matchId = gameId;
   await GameRepo.set(gameId, game);
 
+  if (result.done) {
+    await postGameUpdates(game, gameId, user.userId, move, stateBeforeMove);
+  } else {
+    // Move is validated and persisted — archive it for the replay viewer.
+    // Archival is a side-channel: a failed write must not fail the move or
+    // swallow the view broadcast, so log and continue.
+    try {
+      await matchRecorder.captureMove(game, gameId, user.userId, move, false, stateBeforeMove);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`match capture failed for game ${gameId}:`, err);
+    }
+  }
+
   return result.views;
+}
+
+/**
+ * Everything that runs once a move ends a game, gathered in one place so
+ * end-of-game side effects stay together as they grow:
+ *
+ *   1. finalize the match archive so the game shows up in the replay viewer
+ *   2. Glicko rating updates for rated games (slot reserved — the ratings
+ *      change lands alongside this hook and should add its call below)
+ *
+ * The final move is already validated and persisted by the time this runs,
+ * so failures here are logged rather than propagated: a broken side effect
+ * must not fail the move or swallow the final view broadcast.
+ *
+ * @param game - The finished GameRecord (state and done already updated)
+ * @param gameId - The id `game` is stored under in GameRepo
+ * @param userId - The user who made the game-ending move
+ * @param move - The game-ending move payload
+ * @param stateBeforeMove - Game state before the final move was applied
+ */
+export async function postGameUpdates(
+  game: GameRecord,
+  gameId: string,
+  userId: string,
+  move: unknown,
+  stateBeforeMove: unknown,
+): Promise<void> {
+  // 1. Archive the final move; the recorder finalizes and persists the
+  //    complete MatchRecord for the replay viewer.
+  try {
+    await matchRecorder.captureMove(game, gameId, userId, move, true, stateBeforeMove);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`match capture failed for game ${gameId}:`, err);
+  }
+
+  // 2. Glicko rating updates go here (rated games only — check game.rated).
 }
 
 /**
