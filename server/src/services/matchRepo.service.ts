@@ -1,6 +1,3 @@
-// Zach: once the matches and replays tables exist, implement this interface
-// against the DB layer
-
 import {
   type MatchOutcome,
   type MatchRecord,
@@ -26,6 +23,9 @@ export interface MatchRepo {
 
   // Store the full replay blob so the replay viewer can load it in one shot
   saveReplay(replay: ReplayRecord): Promise<void>;
+
+  // Load the stored replay blob for the download endpoint, or null if there's none
+  getReplay(gameId: string): Promise<ReplayRecord | null>;
 }
 
 // Used by unit tests and fine for local dev before the real schema is created
@@ -67,5 +67,12 @@ export class InMemoryMatchRepo implements MatchRepo {
       moveHistory: [...replay.moveHistory],
     });
     return Promise.resolve();
+  }
+
+  getReplay(gameId: string): Promise<ReplayRecord | null> {
+    const replay = this.replaysByGame.get(gameId);
+    if (!replay) return Promise.resolve(null);
+    // hand back a copy so callers can't mutate our stored blob
+    return Promise.resolve({ ...replay, moveHistory: [...replay.moveHistory] });
   }
 }

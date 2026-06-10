@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { beforeEach } from "vitest";
 import { resetEverythingToDefaults } from "../src/initRepository.ts";
 
