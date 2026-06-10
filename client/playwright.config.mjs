@@ -45,7 +45,7 @@ export default defineConfig({
       // The server hard-requires REDIS_URL at boot (services/redis.ts). CI
       // exports it for the whole test step; locally default to the standard
       // redis port so `npx playwright test` works from a fresh shell.
-      env: { REDIS_URL: process.env.REDIS_URL ?? "redis://localhost:6379" },
+      env: { REDIS_URL: process.env.REDIS_URL || "redis://localhost:6379" },
       timeout: 120_000,
     },
   ],
