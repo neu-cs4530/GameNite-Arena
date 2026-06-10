@@ -198,7 +198,14 @@ export interface ModelRecord {
   gameKey: GameKey;
   displayName: string;
   sourceRef: string;
+  /**
+   * Store-relative artifact name (`<modelId>.pth`) inside the artifact
+   * store — never an absolute path. Resolve through
+   * artifactStore.service.ts resolveArtifactRef().
+   */
   artifactRef?: string;
+  /** Integrity metadata recorded when the artifact was stored. */
+  artifactMeta?: ArtifactMeta;
   forkedFrom?: RecordId; // References Model records (Story 2.13)
   visibility: "private" | "public";
   createdAt: DateISO;
@@ -256,6 +263,27 @@ export interface TrainingCheckpoint {
   episode: number;
   artifactRef: string;
   createdAt: DateISO;
+}
+
+/**
+ * An expiring API token for the LOCAL training channel. The trainer exchanges
+ * its password once (POST /api/training/token) and authenticates subsequent
+ * session calls with the token, so the password never lives in training
+ * loops or shell history. Keyed by the token string itself for O(1) lookup.
+ * Expired records are ignored at auth time (the Repo interface has no
+ * delete, so they age out with the store).
+ */
+export interface ArtifactMeta {
+  bytes: number;
+  sha256: string;
+  uploadedAt: DateISO;
+}
+
+export interface TrainingTokenRecord {
+  userId: RecordId; // References User records
+  username: string;
+  createdAt: DateISO;
+  expiresAt: DateISO;
 }
 
 /**
