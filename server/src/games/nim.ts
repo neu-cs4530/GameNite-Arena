@@ -21,6 +21,15 @@ export const nimLogic: GameLogic<NimState, NimView> = {
   isDone: ({ remaining }) => remaining === 0,
   viewAs: (state) => state,
   tagView: (view) => ({ type: "nim", view }),
+  // Misère nim: whoever takes the LAST object LOSES. After the final move the
+  // turn has already flipped, so `nextPlayer` is the player who did NOT take
+  // the last object — i.e. the winner (matches the client NimGame end-of-game
+  // copy). Only called when isDone(state) is true, so remaining is 0 here.
+  winnerIndex: ({ nextPlayer }) => nextPlayer,
+  parseMove: (payload) => {
+    const move = zNimMove.safeParse(payload);
+    return move.success ? move.data : null;
+  },
 };
 
 export const nimGameService = new GameService<NimState, NimView>(nimLogic);
