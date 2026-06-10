@@ -1,8 +1,25 @@
-import { describe, expect, it, beforeEach } from "vitest";
-// Tests for issue #21. Uses the in-memory repository so there's no DB dependency.
-
+import { beforeEach, describe, expect, it } from "vitest";
+import type { GameRecord } from "../../src/models.ts";
 import { MatchRecorder } from "../../src/services/matchRecorder.service.ts";
 import { InMemoryMatchRepo } from "../../src/services/matchRepo.service.ts";
+
+/* ---------------------------------------------------------------------------
+ * Tests for the rewritten MatchRecorder.
+ * The recorder owns lifecycle (first-move-starts-tracking, done-finalizes)
+ * so the spec verifies it indirectly through captureMove(...) calls — there
+ * is no longer a public startMatch / recordMove / endMatch API.
+ * ----------------------------------------------------------------------- */
+
+const baseGame: GameRecord = {
+  type: "nim",
+  done: false,
+  chat: "chat-001",
+  players: ["u-alice", "u-bob"],
+  aiPlayers: [],
+  rated: true,
+  createdAt: "2026-06-01T00:00:00.000Z",
+  createdBy: "u-alice",
+};
 
 describe("MatchRecorder", () => {
   let database: InMemoryMatchRepo;
@@ -10,90 +27,177 @@ describe("MatchRecorder", () => {
   let recorder: MatchRecorder;
 
   const getCurrentTime = () => ++fakeTime;
+  const resolveDisplayName = (id: string) =>
+    Promise.resolve(
+      {
+        "u-alice": "Alice",
+        "u-bob": "Bob",
+        "u-carol": "Carol",
+      }[id] ?? id,
+    );
 
   beforeEach(() => {
     database = new InMemoryMatchRepo();
-    fakeTime = 1000;
-    recorder = new MatchRecorder({ database, getCurrentTime });
+    fakeTime = 1_700_000_000_000;
+    recorder = new MatchRecorder({ database, resolveDisplayName, getCurrentTime });
   });
 
-  const openGame = () =>
-    recorder.startMatch({
-      gameId: "game-001",
-      gameType: "chess",
-      players: ["P1", "P2"],
-    });
-
-  it("should write the match row as soon as the game starts", async () => {
-    await openGame();
-    const savedRecord = database.matchRecords.get("game-001");
-    expect(savedRecord).toBeDefined();
-    expect(savedRecord?.players).toEqual(["P1", "P2"]);
-    expect(savedRecord?.startedAt).toBeGreaterThan(0);
-    expect(savedRecord?.totalMoves).toBe(0);
+  it("starts tracking on the first captureMove", async () => {
+    await recorder.captureMove(baseGame, "game-001", "u-alice", { take: 3 }, false);
     expect(recorder.isRecording("game-001")).toBe(true);
+    // Nothing should be persisted yet — single-write fires only on done.
+    expect(database.matches.size).toBe(0);
   });
 
-  it("should refuse to start the same game twice", async () => {
-    await openGame();
-    await expect(openGame()).rejects.toThrow(/already being recorded/);
+  it("accumulates every move in order", async () => {
+    await recorder.captureMove(baseGame, "game-001", "u-alice", { take: 3 }, false);
+    await recorder.captureMove(baseGame, "game-001", "u-bob", { take: 2 }, false);
+    await recorder.captureMove(baseGame, "game-001", "u-alice", { take: 1 }, true);
+
+    const stored = database.matches.get("game-001");
+    expect(stored).toBeDefined();
+    expect(stored!.moves).toHaveLength(3);
+    expect(stored!.moves.map((m) => m.actor)).toEqual(["u-alice", "u-bob", "u-alice"]);
+    expect(stored!.moves.map((m) => m.move)).toEqual([{ take: 3 }, { take: 2 }, { take: 1 }]);
   });
 
-  it("persists every move in order with sequential userMove indices", async () => {
-    await openGame();
-    await recorder.recordMove("game-001", { playedBy: "P1", moveNotation: "e4" });
-    await recorder.recordMove("game-001", { playedBy: "P2", moveNotation: "e5" });
-    await recorder.recordMove("game-001", { playedBy: "P1", moveNotation: "Nf3" });
+  it("persists the complete MatchRecord exactly once when done flips true", async () => {
+    await recorder.captureMove(baseGame, "game-001", "u-alice", { take: 1 }, false);
+    expect(database.matches.size).toBe(0);
 
-    const savedMoves = database.movesByGame.get("game-001")!;
-    expect(savedMoves).toHaveLength(3);
-    expect(savedMoves.map((m) => m.userMove)).toEqual([0, 1, 2]);
-    expect(savedMoves.map((m) => m.moveNotation)).toEqual(["e4", "e5", "Nf3"]);
-    expect(savedMoves.every((m) => m.playedAt > 0)).toBe(true);
+    await recorder.captureMove(baseGame, "game-001", "u-bob", { take: 1 }, true);
+    expect(database.matches.size).toBe(1);
+
+    const stored = database.matches.get("game-001")!;
+    expect(stored.gameId).toBe("game-001");
+    expect(stored.gameKey).toBe("nim");
+    expect(stored.rated).toBe(true);
+    expect(stored.result).toEqual({ outcome: "win" });
+    expect(stored.createdAt).toBeDefined();
+    expect(stored.completedAt).toBeDefined();
+    expect(stored.completedAt >= stored.createdAt).toBe(true);
   });
 
-  it("should accept a caller-supplied userMove index when it matches", async () => {
-    await openGame();
-    await recorder.recordMove("game-001", { userMove: 0, playedBy: "P1", moveNotation: "e4" });
-    await recorder.recordMove("game-001", { userMove: 1, playedBy: "P2", moveNotation: "e5" });
-    expect(database.movesByGame.get("game-001")).toHaveLength(2);
+  it("resolves human participants via the injected resolver", async () => {
+    await recorder.captureMove(baseGame, "game-001", "u-alice", { take: 1 }, true);
+    const stored = database.matches.get("game-001")!;
+    expect(stored.participants).toEqual([
+      { id: "u-alice", type: "human", displayName: "Alice" },
+      { id: "u-bob", type: "human", displayName: "Bob" },
+    ]);
   });
 
-  it("should reject an out-of-order or duplicate move", async () => {
-    await openGame();
-    await recorder.recordMove("game-001", { playedBy: "P1", moveNotation: "e4" });
-    await expect(
-      recorder.recordMove("game-001", { userMove: 0, playedBy: "P2", moveNotation: "Illegal" }),
-    ).rejects.toThrow(/Out-of-order/);
+  it("includes AI participants with their embedded displayName (no resolver lookup)", async () => {
+    const mixedGame: GameRecord = {
+      ...baseGame,
+      players: ["u-alice"],
+      aiPlayers: [{ deploymentId: "dep-1", modelId: "model-1", displayName: "RookieBot" }],
+    };
+    await recorder.captureMove(mixedGame, "game-002", "u-alice", { take: 2 }, true);
+    const stored = database.matches.get("game-002")!;
+    expect(stored.participants).toEqual([
+      { id: "u-alice", type: "human", displayName: "Alice" },
+      { id: "model-1", type: "ai", displayName: "RookieBot" },
+    ]);
   });
 
-  it("should reject moves for a game that was never started", async () => {
-    await expect(
-      recorder.recordMove("ghost-game", { playedBy: "P1", moveNotation: "e4" }),
-    ).rejects.toThrow(/isn't active/);
-  });
-
-  it("should finalize the match and save a complete replay when the game ends", async () => {
-    await openGame();
-    await recorder.recordMove("game-001", { playedBy: "P1", moveNotation: "e4" });
-    await recorder.recordMove("game-001", { playedBy: "P2", moveNotation: "e5" });
-
-    const replayRecord = await recorder.endMatch("game-001", "player_one_wins");
-
-    expect(replayRecord.outcome).toBe("player_one_wins");
-    expect(replayRecord.moveHistory).toHaveLength(2);
-    expect(replayRecord.endedAt).toBeGreaterThan(replayRecord.startedAt);
-
-    const savedRecord = database.matchRecords.get("game-001")!;
-    expect(savedRecord.outcome).toBe("player_one_wins");
-    expect(savedRecord.totalMoves).toBe(2);
-    expect(savedRecord.endedAt).toBeDefined();
-
-    expect(database.replaysByGame.get("game-001")?.moveHistory).toHaveLength(2);
+  it("clears in-progress state after persisting", async () => {
+    await recorder.captureMove(baseGame, "game-001", "u-alice", { take: 1 }, true);
     expect(recorder.isRecording("game-001")).toBe(false);
   });
 
-  it("should reject ending a game that was never started", async () => {
-    await expect(recorder.endMatch("nope", "draw")).rejects.toThrow(/isn't active/);
+  it("tracks multiple games independently", async () => {
+    const game2: GameRecord = { ...baseGame, players: ["u-alice", "u-carol"] };
+    await recorder.captureMove(baseGame, "game-A", "u-alice", { take: 3 }, false);
+    await recorder.captureMove(game2, "game-B", "u-alice", { take: 2 }, false);
+    await recorder.captureMove(baseGame, "game-A", "u-bob", { take: 2 }, true);
+
+    expect(recorder.isRecording("game-A")).toBe(false);
+    expect(recorder.isRecording("game-B")).toBe(true);
+    expect(database.matches.has("game-A")).toBe(true);
+    expect(database.matches.has("game-B")).toBe(false);
+  });
+
+  it("handles a single-move game (done=true on the very first capture)", async () => {
+    await recorder.captureMove(baseGame, "game-001", "u-alice", { take: 7 }, true);
+    const stored = database.matches.get("game-001");
+    expect(stored).toBeDefined();
+    expect(stored!.moves).toHaveLength(1);
+    expect(stored!.result.outcome).toBe("win");
+  });
+
+  it("falls back to the userId when the display-name resolver returns it as-is", async () => {
+    const fallbackRecorder = new MatchRecorder({
+      database,
+      resolveDisplayName: (id) => Promise.resolve(id),
+      getCurrentTime,
+    });
+    await fallbackRecorder.captureMove(baseGame, "game-001", "u-alice", { take: 1 }, true);
+    const stored = database.matches.get("game-001")!;
+    expect(stored.participants[0]).toEqual({
+      id: "u-alice",
+      type: "human",
+      displayName: "u-alice",
+    });
+  });
+
+  it("records the first move's stateBeforeMove as the match's initialState", async () => {
+    const initial = { remaining: 21, nextPlayer: 0 };
+    await recorder.captureMove(baseGame, "game-001", "u-alice", 3, false, initial);
+    // Later moves' pre-states must not overwrite the initial one.
+    await recorder.captureMove(baseGame, "game-001", "u-bob", 3, true, {
+      remaining: 18,
+      nextPlayer: 1,
+    });
+    expect(database.matches.get("game-001")!.initialState).toEqual(initial);
+  });
+
+  it("drops moves arriving after finalize has begun (concurrent duplicate of the final move)", async () => {
+    // Slow repo: finalize stays in-flight until we release it, so the
+    // duplicate arrives mid-finalize like a real double-submit race.
+    let releaseSave!: () => void;
+    const slowSave = new Promise<void>((resolve) => {
+      releaseSave = resolve;
+    });
+    const slowRepo = new InMemoryMatchRepo();
+    const slowDatabase = {
+      saveMatch: async (record: Parameters<InMemoryMatchRepo["saveMatch"]>[0]) => {
+        await slowSave;
+        await slowRepo.saveMatch(record);
+      },
+    };
+    const racingRecorder = new MatchRecorder({
+      database: slowDatabase,
+      resolveDisplayName,
+      getCurrentTime,
+    });
+
+    await racingRecorder.captureMove(baseGame, "game-001", "u-alice", 3, false);
+    const finalize = racingRecorder.captureMove(baseGame, "game-001", "u-bob", 3, true);
+    // Duplicate of the final move lands while saveMatch is still pending.
+    const duplicate = racingRecorder.captureMove(baseGame, "game-001", "u-bob", 3, true);
+    releaseSave();
+    await Promise.all([finalize, duplicate]);
+
+    const stored = slowRepo.matches.get("game-001")!;
+    expect(stored.moves).toHaveLength(2);
+  });
+
+  it("ignores captures for an already-finalized game entirely", async () => {
+    await recorder.captureMove(baseGame, "game-001", "u-alice", 3, true);
+    const before = database.matches.get("game-001")!;
+    await recorder.captureMove(baseGame, "game-001", "u-bob", 2, true);
+    const after = database.matches.get("game-001")!;
+    expect(after.moves).toHaveLength(1);
+    expect(after).toEqual(before);
+    expect(recorder.isRecording("game-001")).toBe(false);
+  });
+
+  it("resetForTests clears both tracking and the finalized guard", async () => {
+    await recorder.captureMove(baseGame, "game-001", "u-alice", 3, true);
+    recorder.resetForTests();
+    // After reset the same gameId can be recorded fresh.
+    await recorder.captureMove(baseGame, "game-001", "u-alice", 2, true);
+    expect(database.matches.get("game-001")!.moves.map((m) => m.move)).toEqual([2]);
   });
 });

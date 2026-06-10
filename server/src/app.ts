@@ -11,6 +11,7 @@ import * as user from "./controllers/user.controller.ts";
 import * as model from "./controllers/model.controller.ts";
 import * as thread from "./controllers/thread.controller.ts";
 import * as puzzle from "./controllers/puzzle.controller.ts";
+import * as replay from "./controllers/replay.controller.ts";
 import { type GameServer } from "./types.ts";
 
 export const app = express();
@@ -65,6 +66,14 @@ app.use(
         .Router()
         .get("/:gameKey", puzzle.getToday)
         .post("/:gameKey/attempt", puzzle.postAttempt),
+    )
+    .use(
+      "/replay",
+      express
+        .Router()
+        .get("/list", replay.getList)
+        .get("/:matchId", replay.getById)
+        .post("/:matchId/view", replay.postView),
     ),
 );
 
