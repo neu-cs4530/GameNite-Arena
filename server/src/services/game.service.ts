@@ -1,6 +1,7 @@
 import { type GameInfo, type GameKey, type TaggedGameView } from "@gamenite/shared";
 import { createChat } from "./chat.service.ts";
 import { matchRecorder } from "./matchRecorder.service.ts";
+import { updateRatingsForGame } from "./rating.service.ts";
 import { populateSafeUserInfo } from "./user.service.ts";
 import { type GameServicer } from "../games/gameServiceManager.ts";
 import { nimGameService } from "../games/nim.ts";
@@ -42,12 +43,14 @@ async function populateGameInfo(gameId: string): Promise<GameInfo> {
  * @param user - Initial player in the game's waiting room
  * @param type - Game key
  * @param createdAt - Creation time for this game
+ * @param rated - Whether this game's result should affect Glicko ratings
  * @returns the new game's info object
  */
 export async function createGame(
   user: UserWithId,
   type: GameKey,
   createdAt: Date,
+  rated = false,
 ): Promise<GameInfo> {
   const chat = await createChat(createdAt);
   const gameId = await GameRepo.add({
@@ -58,7 +61,7 @@ export async function createGame(
     createdBy: user.userId,
     players: [user.userId],
     aiPlayers: [],
-    rated: false,
+    rated,
   });
   return populateGameInfo(gameId);
 }
@@ -229,7 +232,15 @@ export async function postGameUpdates(
     console.error(`match capture failed for game ${gameId}:`, err);
   }
 
-  // 2. Glicko rating updates go here (rated games only — check game.rated).
+  // 2. Update Glicko ratings for rated games.
+  if (game.rated) {
+    try {
+      await updateRatingsForGame(game, gameId);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`rating update failed for game ${gameId}:`, err);
+    }
+  }
 }
 
 /**
