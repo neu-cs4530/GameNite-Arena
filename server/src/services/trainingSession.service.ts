@@ -35,6 +35,7 @@ import {
   type ProgressPublisherClient,
 } from "./trainingPublish.service.ts";
 import { storeModelArtifact, resolveArtifactRef } from "./artifactStore.service.ts";
+import { assertOwnedModel } from "./dataIntegrity.service.ts";
 import type { UserWithId } from "../types.ts";
 
 // Publisher injection
@@ -155,11 +156,7 @@ export async function startTrainingSession(
 
   let modelId = payload.modelId;
   if (modelId) {
-    const model = await ModelRepo.find(modelId);
-    if (!model) throw new Error(`Model ${modelId} not found`);
-    if (model.userId !== user.userId) {
-      throw new Error(`User ${user.username} does not own model ${modelId}`);
-    }
+    const model = await assertOwnedModel(user, modelId);
     if (model.gameKey !== toStoredGameKey(payload.gameKey)) {
       throw new Error(
         `Game key '${payload.gameKey}' does not match the model's game '${model.gameKey}'`,
