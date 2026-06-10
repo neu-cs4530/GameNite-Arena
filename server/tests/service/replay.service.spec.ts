@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ReplayDetail, ReplayListQuery } from "@gamenite/shared";
+import { SEED_REPLAYS } from "../../src/__fixtures__/replays.fixture.ts";
+import type { MatchRecord } from "../../src/models.ts";
+import { MatchRepo } from "../../src/repository.ts";
 import {
   InMemoryReplayStore,
   getReplay,
@@ -382,5 +385,90 @@ describe("listReplays — list summary projection", () => {
     expect(r).toHaveProperty("matchId");
     expect(r).toHaveProperty("participants");
     expect(r).toHaveProperty("result");
+  });
+});
+
+/* ---------------------------------------------------------------------------
+ * Production store stack (NOT the in-memory test fixture): real-match watch
+ * counts live in the Keyv WatchCountRepo and must outlive any particular
+ * store instance; the dev seed must mirror the client mock dataset.
+ * ----------------------------------------------------------------------- */
+
+function makeMatchRecord(gameId: string): MatchRecord {
+  return {
+    gameId,
+    gameKey: "nim",
+    rated: true,
+    participants: [
+      { id: "u-x", type: "human", displayName: "Xan" },
+      { id: "u-y", type: "human", displayName: "Yve" },
+    ],
+    moves: [{ actor: "u-x", move: 3, timestamp: "2026-05-01T00:00:00.000Z" }],
+    result: { outcome: "win", winnerId: "u-y" },
+    createdAt: "2026-05-01T00:00:00.000Z",
+    completedAt: "2026-05-01T00:05:00.000Z",
+  };
+}
+
+describe("watch counts — persistence on the production store", () => {
+  beforeEach(() => {
+    replaceStoreForTests(makeDefaultStore());
+  });
+
+  it("survives store re-instantiation via makeDefaultStore", async () => {
+    await MatchRepo.set("real-match-1", makeMatchRecord("real-match-1"));
+
+    const first = await recordWatch("real-match-1");
+    expect(first).toEqual({ matchId: "real-match-1", watchCount: 1 });
+
+    // Rebuild the whole store stack: counts must come back from the Keyv
+    // WatchCountRepo, not from any process-local state on the old instance.
+    replaceStoreForTests(makeDefaultStore());
+    const detail = await getReplay("real-match-1");
+    expect(detail?.watchCount).toBe(1);
+
+    const second = await recordWatch("real-match-1");
+    expect(second?.watchCount).toBe(2);
+  });
+
+  it("reports the persisted count in list summaries too", async () => {
+    await MatchRepo.set("real-match-2", makeMatchRecord("real-match-2"));
+    await recordWatch("real-match-2");
+    await recordWatch("real-match-2");
+
+    replaceStoreForTests(makeDefaultStore());
+    const page = await listReplays({ page: 1, pageSize: 100 });
+    const summary = page.replays.find((r) => r.matchId === "real-match-2");
+    expect(summary?.watchCount).toBe(2);
+  });
+});
+
+describe("dev seed — parity with the client mock dataset", () => {
+  beforeEach(() => {
+    replaceStoreForTests(makeDefaultStore());
+  });
+
+  it("serves the full expanded fixture through listReplays", async () => {
+    const page = await listReplays({ page: 1, pageSize: 100 });
+    expect(page.total).toBe(SEED_REPLAYS.length);
+    // The client mock contract requires at least 30 replays.
+    expect(page.total).toBeGreaterThanOrEqual(30);
+  });
+
+  it("keeps the FE contract entry: mock-match-1 is an 8-move nim win for user0 vs RookieBot_v1", async () => {
+    const detail = await getReplay("mock-match-1");
+    expect(detail).not.toBeNull();
+    expect(detail!.gameKey).toBe("nim");
+    expect(detail!.moveCount).toBe(8);
+    expect(detail!.moves).toHaveLength(8);
+    expect(detail!.participants[0].username).toBe("user0");
+    expect(detail!.participants[1].displayName).toBe("RookieBot_v1");
+    expect(detail!.participants.every((p) => typeof p.ratingAtMatchTime === "number")).toBe(true);
+    expect(detail!.result).toEqual({ winnerId: "human:user0", outcome: "win" });
+  });
+
+  it("seeds at least 13 user0 replays so profile pagination can trigger", async () => {
+    const page = await listReplays({ page: 1, pageSize: 100, forUser: "user0" });
+    expect(page.total).toBeGreaterThanOrEqual(13);
   });
 });
