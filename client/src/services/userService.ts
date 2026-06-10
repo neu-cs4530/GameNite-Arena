@@ -1,24 +1,51 @@
 import { api } from "./api.ts";
 import type { ErrorMsg, SafeUserInfo, UserAuth, UserUpdateRequest } from "@gamenite/shared";
-import { MOCK_REPLAYS } from "../__mocks__/replays.ts";
-import type { ProfileDetail, ProfileGameStats, ReplayGameKey } from "../util/types.ts";
+import { listReplaysForUser } from "./replayService.ts";
+import {
+  ALL_GAME_KEYS,
+  defaultReplayFilters,
+  type ProfileDetail,
+  type ProfileGameStats,
+  type ReplayGameKey,
+  type ReplaySummary,
+} from "../util/types.ts";
 
 const USER_API_URL = `/api/user`;
 
 /* ---------------------------------------------------------------------------
- * Mock profile lookup
+ * Profile composition — real-first per data source.
  *
- * TODO(@team): real endpoint pending — `GET /api/user/:username/profile`.
- * Until then we synthesise a ProfileDetail from the mock replay fixture so
- * the redesigned `/profile/:username` page has stats / Elos to render.
+ * There is no single profile endpoint yet, so `getProfile` composes one
+ * from what the server serves today:
+ *
+ *   1. Identity (display name, joined date): GET /api/user/:username — REAL.
+ *      Falls back to the mock metadata table below on 404/network/5xx; an
+ *      unknown user in BOTH sources rejects (profile page error state).
+ *   2. Match history + win/loss/draw/streak stats: derived from
+ *      `replayService.listReplaysForUser` (itself real-first with a
+ *      documented fixture fallback), so the stat tiles always agree with
+ *      the match list rendered next to them.
+ *   3. Per-game ratings: GET /api/leaderboard/:gameKey lookups — REAL,
+ *      best-effort (entries are matched by display name because the
+ *      leaderboard keys entities by internal userId, which the client
+ *      never sees). Games without a real rating fall back to the mock
+ *      metadata, then to the 1200 provisional default.
+ *
+ * TODO(@team): replace 2+3 with a real `GET /api/user/:username/profile`
+ * aggregate once the server exposes one; only this file changes.
  * ------------------------------------------------------------------------- */
 
-const PROFILE_MOCK_LATENCY_MS = 15;
+/** Rating shown when neither the leaderboard nor the mock knows the user. */
+const PROVISIONAL_ELO = 1200;
 
-function delay<T>(value: T, ms = PROFILE_MOCK_LATENCY_MS): Promise<T> {
-  return new Promise((resolve) => setTimeout(() => resolve(value), ms));
-}
+/** Stats derive from the most recent N matches (server caps pageSize at 100). */
+const PROFILE_STATS_SAMPLE = 100;
 
+/**
+ * Mock identity/rating metadata — FALLBACK ONLY (see header). Mirrors the
+ * users seeded by `server/src/initRepository.ts` plus the extra fixture
+ * participants from `client/src/__mocks__/replays.ts`.
+ */
 const profileUsers: Record<
   string,
   {
@@ -69,75 +96,177 @@ const profileUsers: Record<
   },
 };
 
+/** Wire mirror of server `LeaderboardEntry` (leaderboard.service.ts). */
+interface LeaderboardEntryWire {
+  rank: number;
+  entityId: string;
+  entityType: "human" | "ai";
+  displayName: string;
+  rating: number;
+  rd: number;
+  gamesPlayed: number;
+  provisional: boolean;
+}
+
+interface LeaderboardPageWire {
+  gameKey: string;
+  entries: LeaderboardEntryWire[];
+}
+
 /**
- * Returns a mocked profile detail for the given username. Throws if the
- * username is unknown — the profile page shows an "error state" in that
- * case.
+ * Best-effort real rating lookup (see header, source 3). Never throws —
+ * a missing rating just means "fall back to the mock metadata".
  */
-export async function getProfile(username: string): Promise<ProfileDetail> {
-  const meta = profileUsers[username];
-  if (!meta) {
-    return Promise.reject(new Error(`User not found: ${username}`));
+async function lookupLeaderboardRating(
+  gameKey: ReplayGameKey,
+  display: string,
+): Promise<number | null> {
+  try {
+    const res = await api.get<LeaderboardPageWire>(`/api/leaderboard/${gameKey}`, {
+      params: { type: "human", limit: 100 },
+      // Ratings must not hold the whole profile hostage if the
+      // leaderboard's Redis cache is slow/down.
+      timeout: 2_500,
+    });
+    const entry = res.data.entries.find(
+      (e) => e.entityType === "human" && e.displayName === display,
+    );
+    return entry ? Math.round(entry.rating) : null;
+  } catch {
+    return null;
   }
-  // Walk the mock replays for this user to derive wins/losses/draws.
+}
+
+interface DerivedReplayStats {
+  totalMatches: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  currentStreak: number;
+  perGameRecords: Partial<Record<ReplayGameKey, { wins: number; losses: number; draws: number }>>;
+}
+
+/**
+ * Derives W/L/D + streak figures from a replay page. Works identically on
+ * real and fixture data — participants are matched by username either way.
+ */
+function deriveReplayStats(replays: ReplaySummary[], username: string): DerivedReplayStats {
   let wins = 0;
   let losses = 0;
   let draws = 0;
-  let totalMatches = 0;
-  const matchedIds: string[] = [];
-  for (const r of MOCK_REPLAYS) {
+  const perGameRecords: DerivedReplayStats["perGameRecords"] = {};
+  for (const r of replays) {
     const playerEntry = r.participants.find((p) => p.username === username);
     if (!playerEntry) continue;
-    totalMatches += 1;
-    matchedIds.push(r.matchId);
-    if (r.result.outcome === "draw") draws += 1;
-    else if (r.result.outcome === "win") {
-      if (r.result.winnerId === playerEntry.id) wins += 1;
-      else losses += 1;
+    const record = (perGameRecords[r.gameKey] ??= { wins: 0, losses: 0, draws: 0 });
+    if (r.result.outcome === "draw") {
+      draws += 1;
+      record.draws += 1;
+    } else if (r.result.outcome === "win") {
+      if (r.result.winnerId === playerEntry.id) {
+        wins += 1;
+        record.wins += 1;
+      } else {
+        losses += 1;
+        record.losses += 1;
+      }
     }
   }
-  // Compute current streak (most recent contiguous win count from newest).
-  const recentRelevant = MOCK_REPLAYS.filter((r) =>
-    r.participants.some((p) => p.username === username),
-  ).sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime());
+  // Current streak: contiguous wins from the most recent match backwards.
+  const newestFirst = replays
+    .filter((r) => r.participants.some((p) => p.username === username))
+    .slice()
+    .sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime());
   let currentStreak = 0;
-  for (const r of recentRelevant) {
+  for (const r of newestFirst) {
     const playerEntry = r.participants.find((p) => p.username === username);
     if (!playerEntry) break;
     if (r.result.outcome === "win" && r.result.winnerId === playerEntry.id) currentStreak += 1;
     else break;
   }
-  const perGame: ProfileGameStats[] = (Object.keys(meta.perGame) as ReplayGameKey[]).map(
-    (gameKey) => {
-      const rating = meta.perGame[gameKey] ?? meta.baseElo;
-      let gWins = 0;
-      let gLosses = 0;
-      let gDraws = 0;
-      for (const r of MOCK_REPLAYS) {
-        if (r.gameKey !== gameKey) continue;
-        const playerEntry = r.participants.find((p) => p.username === username);
-        if (!playerEntry) continue;
-        if (r.result.outcome === "draw") gDraws += 1;
-        else if (r.result.outcome === "win") {
-          if (r.result.winnerId === playerEntry.id) gWins += 1;
-          else gLosses += 1;
-        }
-      }
-      return { gameKey, rating, wins: gWins, losses: gLosses, draws: gDraws };
-    },
-  );
-  return delay({
-    user: { username, display: meta.display } as SafeUserInfo,
-    joinedAt: meta.joinedAt,
-    overallElo: meta.baseElo,
-    totalMatches,
+  return {
+    totalMatches: newestFirst.length,
     wins,
     losses,
     draws,
     currentStreak,
+    perGameRecords,
+  };
+}
+
+/**
+ * Returns the composed profile for the given username (see the composition
+ * notes at the top of this file). Rejects only when the user is unknown to
+ * BOTH the server and the mock table — the profile page shows its error
+ * state in that case.
+ */
+export async function getProfile(username: string): Promise<ProfileDetail> {
+  const meta = profileUsers[username];
+
+  // 1) Identity — real-first.
+  let identity: SafeUserInfo | null = null;
+  try {
+    identity = await getUserById(username);
+  } catch {
+    // 404 (user only exists in the fixture), transport failure, or an
+    // `{ error }` payload — identity falls back to the mock table either
+    // way; a user unknown to both sources rejects below.
+    identity = null;
+  }
+  if (!identity && !meta) {
+    throw new Error(`User not found: ${username}`);
+  }
+  const display = identity?.display ?? meta.display;
+  // SafeUserInfo.createdAt is typed Date but arrives as an ISO string.
+  const joinedAt = identity ? new Date(identity.createdAt).toISOString() : meta.joinedAt;
+
+  // 2) Match history — through the real-first replay service.
+  let replays: ReplaySummary[] = [];
+  try {
+    const page = await listReplaysForUser(username, {
+      ...defaultReplayFilters,
+      page: 1,
+      pageSize: PROFILE_STATS_SAMPLE,
+    });
+    replays = page.replays;
+  } catch {
+    // Both transports failed — render a zero-match profile rather than
+    // erroring the whole page; the match list section fails independently.
+    replays = [];
+  }
+  const stats = deriveReplayStats(replays, username);
+
+  // 3) Ratings — real leaderboard lookups, mock fallback per game.
+  const gameKeys: ReplayGameKey[] = ALL_GAME_KEYS.filter(
+    (g) => stats.perGameRecords[g] !== undefined || meta?.perGame[g] !== undefined,
+  );
+  const realRatings = await Promise.all(gameKeys.map((g) => lookupLeaderboardRating(g, display)));
+  const perGame: ProfileGameStats[] = gameKeys.map((gameKey, i) => {
+    const record = stats.perGameRecords[gameKey] ?? { wins: 0, losses: 0, draws: 0 };
+    return {
+      gameKey,
+      rating: realRatings[i] ?? meta?.perGame[gameKey] ?? meta?.baseElo ?? PROVISIONAL_ELO,
+      ...record,
+    };
+  });
+  const found = realRatings.filter((r): r is number => r !== null);
+  const overallElo =
+    found.length > 0
+      ? Math.round(found.reduce((sum, r) => sum + r, 0) / found.length)
+      : (meta?.baseElo ?? PROVISIONAL_ELO);
+
+  return {
+    user: { username, display } as SafeUserInfo,
+    joinedAt,
+    overallElo,
+    totalMatches: stats.totalMatches,
+    wins: stats.wins,
+    losses: stats.losses,
+    draws: stats.draws,
+    currentStreak: stats.currentStreak,
     perGame,
     exists: true,
-  });
+  };
 }
 
 /**

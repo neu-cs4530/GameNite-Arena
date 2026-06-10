@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useReducer } from "react";
+import { useCallback, useEffect, useMemo, useReducer } from "react";
+import type { UserAuth } from "@gamenite/shared";
 import {
   createAnnotation,
   createShareLink,
@@ -42,11 +43,20 @@ function reducer(state: State, action: Action): State {
 
 /**
  * Per-match annotation hook. Handles list / create / update / delete /
- * share / react. The mock service is fast enough that we just re-fetch after
+ * share / react. The service is fast enough that we just re-fetch after
  * mutation rather than maintaining a parallel optimistic store.
+ *
+ * Mutations carry the viewer's `auth` pair so the service can take its
+ * real path (the proposed #33 routes use the repo's withAuth convention);
+ * until those routes land the service transparently falls back to its
+ * mock store.
  */
 export default function useAnnotations(matchId: string | undefined) {
-  const { user } = useLoginContext();
+  const { user, pass } = useLoginContext();
+  const auth: UserAuth = useMemo(
+    () => ({ username: user.username, password: pass }),
+    [user.username, pass],
+  );
   const [state, dispatch] = useReducer(reducer, {
     annotations: [],
     loading: true,
@@ -81,10 +91,15 @@ export default function useAnnotations(matchId: string | undefined) {
     async (payload: CreateAnnotationPayload) => {
       if (!matchId) return;
       try {
-        await createAnnotation(matchId, payload, {
-          id: `human:${user.username}`,
-          displayName: user.display,
-        });
+        await createAnnotation(
+          matchId,
+          payload,
+          {
+            id: `human:${user.username}`,
+            displayName: user.display,
+          },
+          auth,
+        );
         refetch();
       } catch (err) {
         dispatch({
@@ -93,13 +108,13 @@ export default function useAnnotations(matchId: string | undefined) {
         });
       }
     },
-    [matchId, user, refetch],
+    [matchId, user, auth, refetch],
   );
 
   const update = useCallback(
     async (id: string, payload: UpdateAnnotationPayload) => {
       try {
-        await updateAnnotation(id, payload);
+        await updateAnnotation(id, payload, auth);
         refetch();
       } catch (err) {
         dispatch({
@@ -108,13 +123,13 @@ export default function useAnnotations(matchId: string | undefined) {
         });
       }
     },
-    [refetch],
+    [auth, refetch],
   );
 
   const remove = useCallback(
     async (id: string) => {
       try {
-        await deleteAnnotation(id);
+        await deleteAnnotation(id, auth);
         refetch();
       } catch (err) {
         dispatch({
@@ -123,13 +138,13 @@ export default function useAnnotations(matchId: string | undefined) {
         });
       }
     },
-    [refetch],
+    [auth, refetch],
   );
 
   const share = useCallback(
     async (id: string): Promise<{ url: string; token: string } | null> => {
       try {
-        const result = await createShareLink(id);
+        const result = await createShareLink(id, auth);
         refetch();
         return result;
       } catch (err) {
@@ -140,13 +155,13 @@ export default function useAnnotations(matchId: string | undefined) {
         return null;
       }
     },
-    [refetch],
+    [auth, refetch],
   );
 
   const react = useCallback(
     async (id: string, reaction: "thumbsUp" | "thumbsDown", delta: 1 | -1 = 1) => {
       try {
-        await reactToAnnotation(id, reaction, delta);
+        await reactToAnnotation(id, reaction, delta, auth);
         refetch();
       } catch (err) {
         dispatch({
@@ -155,7 +170,7 @@ export default function useAnnotations(matchId: string | undefined) {
         });
       }
     },
-    [refetch],
+    [auth, refetch],
   );
 
   return {

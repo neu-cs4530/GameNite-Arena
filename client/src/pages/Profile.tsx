@@ -1,5 +1,5 @@
 import "./Profile.css";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import useProfile from "../hooks/useProfile.ts";
 import useReplaysForUser from "../hooks/useReplaysForUser.ts";
@@ -22,11 +22,10 @@ import ReplayFilterBar from "../components/filters/ReplayFilterBar.tsx";
 import MatchGrid from "../components/replay/MatchGrid.tsx";
 import TierBadge from "../components/replay/TierBadge.tsx";
 import ActivityHeatmap from "../components/replay/ActivityHeatmap.tsx";
-import { MOCK_REPLAYS } from "../__mocks__/replays.ts";
 import { replayGameNames } from "../util/consts.ts";
 
 import EditProfileSettings from "./EditProfileSettings.tsx";
-import { listReplaysForUser } from "../services/replayService.ts";
+import { getReplay, listReplaysForUser } from "../services/replayService.ts";
 import type { ReplaySummary } from "../util/types.ts";
 
 const PROFILE_MATCHES_PER_PAGE = 12;
@@ -313,10 +312,31 @@ function WatchLaterTab({
   username: string | undefined;
   watchLaterIds: string[];
 }) {
-  const summaries: ReplaySummary[] = watchLaterIds
-    .map((id) => MOCK_REPLAYS.find((r) => r.matchId === id))
-    .filter((r): r is NonNullable<typeof r> => Boolean(r))
-    .map(({ moves: _moves, gameId: _gameId, initialState: _initial, ...rest }) => rest);
+  // Resolve each starred id through the real-first replay service (real
+  // matches and fixture entries both work; unknown ids are dropped).
+  const [summaries, setSummaries] = useState<ReplaySummary[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all(watchLaterIds.map((id) => getReplay(id).catch(() => null))).then((details) => {
+      if (cancelled) return;
+      setSummaries(
+        details
+          .filter((r): r is NonNullable<typeof r> => Boolean(r))
+          .map(({ moves: _moves, gameId: _gameId, initialState: _initial, ...rest }) => rest),
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [watchLaterIds]);
+
+  if (summaries === null) {
+    return (
+      <Section title="Watch later" testId="profile-watch-later">
+        <MatchGrid replays={[]} loading skeletonCount={Math.min(watchLaterIds.length || 1, 6)} />
+      </Section>
+    );
+  }
   if (summaries.length === 0) {
     return (
       <Section title="Watch later" testId="profile-watch-later">
