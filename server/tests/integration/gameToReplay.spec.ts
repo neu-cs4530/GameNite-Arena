@@ -97,9 +97,14 @@ describe("gameplay → replay pipeline", () => {
       user1.userId,
       user0.userId,
     ]);
+    // Canonical (zod-parsed) payloads are archived; for nim the schema
+    // doesn't transform the number, so parsed === raw here.
     expect(stored!.moves.every((m) => m.move === 3)).toBe(true);
     // Pre-first-move state is archived so replays can rebuild from move 0.
     expect(stored!.initialState).toEqual({ remaining: 21, nextPlayer: 0 });
+    // Misère nim: the 7th mover (user0) takes the last object and LOSES, so
+    // the archive credits user1 with the win.
+    expect(stored!.result).toEqual({ outcome: "win", winnerId: user1.userId });
 
     // Participants carry resolved display names from UserRepo.
     const display0 = (await UserRepo.get(user0.userId)).display;
@@ -136,7 +141,7 @@ describe("gameplay → replay pipeline", () => {
   });
 
   it("serves the finished game through the replay service detail read", async () => {
-    const { gameId } = await playFullNimGame();
+    const { gameId, user1 } = await playFullNimGame();
 
     const detail = await getReplay(gameId);
     expect(detail).not.toBeNull();
@@ -151,6 +156,46 @@ describe("gameplay → replay pipeline", () => {
     expect(detail!.initialState).toEqual({ remaining: 21, nextPlayer: 0 });
     // Usernames resolve so the FE can link player profiles.
     expect(detail!.participants.map((p) => p.username)).toEqual(["user0", "user1"]);
+    // The misère winner inference survives the MatchRecord -> ReplayDetail
+    // projection: user1 wins because user0 took the last object.
+    expect(detail!.result).toEqual({ outcome: "win", winnerId: user1.userId });
+  });
+
+  it("archives a guess win for the closest guesser", async () => {
+    const user0 = (await getUserByUsername("user0"))!;
+    const user1 = (await getUserByUsername("user1"))!;
+    const game = await createGame(user0, "guess", new Date());
+    await joinGame(game.gameId, user1);
+    await startGame(game.gameId, user0);
+    // Pin the random secret so the outcome is deterministic.
+    const record = await GameRepo.get(game.gameId);
+    record.state = { secret: 50, guesses: [null, null] };
+    await GameRepo.set(game.gameId, record);
+
+    await updateGame(game.gameId, user0, 40); // distance 10
+    await updateGame(game.gameId, user1, 49); // distance 1 — wins
+
+    const stored = await MatchRepo.find(game.gameId);
+    expect(stored).not.toBeNull();
+    expect(stored!.result).toEqual({ outcome: "win", winnerId: user1.userId });
+  });
+
+  it("archives a guess draw when both players tie for closest", async () => {
+    const user0 = (await getUserByUsername("user0"))!;
+    const user1 = (await getUserByUsername("user1"))!;
+    const game = await createGame(user0, "guess", new Date());
+    await joinGame(game.gameId, user1);
+    await startGame(game.gameId, user0);
+    const record = await GameRepo.get(game.gameId);
+    record.state = { secret: 50, guesses: [null, null] };
+    await GameRepo.set(game.gameId, record);
+
+    await updateGame(game.gameId, user0, 45); // distance 5
+    await updateGame(game.gameId, user1, 55); // distance 5 — exact tie
+
+    const stored = await MatchRepo.find(game.gameId);
+    expect(stored).not.toBeNull();
+    expect(stored!.result).toEqual({ outcome: "draw" });
   });
 
   it("includes the finished game in the replay discovery list", async () => {

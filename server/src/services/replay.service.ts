@@ -24,7 +24,7 @@ import type {
 
 import { SEED_REPLAYS } from "../__fixtures__/replays.fixture.ts";
 import type { MatchRecord } from "../models.ts";
-import { MatchRepo as matchRepoStore, UserRepo } from "../repository.ts";
+import { MatchRepo as matchRepoStore, UserRepo, WatchCountRepo } from "../repository.ts";
 
 export interface ReplayStore {
   getById(matchId: string): Promise<ReplayDetail | undefined>;
@@ -116,31 +116,29 @@ async function matchToReplayDetail(
 
 /**
  * Read-side adapter over the Keyv `MatchRepo` the recorder writes into.
- * Watch counts live in a process-local overlay until they get their own
- * persistent home — the archival MatchRecord itself stays immutable.
+ * Watch counts live in their own Keyv repo (`WatchCountRepo`, keyed by
+ * matchId) so they survive across requests and — with MongoDB configured —
+ * process restarts, while the archival MatchRecord itself stays immutable.
  */
 export class KeyvMatchReplayStore implements ReplayStore {
-  private readonly _watchCounts = new Map<string, number>();
-
   async getById(matchId: string): Promise<ReplayDetail | undefined> {
     const record = await matchRepoStore.find(matchId);
     if (!record) return undefined;
-    return matchToReplayDetail(matchId, record, this._watchCounts.get(matchId) ?? 0);
+    return matchToReplayDetail(matchId, record, (await WatchCountRepo.find(matchId)) ?? 0);
   }
 
   async listAll(): Promise<ReplayDetail[]> {
     const keys = await matchRepoStore.getAllKeys();
     const records = await matchRepoStore.getMany(keys);
     return Promise.all(
-      records.map((record, i) =>
-        matchToReplayDetail(keys[i], record, this._watchCounts.get(keys[i]) ?? 0),
+      records.map(async (record, i) =>
+        matchToReplayDetail(keys[i], record, (await WatchCountRepo.find(keys[i])) ?? 0),
       ),
     );
   }
 
-  setWatchCount(matchId: string, count: number): Promise<void> {
-    this._watchCounts.set(matchId, count);
-    return Promise.resolve();
+  async setWatchCount(matchId: string, count: number): Promise<void> {
+    await WatchCountRepo.set(matchId, count);
   }
 }
 
@@ -192,8 +190,9 @@ export function makeDefaultStore(): ReplayStore {
   ]);
 }
 
-// Module-level store keeps the watch counts persistent across requests within
-// a process.
+// Module-level store singleton. Real-match watch counts persist in
+// WatchCountRepo (so re-instantiating the stack loses nothing); the seed
+// store keeps fixture counts for the lifetime of the instance.
 let store: ReplayStore = makeDefaultStore();
 
 /** Exposed for tests so each spec can start from a clean fixture. */
@@ -291,6 +290,14 @@ function applyFilters(items: ReplaySummary[], q: ReplayListQuery): ReplaySummary
       }
     }
 
+    // Rolling-window date presets (mirrors the client mock's semantics:
+    // today=24h, week=7d, month=30d, year=365d). "custom" relies on the
+    // explicit dateFrom/dateTo bounds below.
+    if (q.date && q.date !== "all" && q.date !== "custom") {
+      const days = { today: 1, week: 7, month: 30, year: 365 }[q.date];
+      const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      if (r.completedAt < cutoff) return false;
+    }
     if (q.dateFrom && r.completedAt < q.dateFrom) return false;
     if (q.dateTo && r.completedAt > q.dateTo) return false;
 

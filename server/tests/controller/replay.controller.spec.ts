@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import express from "express";
 import supertest from "supertest";
+import { SEED_REPLAYS } from "../../src/__fixtures__/replays.fixture.ts";
 import * as replay from "../../src/controllers/replay.controller.ts";
 import {
   InMemoryReplayStore,
@@ -214,6 +215,17 @@ describe("POST /api/replay/:matchId/view", () => {
     const res = await supertest(makeApp()).post("/api/replay/ghost/view");
     expect(res.status).toBe(404);
     expect(res.body).toMatchObject({ error: expect.any(String) });
+  });
+});
+
+describe("production store stack over HTTP", () => {
+  it("serves the full dev seed (client-mock parity) through /api/replay/list", async () => {
+    replaceStoreForTests(makeDefaultStore());
+    const res = await supertest(makeApp()).get("/api/replay/list?pageSize=100");
+    expect(res.status).toBe(200);
+    const body = res.body as { total: number; replays: { matchId: string }[] };
+    expect(body.total).toBe(SEED_REPLAYS.length);
+    expect(body.replays.map((r) => r.matchId)).toContain("mock-match-1");
   });
 });
 

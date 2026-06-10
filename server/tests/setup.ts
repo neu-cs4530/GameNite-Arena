@@ -1,6 +1,6 @@
 import { beforeEach } from "vitest";
 import { resetEverythingToDefaults } from "../src/initRepository.ts";
-import { MatchRepo } from "../src/repository.ts";
+import { MatchRepo, WatchCountRepo } from "../src/repository.ts";
 import { matchRecorder } from "../src/services/matchRecorder.service.ts";
 import { makeDefaultStore, replaceStoreForTests } from "../src/services/replay.service.ts";
 
@@ -12,6 +12,7 @@ beforeEach(async () => {
   // lives here rather than in resetEverythingToDefaults because server.ts
   // runs that function against real deployments.)
   await MatchRepo.clear();
+  await WatchCountRepo.clear();
   matchRecorder.resetForTests();
   replaceStoreForTests(makeDefaultStore());
 });

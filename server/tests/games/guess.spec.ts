@@ -89,3 +89,35 @@ describe(`Guessing game's tagView() logic`, () => {
     });
   });
 });
+
+describe(`Guessing game's winnerIndex() logic`, () => {
+  it("Should pick the player with the closest guess", () => {
+    expect(guessLogic.winnerIndex!({ secret: 50, guesses: [40, 49] })).toBe(1);
+    expect(guessLogic.winnerIndex!({ secret: 50, guesses: [51, 30] })).toBe(0);
+    expect(guessLogic.winnerIndex!({ secret: 50, guesses: [10, 90, 50] })).toBe(2);
+  });
+  it("Should treat over- and under-guesses symmetrically (absolute distance)", () => {
+    expect(guessLogic.winnerIndex!({ secret: 50, guesses: [53, 40] })).toBe(0);
+  });
+  it("Should declare a draw (null) when players tie for closest", () => {
+    expect(guessLogic.winnerIndex!({ secret: 50, guesses: [45, 55] })).toBeNull();
+    expect(guessLogic.winnerIndex!({ secret: 50, guesses: [49, 51, 1] })).toBeNull();
+  });
+  it("Should still pick a sole winner when only some players tie", () => {
+    // Players 0 and 1 tie at distance 10, but player 2 is closer.
+    expect(guessLogic.winnerIndex!({ secret: 50, guesses: [40, 60, 55] })).toBe(2);
+  });
+});
+
+describe(`Guessing game's parseMove() logic`, () => {
+  it("Should return the canonical move for valid payloads", () => {
+    expect(guessLogic.parseMove!(1)).toBe(1);
+    expect(guessLogic.parseMove!(100)).toBe(100);
+  });
+  it("Should return null for invalid payloads", () => {
+    expect(guessLogic.parseMove!(0)).toBeNull();
+    expect(guessLogic.parseMove!(101)).toBeNull();
+    expect(guessLogic.parseMove!("55")).toBeNull();
+    expect(guessLogic.parseMove!(undefined)).toBeNull();
+  });
+});
