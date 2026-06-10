@@ -77,3 +77,25 @@ describe(`Nim's tagView() logic`, () => {
     });
   });
 });
+
+describe(`Nim's winnerIndex() logic (misère)`, () => {
+  it("Should award the win to the player who did NOT take the last object", () => {
+    // After the final move the turn has already flipped, so nextPlayer is
+    // the player who forced the opponent to take the last object.
+    expect(nimLogic.winnerIndex!({ remaining: 0, nextPlayer: 1 })).toBe(1);
+    expect(nimLogic.winnerIndex!({ remaining: 0, nextPlayer: 0 })).toBe(0);
+  });
+});
+
+describe(`Nim's parseMove() logic`, () => {
+  it("Should return the canonical move for valid payloads", () => {
+    expect(nimLogic.parseMove!(1)).toBe(1);
+    expect(nimLogic.parseMove!(3)).toBe(3);
+  });
+  it("Should return null for invalid payloads", () => {
+    expect(nimLogic.parseMove!(0)).toBeNull();
+    expect(nimLogic.parseMove!(4)).toBeNull();
+    expect(nimLogic.parseMove!("3")).toBeNull();
+    expect(nimLogic.parseMove!(null)).toBeNull();
+  });
+});

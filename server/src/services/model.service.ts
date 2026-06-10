@@ -19,7 +19,7 @@ const SUPPORTED_GAME_KEYS: GameKey[] = [
   "connect4",
   "checkers",
   "nim",
-  "numguesser",
+  "guess",
 ] as GameKey[];
 
 const CURRENT_ADAPTER_VERSION = "1.0.0";

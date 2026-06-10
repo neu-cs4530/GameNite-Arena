@@ -1,5 +1,6 @@
 import { type GameInfo, type GameKey, type TaggedGameView } from "@gamenite/shared";
 import { createChat } from "./chat.service.ts";
+import { matchRecorder } from "./matchRecorder.service.ts";
 import { populateSafeUserInfo } from "./user.service.ts";
 import { type GameServicer } from "../games/gameServiceManager.ts";
 import { nimGameService } from "../games/nim.ts";
@@ -165,12 +166,47 @@ export async function updateGame(gameId: string, user: UserWithId, move: unknown
   if (playerIndex < 0) {
     throw new Error(`user ${user.username} made a move in a game they weren't playing`);
   }
-  const result = gameServices[game.type].update(game.state, move, playerIndex, game.players);
+  const service = gameServices[game.type];
+  const result = service.update(game.state, move, playerIndex, game.players);
   if (!result) throw new Error(`user ${user.username} made an invalid move in ${game.type}`);
 
+  const stateBeforeMove = game.state;
   game.state = result.state;
   game.done = game.done || result.done;
+  // models.ts contract: a finished game points at its MatchRecord, which the
+  // recorder stores under the gameId.
+  if (result.done) game.matchId = gameId;
   await GameRepo.set(gameId, game);
+
+  // Map the winner inference to a userId for the archive: number = winner's
+  // player index, null = draw, undefined = the game has no winner hook.
+  // TODO: the index only maps into game.players today; once mixed human/AI
+  // games exist, the index space must also cover game.aiPlayers.
+  const winnerId =
+    typeof result.winnerIndex === "number" ? game.players[result.winnerIndex] : result.winnerIndex;
+
+  // Archive the canonical (schema-parsed) move so the replay viewer never
+  // sees raw pre-validation payloads; games without a parseMove hook fall
+  // back to the raw payload (parseMove returns null for those).
+  const canonicalMove = service.parseMove(move) ?? move;
+
+  // Move is validated and persisted — archive it for the replay viewer.
+  // Archival is a side-channel: a failed write must not fail the move or
+  // swallow the view broadcast, so log and continue.
+  try {
+    await matchRecorder.captureMove(
+      game,
+      gameId,
+      user.userId,
+      canonicalMove,
+      result.done,
+      stateBeforeMove,
+      winnerId,
+    );
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`match capture failed for game ${gameId}:`, err);
+  }
 
   return result.views;
 }

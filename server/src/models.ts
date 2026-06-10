@@ -198,7 +198,14 @@ export interface ModelRecord {
   gameKey: GameKey;
   displayName: string;
   sourceRef: string;
+  /**
+   * Store-relative artifact name (`<modelId>.pth`) inside the artifact
+   * store — never an absolute path. Resolve through
+   * artifactStore.service.ts resolveArtifactRef().
+   */
   artifactRef?: string;
+  /** Integrity metadata recorded when the artifact was stored. */
+  artifactMeta?: ArtifactMeta;
   forkedFrom?: RecordId; // References Model records (Story 2.13)
   visibility: "private" | "public";
   createdAt: DateISO;
@@ -256,6 +263,27 @@ export interface TrainingCheckpoint {
   episode: number;
   artifactRef: string;
   createdAt: DateISO;
+}
+
+/**
+ * An expiring API token for the LOCAL training channel. The trainer exchanges
+ * its password once (POST /api/training/token) and authenticates subsequent
+ * session calls with the token, so the password never lives in training
+ * loops or shell history. Keyed by the token string itself for O(1) lookup.
+ * Expired records are ignored at auth time (the Repo interface has no
+ * delete, so they age out with the store).
+ */
+export interface ArtifactMeta {
+  bytes: number;
+  sha256: string;
+  uploadedAt: DateISO;
+}
+
+export interface TrainingTokenRecord {
+  userId: RecordId; // References User records
+  username: string;
+  createdAt: DateISO;
+  expiresAt: DateISO;
 }
 
 /**
@@ -330,6 +358,9 @@ export function ratingKey(args: {
  * - `participants`: snapshot of who played, with type discriminator
  * - `moves`: every move in order, with actor and timestamp
  * - `result`: outcome and rating changes applied
+ * - `initialState`: per-game state before the first move, so the replay
+ *   viewer can rebuild positions that aren't derivable from moves alone
+ *   (e.g. the guess game's secret number)
  * - `createdAt`: when the match record was created (same as completedAt usually)
  * - `completedAt`: when the original game finished
  */
@@ -340,6 +371,7 @@ export interface MatchRecord {
   participants: MatchParticipant[];
   moves: MatchMove[];
   result: MatchResult;
+  initialState?: unknown;
   createdAt: DateISO;
   completedAt: DateISO;
 }
