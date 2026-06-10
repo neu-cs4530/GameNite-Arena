@@ -128,17 +128,18 @@ A user-uploaded AI model. The Python source lives in object storage at
 `sourceRef`; the trained `.pth` lands at `artifactRef` after the first
 successful training job.
 
-| Field         | Type                    | Required | Story | Notes                                                |
-| ------------- | ----------------------- | -------- | ----- | ---------------------------------------------------- |
-| `userId`      | RecordId                | yes      | 2.4   | References `UserRecord` (owner)                      |
-| `gameKey`     | GameKey                 | yes      | 2.2   | Which game this model targets                        |
-| `displayName` | string                  | yes      |       | Shown on leaderboards / model cards                  |
-| `sourceRef`   | string                  | yes      | 2.1   | Object-storage key for the uploaded .py              |
-| `artifactRef` | string                  | no       | 2.4   | Object-storage key for the .pth (set after training) |
-| `forkedFrom`  | RecordId                | no       | 2.13  | Parent model id if this is a fork                    |
-| `visibility`  | `"private" \| "public"` | yes      | 2.13  | Default "private"                                    |
-| `createdAt`   | DateISO                 | yes      |       |                                                      |
-| `updatedAt`   | DateISO                 | yes      |       |                                                      |
+| Field          | Type                    | Required | Story | Notes                                                                                                                       |
+| -------------- | ----------------------- | -------- | ----- | --------------------------------------------------------------------------------------------------------------------------- |
+| `userId`       | RecordId                | yes      | 2.4   | References `UserRecord` (owner)                                                                                             |
+| `gameKey`      | GameKey                 | yes      | 2.2   | Which game this model targets                                                                                               |
+| `displayName`  | string                  | yes      |       | Shown on leaderboards / model cards                                                                                         |
+| `sourceRef`    | string                  | yes      | 2.1   | Object-storage key for the uploaded .py                                                                                     |
+| `artifactRef`  | string                  | no       | 2.4   | Store-relative artifact name `<modelId>.pth` (see artifactStore.service.ts; migration 001 normalized legacy absolute paths) |
+| `artifactMeta` | `ArtifactMeta`          | no       | 2.4   | `{ bytes, sha256, uploadedAt }` recorded when the artifact is stored                                                        |
+| `forkedFrom`   | RecordId                | no       | 2.13  | Parent model id if this is a fork                                                                                           |
+| `visibility`   | `"private" \| "public"` | yes      | 2.13  | Default "private"                                                                                                           |
+| `createdAt`    | DateISO                 | yes      |       |                                                                                                                             |
+| `updatedAt`    | DateISO                 | yes      |       |                                                                                                                             |
 
 ### TrainingJobRecord (`trainingJob`)
 

@@ -34,6 +34,7 @@ import {
   publishTrainingProgress,
   type ProgressPublisherClient,
 } from "./trainingPublish.service.ts";
+import { storeModelArtifact, resolveArtifactRef } from "./artifactStore.service.ts";
 import type { UserWithId } from "../types.ts";
 
 // Publisher injection
@@ -353,30 +354,44 @@ export async function cancelTrainingSession(
   return populateSessionInfo(jobId);
 }
 
-/** Bind an uploaded .pth artifact to the session's model (CoS 2.4). */
+/**
+ * Bind an uploaded .pth to the session's model (CoS 2.4). The upload is
+ * moved into the artifact store under the canonical `<modelId>.pth` name —
+ * the layout the inference service deploys from — and integrity metadata
+ * is recorded on the model.
+ */
 export async function bindSessionArtifact(
   user: UserWithId,
   jobId: string,
-  artifactPath: string,
+  uploadedPath: string,
 ): Promise<TrainingSessionInfo> {
   const job = await getOwnedSession(user, jobId);
 
   const model = await ModelRepo.find(job.modelId);
   if (!model) throw new Error(`Model ${job.modelId} not found`);
 
-  model.artifactRef = artifactPath;
-  model.updatedAt = new Date().toISOString();
+  const stored = await storeModelArtifact(job.modelId, uploadedPath);
+  model.artifactRef = stored.ref;
+  model.artifactMeta = {
+    bytes: stored.bytes,
+    sha256: stored.sha256,
+    uploadedAt: stored.storedAt,
+  };
+  model.updatedAt = stored.storedAt;
   await ModelRepo.set(job.modelId, model);
 
   return populateSessionInfo(jobId);
 }
 
-/** Absolute path of the session's uploaded artifact, or null if none. */
+/**
+ * Absolute path of the session's stored artifact, or null if none. Resolves
+ * through the artifact store, so a ref can never point outside it.
+ */
 export async function getSessionArtifactPath(jobId: string): Promise<string | null> {
   const job = await TrainingJobRepo.find(jobId);
   if (!job) return null;
   const model = await ModelRepo.find(job.modelId);
-  return model?.artifactRef ?? null;
+  return resolveArtifactRef(model?.artifactRef);
 }
 
 /** Public read of one session. */

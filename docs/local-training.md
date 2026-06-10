@@ -107,6 +107,31 @@ else:
     session.upload_artifact("my-nim-bot.pth")
 ```
 
+## Artifact storage and the deployment handoff
+
+`server/src/services/artifactStore.service.ts` is the single owner of
+trained-model files. The contract:
+
+- One root (`server/models/`), one file per model, named `<modelId>.pth`.
+  Uploads are moved into that name atomically; a retrain replaces the previous
+  artifact. `ModelRecord.artifactRef` holds the store-relative name (never a
+  path) and `artifactMeta` records `{ bytes, sha256, uploadedAt }`.
+- All reads resolve through `resolveArtifactRef()`, which only ever resolves
+  inside the root — refs cannot point file-serving code anywhere else.
+- This is exactly the layout the inference service loads from
+  (`inference_service.py` opens `MODEL_STORE / f"{model_id}.pth"` on
+  `/inference/load`), so deployment needs zero glue:
+
+  ```bash
+  MODEL_STORE_PATH=server/models uvicorn inference_service:app --port 8001
+  ```
+
+  and a `/inference/load { model_id }` for any model with `hasArtifact: true`
+  finds its file.
+
+Migration `001_canonical_artifact_refs` rewrites legacy absolute-path refs
+into this shape (`npm run -w server migrate`).
+
 ## The real thing
 
 `ai/example_local_training_nim.py` is the canonical full workflow with nothing

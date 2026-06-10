@@ -2,10 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import express from "express";
 import supertest from "supertest";
 import * as fs from "node:fs";
+import * as path from "node:path";
 import type { TrainingSessionInfo } from "@gamenite/shared";
 import { trainingRouter } from "../../src/controllers/training.controller.ts";
 import { setTrainingSessionPublisher } from "../../src/services/trainingSession.service.ts";
 import { ModelRepo, TrainingJobRepo } from "../../src/repository.ts";
+import { ARTIFACT_ROOT } from "../../src/services/artifactStore.service.ts";
 
 /* ---------------------------------------------------------------------------
  * Router-only mount (the full app.ts transitively requires REDIS_URL). The
@@ -238,8 +240,8 @@ describe("artifact upload / download", () => {
     expect(res.body.hasArtifact).toBe(true);
 
     const model = await ModelRepo.get(info.modelId);
-    expect(model.artifactRef).toBeDefined();
-    UPLOADED_FILES.push(model.artifactRef!);
+    expect(model.artifactRef).toBe(`${info.modelId}.pth`);
+    UPLOADED_FILES.push(path.join(ARTIFACT_ROOT, model.artifactRef!));
   });
 
   it("serves the uploaded artifact back", async () => {
@@ -249,7 +251,7 @@ describe("artifact upload / download", () => {
       .field("auth", JSON.stringify(AUTH0))
       .attach("file", Buffer.from("fake torch weights"), "trained.pth");
     const model = await ModelRepo.get(info.modelId);
-    UPLOADED_FILES.push(model.artifactRef!);
+    UPLOADED_FILES.push(path.join(ARTIFACT_ROOT, model.artifactRef!));
 
     const res = await supertest(app)
       .get(`/api/training/${info.jobId}/artifact`)
@@ -361,7 +363,7 @@ describe("token auth channel", () => {
       .attach("file", Buffer.from("token-auth weights"), "trained.pth");
     expect(res.status).toBe(200);
     const model = await ModelRepo.get(info.modelId);
-    UPLOADED_FILES.push(model.artifactRef!);
+    UPLOADED_FILES.push(path.join(ARTIFACT_ROOT, model.artifactRef!));
   });
 });
 

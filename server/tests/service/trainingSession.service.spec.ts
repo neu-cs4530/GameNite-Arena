@@ -1,4 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import {
   TRAINING_PROGRESS_CHANNEL,
   lastEventKey,
@@ -17,6 +20,7 @@ import {
   setTrainingSessionPublisher,
 } from "../../src/services/trainingSession.service.ts";
 import { ModelRepo, TrainingJobRepo } from "../../src/repository.ts";
+import { ARTIFACT_ROOT } from "../../src/services/artifactStore.service.ts";
 import { getUserByUsername } from "../../src/services/auth.service.ts";
 import type { UserWithId } from "../../src/types.ts";
 
@@ -293,25 +297,47 @@ describe("terminal transitions", () => {
 });
 
 describe("artifacts", () => {
-  it("bindSessionArtifact stores the artifact on the model", async () => {
+  function makeUpload(content: string): string {
+    const uploaded = path.join(os.tmpdir(), `session-spec-${Date.now()}-${Math.random()}.pth`);
+    fs.writeFileSync(uploaded, content);
+    return uploaded;
+  }
+
+  it("bindSessionArtifact stores through the artifact store: canonical ref + integrity meta", async () => {
     const start = await startTrainingSession(user0, nimStart);
-    const info = await bindSessionArtifact(user0, start.jobId, "/tmp/trained.pth");
+    const uploaded = makeUpload("trained weights");
+
+    const info = await bindSessionArtifact(user0, start.jobId, uploaded);
 
     expect(info.hasArtifact).toBe(true);
     const model = await ModelRepo.get(start.modelId);
-    expect(model.artifactRef).toBe("/tmp/trained.pth");
-    expect(await getSessionArtifactPath(start.jobId)).toBe("/tmp/trained.pth");
+    expect(model.artifactRef).toBe(`${start.modelId}.pth`);
+    expect(model.artifactMeta?.bytes).toBe(Buffer.byteLength("trained weights"));
+    expect(model.artifactMeta?.sha256).toHaveLength(64);
+
+    // The upload was MOVED into the store; the temp file is gone and the
+    // resolved path lives inside the artifact root.
+    expect(fs.existsSync(uploaded)).toBe(false);
+    const resolved = await getSessionArtifactPath(start.jobId);
+    expect(resolved).toBe(path.join(ARTIFACT_ROOT, `${start.modelId}.pth`));
+    fs.unlinkSync(resolved!);
   });
 
   it("only the owner can bind an artifact", async () => {
     const start = await startTrainingSession(user0, nimStart);
-    await expect(bindSessionArtifact(user1, start.jobId, "/tmp/evil.pth")).rejects.toThrow(
-      /not own/,
-    );
+    const uploaded = makeUpload("evil");
+    await expect(bindSessionArtifact(user1, start.jobId, uploaded)).rejects.toThrow(/not own/);
+    fs.unlinkSync(uploaded);
   });
 
-  it("getSessionArtifactPath is null before any upload", async () => {
+  it("getSessionArtifactPath is null before any upload and never serves escaping refs", async () => {
     const start = await startTrainingSession(user0, nimStart);
+    expect(await getSessionArtifactPath(start.jobId)).toBeNull();
+
+    // A record that somehow carries a path-shaped ref must not resolve.
+    const model = await ModelRepo.get(start.modelId);
+    model.artifactRef = "/etc/passwd";
+    await ModelRepo.set(start.modelId, model);
     expect(await getSessionArtifactPath(start.jobId)).toBeNull();
   });
 });
