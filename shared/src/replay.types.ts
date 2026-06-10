@@ -104,3 +104,13 @@ export interface ReplayWatchCountResponse {
   matchId: string;
   watchCount: number;
 }
+
+/**
+ * Socket broadcast sent to everyone in a replay's presence room whenever a
+ * viewer joins or leaves. `count` is the live socket-room size — real
+ * presence, not an estimate.
+ */
+export interface ReplayWatchersPayload {
+  matchId: string;
+  count: number;
+}

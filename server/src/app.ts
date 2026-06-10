@@ -97,6 +97,12 @@ io.on("connection", (socket) => {
   socket.on("gameStart", game.socketStart(socket, io));
   socket.on("gameWatch", game.socketWatch(socket, io));
 
+  socket.on("replayWatch", replay.socketReplayWatch(socket, io));
+  socket.on("replayLeave", replay.socketReplayLeave(socket, io));
+  // Closed tabs never send replayLeave; broadcast corrected watcher counts
+  // while the departing socket's rooms are still known.
+  socket.on("disconnecting", () => replay.handleReplayDisconnecting(socket, io));
+
   socket.onAny((name, payload) => {
     // The training progress bridge's events carry a bare { jobId } payload by
     // contract (trainingProgress.types.ts), not the { auth, payload } shape —

@@ -46,6 +46,29 @@ export const guessLogic: GameLogic<GuessState, GuessView> = {
     return view;
   },
   tagView: (view) => ({ type: "guess", view }),
+  // The closest guess to the secret wins (matches the client GuessGame
+  // "best guess" crown). If two or more players tie for closest, the game is
+  // a draw (null). Only called when isDone(state) is true, so every guess is
+  // non-null here.
+  winnerIndex: ({ secret, guesses }) => {
+    if (!allGuessed(guesses)) return null;
+    let best: number | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    guesses.forEach((guess, index) => {
+      const distance = Math.abs(guess - secret);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = index;
+      } else if (distance === bestDistance) {
+        best = null;
+      }
+    });
+    return best;
+  },
+  parseMove: (payload) => {
+    const move = zGuessMove.safeParse(payload);
+    return move.success ? move.data : null;
+  },
 };
 
 export const guessGameService = new GameService<GuessState, GuessView>(guessLogic);

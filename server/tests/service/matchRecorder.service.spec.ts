@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { GameRecord } from "../../src/models.ts";
-import { MatchRecorder } from "../../src/services/matchRecorder.service.ts";
+import {
+  DEFAULT_IDLE_TIMEOUT_MS,
+  MatchRecorder,
+} from "../../src/services/matchRecorder.service.ts";
 import { InMemoryMatchRepo } from "../../src/services/matchRepo.service.ts";
 
 /* ---------------------------------------------------------------------------
@@ -118,6 +121,26 @@ describe("MatchRecorder", () => {
     expect(database.matches.has("game-B")).toBe(false);
   });
 
+  it("archives { outcome: 'win', winnerId } when the caller resolves a winner", async () => {
+    await recorder.captureMove(baseGame, "game-001", "u-alice", 3, false);
+    await recorder.captureMove(baseGame, "game-001", "u-bob", 3, true, undefined, "u-bob");
+    const stored = database.matches.get("game-001")!;
+    expect(stored.result).toEqual({ outcome: "win", winnerId: "u-bob" });
+  });
+
+  it("archives { outcome: 'draw' } when the caller passes winnerId null", async () => {
+    await recorder.captureMove(baseGame, "game-001", "u-alice", 50, false);
+    await recorder.captureMove(baseGame, "game-001", "u-bob", 50, true, undefined, null);
+    const stored = database.matches.get("game-001")!;
+    expect(stored.result).toEqual({ outcome: "draw" });
+    expect(stored.result.winnerId).toBeUndefined();
+  });
+
+  it("archives a winnerless win when the game has no winner hook (winnerId undefined)", async () => {
+    await recorder.captureMove(baseGame, "game-001", "u-alice", 3, true, undefined, undefined);
+    expect(database.matches.get("game-001")!.result).toEqual({ outcome: "win" });
+  });
+
   it("handles a single-move game (done=true on the very first capture)", async () => {
     await recorder.captureMove(baseGame, "game-001", "u-alice", { take: 7 }, true);
     const stored = database.matches.get("game-001");
@@ -199,5 +222,95 @@ describe("MatchRecorder", () => {
     // After reset the same gameId can be recorded fresh.
     await recorder.captureMove(baseGame, "game-001", "u-alice", 2, true);
     expect(database.matches.get("game-001")!.moves.map((m) => m.move)).toEqual([2]);
+  });
+
+  describe("abandoned-game finalization", () => {
+    it("finalizeAsAbandoned persists the buffered moves with outcome abandoned and no winner", async () => {
+      await recorder.captureMove(baseGame, "game-001", "u-alice", 3, false, {
+        remaining: 21,
+        nextPlayer: 0,
+      });
+      await recorder.captureMove(baseGame, "game-001", "u-bob", 2, false);
+
+      await recorder.finalizeAsAbandoned("game-001");
+
+      const stored = database.matches.get("game-001")!;
+      expect(stored.result).toEqual({ outcome: "abandoned" });
+      expect(stored.result.winnerId).toBeUndefined();
+      expect(stored.moves.map((m) => m.move)).toEqual([3, 2]);
+      expect(stored.initialState).toEqual({ remaining: 21, nextPlayer: 0 });
+      expect(recorder.isRecording("game-001")).toBe(false);
+    });
+
+    it("finalizeAsAbandoned marks the game finalized so later captures are ignored", async () => {
+      await recorder.captureMove(baseGame, "game-001", "u-alice", 3, false);
+      await recorder.finalizeAsAbandoned("game-001");
+      // A straggler move (e.g. a delayed retry) must not resurrect the game.
+      await recorder.captureMove(baseGame, "game-001", "u-bob", 1, true);
+      const stored = database.matches.get("game-001")!;
+      expect(stored.result).toEqual({ outcome: "abandoned" });
+      expect(stored.moves).toHaveLength(1);
+      expect(recorder.isRecording("game-001")).toBe(false);
+    });
+
+    it("finalizeAsAbandoned is a no-op for untracked or already-finalized games", async () => {
+      await recorder.finalizeAsAbandoned("never-seen");
+      expect(database.matches.size).toBe(0);
+
+      await recorder.captureMove(baseGame, "game-001", "u-alice", 3, true);
+      const finished = database.matches.get("game-001")!;
+      await recorder.finalizeAsAbandoned("game-001");
+      // The cleanly-finished archive is untouched.
+      expect(database.matches.get("game-001")).toEqual(finished);
+      expect(database.matches.get("game-001")!.result).toEqual({ outcome: "win" });
+    });
+
+    it("sweepIdleMatches abandons entries idle longer than maxIdleMs and keeps fresh ones", async () => {
+      const game2: GameRecord = { ...baseGame, players: ["u-alice", "u-carol"] };
+      await recorder.captureMove(baseGame, "game-old", "u-alice", 3, false);
+      // Time passes; game-new sees its move much later.
+      fakeTime += 10_000;
+      await recorder.captureMove(game2, "game-new", "u-alice", 2, false);
+
+      await recorder.sweepIdleMatches(5_000);
+
+      expect(recorder.isRecording("game-old")).toBe(false);
+      expect(recorder.isRecording("game-new")).toBe(true);
+      expect(database.matches.get("game-old")!.result).toEqual({ outcome: "abandoned" });
+      expect(database.matches.has("game-new")).toBe(false);
+    });
+
+    it("sweepIdleMatches does not abandon entries at or under the idle threshold", async () => {
+      await recorder.captureMove(baseGame, "game-001", "u-alice", 3, false);
+      fakeTime += 4_000;
+      await recorder.sweepIdleMatches(5_000);
+      expect(recorder.isRecording("game-001")).toBe(true);
+      expect(database.matches.size).toBe(0);
+    });
+
+    it("captureMove lazily sweeps games idle past DEFAULT_IDLE_TIMEOUT_MS", async () => {
+      const game2: GameRecord = { ...baseGame, players: ["u-alice", "u-carol"] };
+      await recorder.captureMove(baseGame, "game-stale", "u-alice", 3, false);
+      // More than an hour of (fake) silence, then activity on another game.
+      fakeTime += DEFAULT_IDLE_TIMEOUT_MS + 60_000;
+      await recorder.captureMove(game2, "game-active", "u-alice", 2, false);
+
+      expect(recorder.isRecording("game-stale")).toBe(false);
+      expect(database.matches.get("game-stale")!.result).toEqual({ outcome: "abandoned" });
+      // The triggering game records normally.
+      expect(recorder.isRecording("game-active")).toBe(true);
+    });
+
+    it("the lazy sweep skips the game being captured even if it was idle", async () => {
+      await recorder.captureMove(baseGame, "game-001", "u-alice", 3, false);
+      // The same game goes quiet past the timeout, then its player returns.
+      fakeTime += DEFAULT_IDLE_TIMEOUT_MS + 60_000;
+      await recorder.captureMove(baseGame, "game-001", "u-bob", 2, true, undefined, "u-bob");
+
+      // It finalizes as a normal win, not as abandoned.
+      const stored = database.matches.get("game-001")!;
+      expect(stored.result).toEqual({ outcome: "win", winnerId: "u-bob" });
+      expect(stored.moves).toHaveLength(2);
+    });
   });
 });

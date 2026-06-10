@@ -14,6 +14,14 @@ import { type TaggedGameView } from "@gamenite/shared";
  *  - `viewAs`: creates the view of a game's state for a given player (-1 for
  *    watchers)
  *  - `tagView`: adds the correct game key to the game view
+ *  - `winnerIndex` (optional): given a finished state, returns the index of
+ *    the winning player, or null for a draw. Only called when
+ *    `isDone(state)` is true. Games without this hook archive a winnerless
+ *    result.
+ *  - `parseMove` (optional): canonicalizes a raw move payload (e.g. via the
+ *    game's zod schema), returning the parsed value or null when the payload
+ *    is invalid. Used so the match archive stores the schema-normalized move
+ *    rather than the raw pre-validation payload.
  */
 export interface GameLogic<GameState, GameView> {
   minPlayers: number;
@@ -23,4 +31,8 @@ export interface GameLogic<GameState, GameView> {
   isDone: (state: GameState) => boolean;
   viewAs: (state: GameState, playerIndex: number) => GameView;
   tagView: (view: GameView) => TaggedGameView;
+  winnerIndex?: (state: GameState) => number | null;
+  // Returns the parsed move, or null when the payload is invalid. (Typed as
+  // bare `unknown` because `unknown | null` is a redundant union.)
+  parseMove?: (payload: unknown) => unknown;
 }
