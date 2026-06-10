@@ -27,7 +27,7 @@ import {
   type MatchRecord,
   type MatchResult,
 } from "../models.ts";
-import { UserRepo } from "../repository.ts";
+import { MatchRepo as matchRepoStore, UserRepo } from "../repository.ts";
 import { type MatchRepo } from "./matchRepo.service.ts";
 
 export type DisplayNameResolver = (userId: string) => Promise<string>;
@@ -51,6 +51,7 @@ interface InProgressMatch {
   humanIds: string[];
   aiParticipants: { id: string; displayName: string }[];
   moves: MatchMove[];
+  initialState?: unknown;
   createdAt: string;
 }
 
@@ -59,6 +60,14 @@ export class MatchRecorder {
   private readonly _resolveDisplayName: DisplayNameResolver;
   private readonly _getCurrentTime: () => number;
   private readonly _inProgress = new Map<string, InProgressMatch>();
+  /**
+   * Games whose finalize has begun. Checked synchronously at the top of
+   * captureMove so a concurrent duplicate of the final move can neither
+   * append to the buffer mid-finalize nor re-finalize and overwrite the
+   * archive (updateGame has no per-game locking, so duplicate submissions
+   * of the same move can race).
+   */
+  private readonly _finalized = new Set<string>();
 
   constructor(deps: RecorderDependencies) {
     this._database = deps.database;
@@ -71,17 +80,30 @@ export class MatchRecorder {
     return this._inProgress.has(gameId);
   }
 
+  /** Clears all recorder state. Test hook — never call in production code. */
+  resetForTests(): void {
+    this._inProgress.clear();
+    this._finalized.clear();
+  }
+
   /**
    * Capture one validated move. Internally:
    *   - starts tracking if this is the first move for `gameId`
    *   - appends the move to the in-memory buffer
    *   - if `done`, finalizes the record and persists to MatchRepo
    *
-   * @param game   The GameRecord at the time the move was accepted.
-   * @param gameId The id under which `game` is stored in GameRepo.
-   * @param actor  The userId / modelId who made the move.
-   * @param move   The raw move payload, stored as-is on `MatchMove.move`.
-   * @param done   Whether this move ended the game.
+   * TODO: games abandoned mid-match stay in `_inProgress` forever — there is
+   * no leave/forfeit/timeout flow on the server yet to trigger an
+   * `outcome: "abandoned"` finalize. Revisit when that flow exists.
+   *
+   * @param game     The GameRecord at the time the move was accepted.
+   * @param gameId   The id under which `game` is stored in GameRepo.
+   * @param actor    The userId / modelId who made the move.
+   * @param move     The raw move payload, stored as-is on `MatchMove.move`.
+   * @param done     Whether this move ended the game.
+   * @param stateBeforeMove The per-game state before this move was applied.
+   *   Captured on the first move as the record's `initialState` so replays
+   *   can rebuild positions not derivable from moves (e.g. guess's secret).
    */
   async captureMove(
     game: GameRecord,
@@ -89,7 +111,9 @@ export class MatchRecorder {
     actor: string,
     move: unknown,
     done: boolean,
+    stateBeforeMove?: unknown,
   ): Promise<void> {
+    if (this._finalized.has(gameId)) return;
     const nowIso = new Date(this._getCurrentTime()).toISOString();
 
     let entry = this._inProgress.get(gameId);
@@ -103,6 +127,7 @@ export class MatchRecorder {
           displayName: p.displayName,
         })),
         moves: [],
+        initialState: stateBeforeMove,
         createdAt: nowIso,
       };
       this._inProgress.set(gameId, entry);
@@ -111,14 +136,19 @@ export class MatchRecorder {
     entry.moves.push({ actor, move, timestamp: nowIso });
 
     if (done) {
+      // Mark finalized before the first await so a racing duplicate of the
+      // final move exits at the guard above instead of corrupting the buffer.
+      this._finalized.add(gameId);
+      const moves = [...entry.moves];
       const participants = await this._buildParticipants(entry);
       const record: MatchRecord = {
         gameId,
         gameKey: entry.gameKey,
         rated: entry.rated,
         participants,
-        moves: entry.moves,
+        moves,
         result: this._defaultResult(),
+        initialState: entry.initialState,
         createdAt: entry.createdAt,
         completedAt: nowIso,
       };
@@ -153,3 +183,14 @@ export class MatchRecorder {
     return { outcome: "win" };
   }
 }
+
+/**
+ * Production recorder singleton. Finalized matches land in the Keyv-backed
+ * `MatchRepo` from repository.ts under the gameId as key — the same repo
+ * puzzle.service.ts and replay.service.ts read from. Storage backend follows
+ * the global Keyv initializer (in-memory by default, MongoDB when MONGO_STR
+ * is configured at startup).
+ */
+export const matchRecorder = new MatchRecorder({
+  database: { saveMatch: (record) => matchRepoStore.set(record.gameId, record) },
+});

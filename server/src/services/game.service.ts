@@ -1,5 +1,6 @@
 import { type GameInfo, type GameKey, type TaggedGameView } from "@gamenite/shared";
 import { createChat } from "./chat.service.ts";
+import { matchRecorder } from "./matchRecorder.service.ts";
 import { populateSafeUserInfo } from "./user.service.ts";
 import { type GameServicer } from "../games/gameServiceManager.ts";
 import { nimGameService } from "../games/nim.ts";
@@ -168,9 +169,23 @@ export async function updateGame(gameId: string, user: UserWithId, move: unknown
   const result = gameServices[game.type].update(game.state, move, playerIndex, game.players);
   if (!result) throw new Error(`user ${user.username} made an invalid move in ${game.type}`);
 
+  const stateBeforeMove = game.state;
   game.state = result.state;
   game.done = game.done || result.done;
+  // models.ts contract: a finished game points at its MatchRecord, which the
+  // recorder stores under the gameId.
+  if (result.done) game.matchId = gameId;
   await GameRepo.set(gameId, game);
+
+  // Move is validated and persisted — archive it for the replay viewer.
+  // Archival is a side-channel: a failed write must not fail the move or
+  // swallow the view broadcast, so log and continue.
+  try {
+    await matchRecorder.captureMove(game, gameId, user.userId, move, result.done, stateBeforeMove);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`match capture failed for game ${gameId}:`, err);
+  }
 
   return result.views;
 }

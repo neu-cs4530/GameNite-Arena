@@ -330,6 +330,9 @@ export function ratingKey(args: {
  * - `participants`: snapshot of who played, with type discriminator
  * - `moves`: every move in order, with actor and timestamp
  * - `result`: outcome and rating changes applied
+ * - `initialState`: per-game state before the first move, so the replay
+ *   viewer can rebuild positions that aren't derivable from moves alone
+ *   (e.g. the guess game's secret number)
  * - `createdAt`: when the match record was created (same as completedAt usually)
  * - `completedAt`: when the original game finished
  */
@@ -340,6 +343,7 @@ export interface MatchRecord {
   participants: MatchParticipant[];
   moves: MatchMove[];
   result: MatchResult;
+  initialState?: unknown;
   createdAt: DateISO;
   completedAt: DateISO;
 }
