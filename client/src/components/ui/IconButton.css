@@ -1,0 +1,91 @@
+.ga-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--color-fg);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+.ga-icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.ga-icon-button--sm {
+  width: var(--space-8);
+  height: var(--space-8);
+  font-size: var(--text-small);
+}
+
+.ga-icon-button--md {
+  width: var(--space-10);
+  height: var(--space-10);
+  font-size: var(--text-body);
+}
+
+.ga-icon-button--lg {
+  width: var(--space-12);
+  height: var(--space-12);
+  font-size: var(--text-h3);
+}
+
+.ga-icon-button--ghost:hover:not(:disabled),
+.ga-icon-button--ghost.ga-icon-button--active {
+  background: var(--color-surface);
+  color: var(--color-fg);
+}
+
+.ga-icon-button--soft {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.ga-icon-button--soft:hover:not(:disabled) {
+  background: oklch(from var(--color-primary-soft) calc(l - 0.04) c h);
+}
+
+.ga-icon-button--primary {
+  background: var(--color-primary);
+  color: var(--color-fg-on-primary);
+}
+
+.ga-icon-button--primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+
+.ga-icon-button--secondary {
+  background: var(--color-bg-elevated);
+  color: var(--color-fg);
+  border-color: var(--color-border);
+}
+
+.ga-icon-button--secondary:hover:not(:disabled) {
+  background: var(--color-surface);
+  border-color: var(--color-border-strong);
+}
+
+.ga-icon-button--danger {
+  color: var(--color-danger);
+}
+
+.ga-icon-button--danger:hover:not(:disabled) {
+  background: var(--color-danger-soft);
+}
+
+.ga-icon-button--active {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.ga-icon-button__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}

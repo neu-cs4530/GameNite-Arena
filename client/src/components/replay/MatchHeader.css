@@ -1,0 +1,96 @@
+.ga-match-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.ga-match-header__left {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.ga-match-header__title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.ga-match-header__game {
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-primary);
+}
+
+.ga-match-header__matchup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-h2);
+  margin: 0;
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.01em;
+}
+
+.ga-match-header__player {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-h2);
+}
+
+.ga-match-header__vs {
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: var(--weight-semibold);
+}
+
+.ga-match-header__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  color: var(--color-fg-muted);
+  font-size: var(--text-small);
+}
+
+.ga-match-header__sep {
+  color: var(--color-fg-subtle);
+}
+
+.ga-match-header__views {
+  color: var(--color-fg);
+  font-weight: var(--weight-medium);
+}
+
+.ga-match-header__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.ga-match-header__live {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-danger);
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-small);
+}
+
+.ga-match-header__live-dot {
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-danger);
+  animation: ga-pulse 1.4s ease-in-out infinite;
+}

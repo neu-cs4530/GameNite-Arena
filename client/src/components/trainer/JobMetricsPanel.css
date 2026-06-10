@@ -1,0 +1,46 @@
+.ga-job-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.ga-job-metrics__title {
+  font-size: var(--text-h3);
+  font-weight: var(--weight-semibold);
+  color: var(--color-fg);
+}
+
+.ga-job-metrics__grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-3);
+}
+
+.ga-job-metric {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.ga-job-metric__label {
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-fg-muted);
+}
+
+.ga-job-metric__value {
+  font-size: var(--text-h2);
+  font-weight: var(--weight-semibold);
+  color: var(--color-fg);
+  line-height: var(--leading-tight);
+}
+
+.ga-job-metric__hint {
+  font-size: var(--text-micro);
+  color: var(--color-fg-muted);
+}

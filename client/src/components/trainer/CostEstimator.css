@@ -1,0 +1,32 @@
+.ga-cost {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--color-info-soft);
+  color: var(--color-info);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-info-soft);
+}
+
+.ga-cost__title {
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+}
+
+.ga-cost__row {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-small);
+  color: var(--color-fg);
+}
+
+.ga-cost__row strong {
+  color: var(--color-fg);
+}
+
+.ga-cost--over {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  border-color: var(--color-danger-soft);
+}

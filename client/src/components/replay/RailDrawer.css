@@ -1,0 +1,121 @@
+/* ============================================================================
+ * RailDrawer — collapsible section for the replay viewer's side rail.
+ * One container shape for all secondary info keeps the rail visually quiet.
+ * ============================================================================ */
+
+.ga-rail-drawer {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.ga-rail-drawer--open {
+  box-shadow: var(--shadow-sm);
+}
+
+.ga-rail-drawer__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-right: var(--space-2);
+}
+
+.ga-rail-drawer__toggle {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-3) var(--space-3);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  color: var(--color-fg);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.ga-rail-drawer__toggle:hover {
+  background: var(--color-bg-subtle);
+}
+
+.ga-rail-drawer__toggle:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+.ga-rail-drawer__chevron {
+  display: inline-flex;
+  color: var(--color-fg-muted);
+  transition: transform var(--duration-base) var(--ease-standard);
+}
+
+.ga-rail-drawer:not(.ga-rail-drawer--open) .ga-rail-drawer__chevron {
+  transform: rotate(-90deg);
+}
+
+.ga-rail-drawer__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ga-rail-drawer__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-bold);
+}
+
+.ga-rail-drawer__extra {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.ga-rail-drawer__body {
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-3);
+  animation: ga-rail-drawer-in var(--duration-base) var(--ease-emphasis);
+}
+
+/* Nested panels keep their internals but shed their own card chrome so the
+ * drawer is the single visible container. */
+.ga-rail-drawer__body .ga-move-list,
+.ga-rail-drawer__body .ga-annotation-panel {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
+
+@keyframes ga-rail-drawer-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ga-rail-drawer__body,
+  .ga-rail-drawer__chevron {
+    animation: none;
+    transition: none;
+  }
+}
