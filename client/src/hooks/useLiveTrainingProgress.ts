@@ -82,7 +82,10 @@ export default function useLiveTrainingProgress(jobId: string | undefined): Live
 
   useEffect(() => {
     if (!jobId) {
-      dispatch({ type: "reset" });
+      // Keep whatever was accumulated: when a watched run reaches a terminal
+      // state the page stops subscribing (jobId becomes undefined), and the
+      // finished run's curve/log must survive that teardown instead of
+      // wiping in front of the viewer. State resets when a NEW job arrives.
       return;
     }
     dispatch({ type: "reset" });

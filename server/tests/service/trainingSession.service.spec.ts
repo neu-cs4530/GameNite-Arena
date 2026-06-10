@@ -1,4 +1,4 @@
-import { beforeEach, afterEach, describe, expect, it } from "vitest";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import {
   TRAINING_PROGRESS_CHANNEL,
   lastEventKey,
@@ -377,5 +377,48 @@ describe("publisher resilience", () => {
     });
     const start = await startTrainingSession(user0, nimStart);
     expect(start.status).toBe("queued");
+  });
+});
+
+describe("hardening (review findings)", () => {
+  it("a progress write cannot clobber a cancel that landed mid-flight", async () => {
+    const start = await startTrainingSession(user0, nimStart);
+    await reportTrainingProgress(user0, start.jobId, { episodes: 5 });
+
+    // Simulate the web-UI cancel landing between the progress handler's
+    // initial read and its write: the first find() returns the stale running
+    // snapshot, the pre-write re-read sees the canceled record.
+    const running = await TrainingJobRepo.get(start.jobId);
+    const canceled = {
+      ...running,
+      status: "canceled" as const,
+      completedAt: new Date().toISOString(),
+    };
+    await TrainingJobRepo.set(start.jobId, canceled);
+    const findSpy = vi
+      .spyOn(TrainingJobRepo, "find")
+      .mockResolvedValueOnce({ ...running, progress: { ...running.progress } })
+      .mockResolvedValueOnce({ ...canceled, progress: { ...canceled.progress } });
+
+    const info = await reportTrainingProgress(user0, start.jobId, { episodes: 99 });
+    findSpy.mockRestore();
+
+    expect(info.status).toBe("canceled");
+    const persisted = await TrainingJobRepo.get(start.jobId);
+    expect(persisted.status).toBe("canceled");
+    expect(persisted.progress.episodes).toBe(5);
+  });
+
+  it("list and get survive sessions whose owner record no longer exists", async () => {
+    const start = await startTrainingSession(user0, nimStart);
+    const record = await TrainingJobRepo.get(start.jobId);
+    record.userId = "ghost-user-id";
+    await TrainingJobRepo.set(start.jobId, record);
+
+    const info = await getTrainingSession(start.jobId);
+    expect(info?.owner).toEqual({ username: "unknown", display: "Unknown user" });
+
+    const page = await listTrainingSessions({});
+    expect(page.total).toBe(1);
   });
 });

@@ -102,3 +102,27 @@ describe("terminal payloads", () => {
     expect(zFailTrainingSession.safeParse({}).success).toBe(false);
   });
 });
+
+describe("payload size caps", () => {
+  const config = { episodes: 10, learningRate: 0.1 };
+
+  it("rejects oversized display names, messages, and error strings", () => {
+    expect(
+      zStartTrainingSession.safeParse({
+        gameKey: "nim",
+        modelDisplayName: "x".repeat(121),
+        config,
+      }).success,
+    ).toBe(false);
+    expect(
+      zReportTrainingProgress.safeParse({ episodes: 1, message: "x".repeat(2001) }).success,
+    ).toBe(false);
+    expect(zFailTrainingSession.safeParse({ error: "x".repeat(4001) }).success).toBe(false);
+  });
+
+  it("rejects metric bags with too many keys", () => {
+    const bigBag = Object.fromEntries(Array.from({ length: 65 }, (_, i) => [`metric${i}`, 1]));
+    expect(zReportTrainingProgress.safeParse({ episodes: 1, metrics: bigBag }).success).toBe(false);
+    expect(zCompleteTrainingSession.safeParse({ finalMetrics: bigBag }).success).toBe(false);
+  });
+});

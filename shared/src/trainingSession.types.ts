@@ -26,11 +26,23 @@ export type TrainerGameKey = z.infer<typeof zTrainerGameKey>;
 /** Lifecycle of a training session (mirrors TrainingJobRecord.status). */
 export type TrainingSessionStatus = "queued" | "running" | "completed" | "failed" | "canceled";
 
+/**
+ * Open numeric metric bag, bounded so a buggy or hostile trainer cannot
+ * balloon stored records and fan-out events (these flow verbatim to every
+ * dashboard subscriber and into the Redis snapshot).
+ */
+const zMetricBag = z
+  .record(z.string().max(64), z.number())
+  .refine((bag) => Object.keys(bag).length <= 64, { message: "Too many metric keys (max 64)" });
+
 export const zTrainingSessionConfig = z.object({
   episodes: z.number().int().min(1),
   learningRate: z.number().gt(0).lte(1),
   /** Open-shape extra hyperparameters; the local trainer interprets these. */
-  extra: z.record(z.string(), z.unknown()).optional(),
+  extra: z
+    .record(z.string().max(64), z.unknown())
+    .refine((bag) => Object.keys(bag).length <= 32, { message: "Too many extra keys (max 32)" })
+    .optional(),
 });
 export type TrainingSessionConfig = z.infer<typeof zTrainingSessionConfig>;
 
@@ -42,8 +54,8 @@ export type TrainingSessionConfig = z.infer<typeof zTrainingSessionConfig>;
  */
 export const zStartTrainingSession = z.object({
   gameKey: zTrainerGameKey,
-  modelId: z.string().optional(),
-  modelDisplayName: z.string().optional(),
+  modelId: z.string().max(128).optional(),
+  modelDisplayName: z.string().max(120).optional(),
   config: zTrainingSessionConfig,
 });
 export type StartTrainingSessionPayload = z.infer<typeof zStartTrainingSession>;
@@ -57,21 +69,27 @@ export type StartTrainingSessionPayload = z.infer<typeof zStartTrainingSession>;
 export const zReportTrainingProgress = z.object({
   episodes: z.number().int().min(0),
   /** Open numeric metric bag; meanReward and winRate are surfaced in the UI. */
-  metrics: z.record(z.string(), z.number()).optional(),
-  message: z.string().optional(),
+  metrics: zMetricBag.optional(),
+  message: z.string().max(2000).optional(),
 });
 export type ReportTrainingProgressPayload = z.infer<typeof zReportTrainingProgress>;
 
 /** POST /api/training/:jobId/complete */
 export const zCompleteTrainingSession = z.object({
-  finalMetrics: z.record(z.string(), z.number()).optional(),
-  message: z.string().optional(),
+  finalMetrics: zMetricBag.optional(),
+  message: z.string().max(2000).optional(),
 });
 export type CompleteTrainingSessionPayload = z.infer<typeof zCompleteTrainingSession>;
 
-/** POST /api/training/:jobId/fail */
+/**
+ * POST /api/training/:jobId/fail
+ *
+ * Heads-up: like the rest of TrainingSessionInfo, the error string is served
+ * by the PUBLIC session reads — send a failure summary, not a stack trace
+ * with machine paths in it.
+ */
 export const zFailTrainingSession = z.object({
-  error: z.string().min(1),
+  error: z.string().min(1).max(4000),
 });
 export type FailTrainingSessionPayload = z.infer<typeof zFailTrainingSession>;
 

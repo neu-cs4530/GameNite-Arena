@@ -58,6 +58,15 @@ function delay<T>(value: T, ms = MOCK_LATENCY_MS): Promise<T> {
   return new Promise((resolve) => setTimeout(() => resolve(value), ms));
 }
 
+/** Pull the server's {error} body out of an axios rejection, if present. */
+function extractApiError(err: unknown, fallback: string): string {
+  if (err && typeof err === "object" && "response" in err) {
+    const data = (err as { response?: { data?: { error?: string } } }).response?.data;
+    if (data?.error) return data.error;
+  }
+  return err instanceof Error ? err.message : fallback;
+}
+
 /** Paginated, filtered job list. */
 export async function listJobs(filters: JobFilters): Promise<JobListPage> {
   if (USING_REAL_TRAINING_API) {
@@ -116,20 +125,24 @@ export async function submitJob(
   auth?: UserAuth,
 ): Promise<{ jobId: string }> {
   if (USING_REAL_TRAINING_API && auth) {
-    const { data } = await api.post<TrainingSessionInfo>("/api/training/submit", {
-      auth,
-      payload: {
-        gameKey: payload.gameKey,
-        modelId: payload.modelId,
-        modelDisplayName: payload.modelDisplayName,
-        config: {
-          episodes: payload.hyperparameters.episodes,
-          learningRate: payload.hyperparameters.learningRate,
-          extra: payload.hyperparameters.extraConfig,
+    try {
+      const { data } = await api.post<TrainingSessionInfo>("/api/training/submit", {
+        auth,
+        payload: {
+          gameKey: payload.gameKey,
+          modelId: payload.modelId,
+          modelDisplayName: payload.modelDisplayName,
+          config: {
+            episodes: payload.hyperparameters.episodes,
+            learningRate: payload.hyperparameters.learningRate,
+            extra: payload.hyperparameters.extraConfig,
+          },
         },
-      },
-    });
-    return { jobId: data.jobId };
+      });
+      return { jobId: data.jobId };
+    } catch (err) {
+      throw new Error(extractApiError(err, "Could not register the training session"));
+    }
   }
   const id = `mock-job-${MOCK_JOBS.length + 1}`;
   const modelId = payload.modelId ?? `mock-model-${id.replace("mock-job-", "")}`;

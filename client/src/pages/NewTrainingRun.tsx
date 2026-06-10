@@ -16,7 +16,7 @@ import {
 import type { HeuristicSourceMode } from "../components/trainer/HeuristicSourcePicker.tsx";
 import { hyperparamPresets, trainerGameNames } from "../components/trainer/trainerConsts.ts";
 import { getHelloWorldTemplate } from "../services/modelService.ts";
-import { submitJob } from "../services/trainingService.ts";
+import { submitJob, USING_REAL_TRAINING_API } from "../services/trainingService.ts";
 import useAuth from "../hooks/useAuth.ts";
 import useUploadHeuristic from "../hooks/useUploadHeuristic.ts";
 import useLoginContext from "../hooks/useLoginContext.ts";
@@ -152,6 +152,12 @@ export default function NewTrainingRun(): JSX.Element {
         const c = checkpoints.find((cp) => cp.id === selectedCheckpoint);
         if (c) modelId = c.modelId;
       }
+      // The upload/checkpoint sources are still mock-backed; their ids do not
+      // exist server-side, so in real mode fall back to a fresh model rather
+      // than guaranteeing a 404 from the session API.
+      if (USING_REAL_TRAINING_API && modelId?.startsWith("mock-")) {
+        modelId = undefined;
+      }
       const { jobId } = await submitJob(
         {
           modelId,
@@ -181,9 +187,13 @@ export default function NewTrainingRun(): JSX.Element {
       ? "Episode count must be at least 1."
       : hp.episodes > 10_000_000
         ? "Episode count cannot exceed 10,000,000."
-        : null;
+        : !Number.isInteger(hp.episodes)
+          ? "Episode count must be a whole number."
+          : null;
   const learningRateError =
-    !Number.isFinite(hp.learningRate) || hp.learningRate <= 0 || hp.learningRate > 1 ? null : null;
+    !Number.isFinite(hp.learningRate) || hp.learningRate <= 0 || hp.learningRate > 1
+      ? "Learning rate must be greater than 0 and at most 1."
+      : null;
 
   const canSubmit =
     !submitting && name.trim().length > 0 && episodesError === null && learningRateError === null;

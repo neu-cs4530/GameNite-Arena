@@ -28,9 +28,8 @@ import type {
   TrainingProgressEvent,
   GameKey,
 } from "@gamenite/shared";
-import type { TrainingJobRecord } from "../models.ts";
-import { ModelRepo, TrainingJobRepo } from "../repository.ts";
-import { populateSafeUserInfo } from "./user.service.ts";
+import type { RecordId, TrainingJobRecord } from "../models.ts";
+import { ModelRepo, TrainingJobRepo, UserRepo } from "../repository.ts";
 import {
   publishTrainingProgress,
   type ProgressPublisherClient,
@@ -63,10 +62,30 @@ async function publishEvent(
 
 // Helpers
 
+/**
+ * The trainer-facing schemas accept all five arena games, but the starter
+ * codebase's GameKey union is still "nim" | "guess" and the record types in
+ * models.ts use it. The upload path (model.service.ts) established this same
+ * narrowing; keep it in ONE visible place until shared zGameKey is widened.
+ */
+function toStoredGameKey(key: StartTrainingSessionPayload["gameKey"]): GameKey {
+  return key as GameKey;
+}
+
+/**
+ * Owner lookup that survives orphaned sessions (e.g. a record whose user was
+ * reseeded away) — a missing user must never turn the public reads into 500s.
+ */
+async function populateOwner(userId: RecordId): Promise<{ username: string; display: string }> {
+  const user = await UserRepo.find(userId);
+  if (!user) return { username: "unknown", display: "Unknown user" };
+  return { username: user.username, display: user.display };
+}
+
 async function populateSessionInfo(jobId: string): Promise<TrainingSessionInfo> {
   const job = await TrainingJobRepo.get(jobId);
   const model = await ModelRepo.find(job.modelId);
-  const owner = await populateSafeUserInfo(job.userId);
+  const owner = await populateOwner(job.userId);
   return {
     jobId,
     modelId: job.modelId,
@@ -96,10 +115,27 @@ async function getOwnedSession(user: UserWithId, jobId: string): Promise<Trainin
   return job;
 }
 
+function isTerminal(status: TrainingJobRecord["status"]): boolean {
+  return status === "completed" || status === "failed" || status === "canceled";
+}
+
 function assertNotTerminal(jobId: string, job: TrainingJobRecord): void {
-  if (job.status === "completed" || job.status === "failed" || job.status === "canceled") {
+  if (isTerminal(job.status)) {
     throw new Error(`Training session ${jobId} already ${job.status}`);
   }
+}
+
+/**
+ * Re-read immediately before writing. Progress posts (trainer machine) and
+ * cancels (web UI) are concurrent BY DESIGN, and a stale read-modify-write
+ * must never resurrect a terminal session — that would silently defeat the
+ * cancel control channel. Returns the fresh record to mutate, or null when a
+ * terminal transition landed mid-flight.
+ */
+async function refreshForWrite(jobId: string): Promise<TrainingJobRecord | null> {
+  const fresh = await TrainingJobRepo.find(jobId);
+  if (!fresh || isTerminal(fresh.status)) return null;
+  return fresh;
 }
 
 // Service functions
@@ -123,7 +159,7 @@ export async function startTrainingSession(
     if (model.userId !== user.userId) {
       throw new Error(`User ${user.username} does not own model ${modelId}`);
     }
-    if (model.gameKey !== (payload.gameKey as GameKey)) {
+    if (model.gameKey !== toStoredGameKey(payload.gameKey)) {
       throw new Error(
         `Game key '${payload.gameKey}' does not match the model's game '${model.gameKey}'`,
       );
@@ -131,7 +167,7 @@ export async function startTrainingSession(
   } else {
     modelId = await ModelRepo.add({
       userId: user.userId,
-      gameKey: payload.gameKey as GameKey,
+      gameKey: toStoredGameKey(payload.gameKey),
       displayName: payload.modelDisplayName?.trim() || `${payload.gameKey}-local-model`,
       sourceRef: "local-training",
       visibility: "private",
@@ -143,7 +179,7 @@ export async function startTrainingSession(
   const jobId = await TrainingJobRepo.add({
     modelId,
     userId: user.userId,
-    gameKey: payload.gameKey as GameKey,
+    gameKey: toStoredGameKey(payload.gameKey),
     config: {
       episodes: payload.config.episodes,
       learningRate: payload.config.learningRate,
@@ -185,25 +221,30 @@ export async function reportTrainingProgress(
     throw new Error(`Training session ${jobId} already ${job.status}`);
   }
 
+  // Re-read before the write: a cancel may have landed since our first read,
+  // and clobbering it would tell the trainer to keep going forever.
+  const fresh = await refreshForWrite(jobId);
+  if (!fresh) return populateSessionInfo(jobId);
+
   const now = new Date().toISOString();
-  job.status = "running";
-  job.progress = {
+  fresh.status = "running";
+  fresh.progress = {
     episodes: payload.episodes,
     meanReward: payload.metrics?.meanReward ?? 0,
     winRate: payload.metrics?.winRate ?? 0,
     updatedAt: now,
   };
-  await TrainingJobRepo.set(jobId, job);
+  await TrainingJobRepo.set(jobId, fresh);
 
   const fraction =
-    job.config.episodes > 0 ? Math.min(1, payload.episodes / job.config.episodes) : 0;
+    fresh.config.episodes > 0 ? Math.min(1, payload.episodes / fresh.config.episodes) : 0;
   await publishEvent({
     jobId,
-    modelId: job.modelId,
+    modelId: fresh.modelId,
     status: "running",
     progress: fraction,
     epoch: payload.episodes,
-    totalEpochs: job.config.episodes,
+    totalEpochs: fresh.config.episodes,
     metrics: payload.metrics,
     message: payload.message,
   });
@@ -220,26 +261,32 @@ export async function completeTrainingSession(
   const job = await getOwnedSession(user, jobId);
   assertNotTerminal(jobId, job);
 
+  const fresh = await refreshForWrite(jobId);
+  if (!fresh) {
+    const current = await TrainingJobRepo.get(jobId);
+    throw new Error(`Training session ${jobId} already ${current.status}`);
+  }
+
   const now = new Date().toISOString();
-  job.status = "completed";
-  job.completedAt = now;
+  fresh.status = "completed";
+  fresh.completedAt = now;
   if (payload.finalMetrics) {
-    job.progress = {
-      ...job.progress,
-      meanReward: payload.finalMetrics.meanReward ?? job.progress.meanReward,
-      winRate: payload.finalMetrics.winRate ?? job.progress.winRate,
+    fresh.progress = {
+      ...fresh.progress,
+      meanReward: payload.finalMetrics.meanReward ?? fresh.progress.meanReward,
+      winRate: payload.finalMetrics.winRate ?? fresh.progress.winRate,
       updatedAt: now,
     };
   }
-  await TrainingJobRepo.set(jobId, job);
+  await TrainingJobRepo.set(jobId, fresh);
 
   await publishEvent({
     jobId,
-    modelId: job.modelId,
+    modelId: fresh.modelId,
     status: "completed",
     progress: 1,
-    epoch: job.progress.episodes,
-    totalEpochs: job.config.episodes,
+    epoch: fresh.progress.episodes,
+    totalEpochs: fresh.config.episodes,
     metrics: payload.finalMetrics,
     message: payload.message ?? "Training complete",
   });
@@ -256,14 +303,20 @@ export async function failTrainingSession(
   const job = await getOwnedSession(user, jobId);
   assertNotTerminal(jobId, job);
 
-  job.status = "failed";
-  job.error = payload.error;
-  job.completedAt = new Date().toISOString();
-  await TrainingJobRepo.set(jobId, job);
+  const fresh = await refreshForWrite(jobId);
+  if (!fresh) {
+    const current = await TrainingJobRepo.get(jobId);
+    throw new Error(`Training session ${jobId} already ${current.status}`);
+  }
+
+  fresh.status = "failed";
+  fresh.error = payload.error;
+  fresh.completedAt = new Date().toISOString();
+  await TrainingJobRepo.set(jobId, fresh);
 
   await publishEvent({
     jobId,
-    modelId: job.modelId,
+    modelId: fresh.modelId,
     status: "failed",
     message: payload.error,
   });
@@ -287,9 +340,15 @@ export async function cancelTrainingSession(
   const job = await getOwnedSession(user, jobId);
   assertNotTerminal(jobId, job);
 
-  job.status = "canceled";
-  job.completedAt = new Date().toISOString();
-  await TrainingJobRepo.set(jobId, job);
+  const fresh = await refreshForWrite(jobId);
+  if (!fresh) {
+    const current = await TrainingJobRepo.get(jobId);
+    throw new Error(`Training session ${jobId} already ${current.status}`);
+  }
+
+  fresh.status = "canceled";
+  fresh.completedAt = new Date().toISOString();
+  await TrainingJobRepo.set(jobId, fresh);
 
   return populateSessionInfo(jobId);
 }
@@ -339,7 +398,9 @@ export async function listTrainingSessions(opts: {
   const keys = await TrainingJobRepo.getAllKeys();
   const all = await Promise.all(keys.map((key) => populateSessionInfo(key)));
 
-  const filtered = opts.username ? all.filter((info) => info.owner.username === opts.username) : all;
+  const filtered = opts.username
+    ? all.filter((info) => info.owner.username === opts.username)
+    : all;
   filtered.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 
   return {

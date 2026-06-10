@@ -52,7 +52,12 @@ export default function TrainingJobLive(): JSX.Element {
   // queued -> running on the first report, and any terminal transition.
   const liveStatus = live.latest?.status;
   useEffect(() => {
-    if (live.isComplete || live.hasFailed) refetch();
+    if (!(live.isComplete || live.hasFailed)) return;
+    refetch();
+    // The documented reporter flow uploads the .pth AFTER complete(), so one
+    // delayed re-read lets the Download button appear without a manual reload.
+    const lateRefetch = setTimeout(refetch, 3000);
+    return () => clearTimeout(lateRefetch);
   }, [live.isComplete, live.hasFailed, refetch]);
   useEffect(() => {
     if (job?.status === "queued" && liveStatus === "running") refetch();

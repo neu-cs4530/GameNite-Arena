@@ -2,6 +2,7 @@
 
 import express, { Router } from "express";
 import { Server } from "socket.io";
+import { SocketEvents } from "@gamenite/shared";
 import { z } from "zod";
 import * as http from "node:http";
 import * as chat from "./controllers/chat.controller.ts";
@@ -97,6 +98,13 @@ io.on("connection", (socket) => {
   socket.on("gameWatch", game.socketWatch(socket, io));
 
   socket.onAny((name, payload) => {
+    // The training progress bridge's events carry a bare { jobId } payload by
+    // contract (trainingProgress.types.ts), not the { auth, payload } shape —
+    // don't log valid bridge traffic as errors.
+    if (name === SocketEvents.subscribe || name === SocketEvents.unsubscribe) {
+      console.log(`RECV [${socketId}] got ${name} ${JSON.stringify(payload)}`);
+      return;
+    }
     const zPayload = z.object({ auth: z.object({ username: z.string() }), payload: z.any() });
     const checked = zPayload.safeParse(payload);
 
