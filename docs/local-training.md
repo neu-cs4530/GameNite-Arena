@@ -144,20 +144,43 @@ Verified end to end (a 30k-step run reaches the optimal Nim policy):
 python3 ai/example_local_training_nim.py --username user0 --password pwd0000
 ```
 
+## The trainer UI is real data, full stop
+
+The trainer workflow surfaces (dashboard, new-run form, live page) read and
+write the live API only — there is no mock mode and no flag. The dashboard is
+organized as a build-up: count chips and a single Live-Now card at a glance;
+Runs / Deployments / Models sections that open on demand (chips are the doors
+— clicking one opens its section pre-filtered); per-run row expansion for
+config, full errors, and artifact integrity (bytes + sha256); and raw session
+data one level deeper. Zero-count states render nothing.
+
+Two ways to start a run, same result:
+
+- **From the web**: "New training run" registers a queued session and the live
+  page shows the exact `--job-id` command to connect your trainer
+  (`session_reporter.attach(job_id)` under the hood). The page is already
+  subscribed — it flips live on the trainer's first report.
+- **From the CLI**: `start()` registers and reports in one go.
+
+The trainer e2e suites (`client/tests/e2e/trainer-*.e2e.spec.ts`,
+`training-job-live`, `new-training-run`) create every fixture through the live
+API with a throwaway user per suite — they are the standing proof that what
+the UI shows is what a real run produced. The model **discovery** pages
+(browse / card / fork) remain fixture-backed until their endpoints land; that,
+plus a persisted-series compare-runs view and a matches-over-time sparkline
+derived from MatchRepo, is the next block.
+
 ## Demo runbook
 
 1. **Redis** must be running (`redis-server`, or `brew services start redis`).
-2. **Backend + frontend** in real-training mode:
+2. **Backend + frontend**:
 
    ```bash
-   REDIS_URL=redis://localhost:6379 VITE_REAL_TRAINING=1 npm run dev
+   REDIS_URL=redis://localhost:6379 npm run dev
    ```
 
-   `VITE_REAL_TRAINING=1` switches the trainer pages from mock fixtures to the
-   real session API + socket bridge. A yellow "Real training mode" badge shows
-   on the trainer dashboard and live-job page whenever the flag is on.
-
-3. Log in (e.g. `user0` / `pwd0000`) and open **AI Trainer**.
+3. Log in (e.g. `user0` / `pwd0000`) and open **AI Trainer** — a fresh user
+   sees the two-step quickstart (kit one-liner + run command).
 4. Start a fake local run (synthetic metrics, no real training):
 
    ```bash
@@ -165,25 +188,22 @@ python3 ai/example_local_training_nim.py --username user0 --password pwd0000
        --game nim --episodes 40 --steps 20 --step-delay 1.5
    ```
 
-5. Open the printed `/trainer/jobs/<id>` URL: status flips queued → running,
-   the chart animates from the live stream, and the metrics panel updates.
+   …or register from the web form first and attach with the shown `--job-id`
+   command.
+
+5. Open the printed `/trainer/jobs/<id>` URL: the queued handoff card yields
+   to the live chart on the first report, and the metrics update with each.
 6. Optional beats: click **Cancel** in the UI and watch the script log
    `server says canceled — stopping the local loop`; re-run with
-   `--upload-artifact` to light up the Download button.
+   `--upload-artifact` to light up Download/Deploy and the sha-256 in the
+   Advanced panel.
 
-### Demo caveats (known, accepted for Sprint 1)
+### Known limitations (accepted, documented)
 
-- **Do not refresh mid-run**: curve points live in the browser (accumulated
-  from events); a refresh keeps the latest snapshot but drops the history
-  until two new points arrive.
+- **The live chart is per-visit**: it accumulates from the stream while the
+  page is open (labeled "live since you opened this page"). Persisting a
+  downsampled series server-side is queued as future work and would also
+  re-enable a run-comparison view.
 - **Cancel emits no live event** (the bridge contract has no `canceled`
-  status). The canceling tab refetches; another open tab would keep showing
-  the stale state until refreshed. The local trainer always finds out on its
-  next report.
-- **Run the e2e suite against a clean dev server.** The Playwright suite
-  asserts on mock fixtures; if a `VITE_REAL_TRAINING=1` dev server is still on
-  :4530, Playwright reuses it and the trainer suites fail. Kill it first (or
-  `CI=1 npx playwright test` to force fresh servers).
-- In real mode the web "New training run" form registers a session that stays
-  **queued** until a local trainer attaches to that model — the normal flow is
-  to start runs from the CLI.
+  status). The canceling tab refetches; another open tab keeps the stale state
+  until refreshed. The local trainer always finds out on its next report.

@@ -1,0 +1,58 @@
+import type { TaggedGameView } from "@gamenite/shared";
+import NimReplayView from "../../games/replay/NimReplayView.tsx";
+import GuessReplayView from "../../games/replay/GuessReplayView.tsx";
+import CheckersReplayView from "../../games/replay/CheckersReplayView.tsx";
+import Connect4ReplayView from "../../games/replay/Connect4ReplayView.tsx";
+import TicTacToeReplayView from "../../games/replay/TicTacToeReplayView.tsx";
+import StubReplayView from "../../games/replay/StubReplayView.tsx";
+import type { MatchParticipantView, ReplayDetail, ReplayGameKey } from "../../util/types.ts";
+import { replayGameNames } from "../../util/consts.ts";
+import type { JSX } from "react";
+import { NIM_DEFAULT_START } from "../../games/replay/nimReducer.ts";
+
+interface GameViewerProps {
+  view: TaggedGameView | null;
+  replay: ReplayDetail;
+  readOnly?: boolean;
+}
+
+/**
+ * Dispatcher that picks the right read-only per-game replay component based
+ * on the replay's `gameKey`. The `view` prop is the derived state at the
+ * current move from `useDerivedGameView`.
+ */
+export default function GameViewer({ view, replay }: GameViewerProps): JSX.Element {
+  const participants = replay.participants;
+  if (view?.type === "nim") {
+    return (
+      <NimReplayView
+        view={view.view}
+        participants={participants}
+        startingPile={extractStartingPile(replay) ?? NIM_DEFAULT_START}
+      />
+    );
+  }
+  if (view?.type === "guess") {
+    return <GuessReplayView view={view.view} participants={participants} />;
+  }
+  // Game keys that don't have a live shared view type yet.
+  return renderStubFor(replay.gameKey, participants);
+}
+
+function extractStartingPile(replay: ReplayDetail): number | undefined {
+  const initial = replay.initialState as { remaining?: number } | undefined;
+  return initial?.remaining;
+}
+
+function renderStubFor(key: ReplayGameKey, _participants: MatchParticipantView[]): JSX.Element {
+  switch (key) {
+    case "checkers":
+      return <CheckersReplayView />;
+    case "connect4":
+      return <Connect4ReplayView />;
+    case "tictactoe":
+      return <TicTacToeReplayView />;
+    default:
+      return <StubReplayView gameLabel={replayGameNames[key]} />;
+  }
+}

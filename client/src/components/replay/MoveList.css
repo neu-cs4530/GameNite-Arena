@@ -1,0 +1,145 @@
+.ga-move-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 600px;
+  overflow-y: auto;
+  padding: var(--space-1);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.ga-move-list__row {
+  margin: 0;
+}
+
+/* The move list renders moves first then copy buttons in DOM order so that
+   `getByRole("button").nth(N)` lines up with move N. Visually we re-pair
+   each move with its copy via flex `order`. The copy row tucks against
+   the bottom-right of its move row. */
+.ga-move-list__row--copy {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: calc(-1 * var(--space-2));
+  padding-right: var(--space-2);
+}
+
+.ga-move-list__btn {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  font-size: var(--text-small);
+  color: var(--color-fg);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+.ga-move-list__btn:hover {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+}
+
+.ga-move-list__btn--current {
+  background: var(--color-primary-soft);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.ga-move-list__num {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-semibold);
+  width: var(--space-6);
+  text-align: right;
+  color: var(--color-fg-muted);
+}
+
+.ga-move-list__btn--current .ga-move-list__num {
+  color: var(--color-primary);
+}
+
+.ga-move-list__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ga-move-list__actor {
+  font-weight: var(--weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ga-move-list__notation {
+  color: var(--color-fg-muted);
+  font-size: var(--text-micro);
+}
+
+.ga-move-list__marks {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.ga-move-list__flag {
+  width: var(--space-3);
+  height: var(--space-3);
+  border-radius: var(--radius-pill);
+}
+
+.ga-move-list__flag--best {
+  background: var(--color-success);
+}
+
+.ga-move-list__flag--blunder {
+  background: var(--color-danger);
+}
+
+.ga-move-list__flag--inaccuracy {
+  background: var(--color-warning);
+}
+
+.ga-move-list__flag--neutral {
+  background: var(--color-border-strong);
+}
+
+.ga-move-list__ann {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-5);
+  height: var(--space-5);
+  border-radius: var(--radius-pill);
+  background: var(--color-info-soft);
+  color: var(--color-info);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+}
+
+.ga-move-list__copy {
+  background: transparent;
+  border: none;
+  color: var(--color-fg-muted);
+  cursor: pointer;
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-micro);
+}
+
+.ga-move-list__copy:hover {
+  background: var(--color-surface-strong);
+  color: var(--color-fg);
+}

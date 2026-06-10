@@ -1,0 +1,56 @@
+.ga-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  user-select: none;
+}
+
+.ga-toggle__input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+.ga-toggle__switch {
+  position: relative;
+  width: calc(var(--space-8) + var(--space-2));
+  height: var(--space-5);
+  background: var(--color-surface-strong);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.ga-toggle__switch::before {
+  content: "";
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: calc(var(--space-5) - 4px);
+  height: calc(var(--space-5) - 4px);
+  background: var(--color-bg-elevated);
+  border-radius: var(--radius-pill);
+  transition: transform var(--duration-fast) var(--ease-out);
+  box-shadow: var(--shadow-sm);
+}
+
+.ga-toggle__input:checked + .ga-toggle__switch {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.ga-toggle__input:checked + .ga-toggle__switch::before {
+  transform: translateX(calc(var(--space-5) - 1px));
+}
+
+.ga-toggle__input:focus-visible + .ga-toggle__switch {
+  box-shadow: var(--shadow-focus);
+}
+
+.ga-toggle__label {
+  font-size: var(--text-body);
+  color: var(--color-fg);
+}

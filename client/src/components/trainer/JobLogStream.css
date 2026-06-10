@@ -1,0 +1,23 @@
+.ga-job-log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 320px;
+  overflow-y: auto;
+  padding: var(--space-3);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-micro);
+  color: var(--color-fg-muted);
+}
+
+.ga-job-log__row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.ga-job-log__row strong {
+  color: var(--color-fg);
+}

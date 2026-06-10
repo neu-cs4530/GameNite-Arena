@@ -1,0 +1,146 @@
+/* ============================================================================
+ * MatchCard
+ * Locked grid: header / players / stats / footer. Fixed min-height keeps every
+ * card in a row visually identical regardless of content length. Long names
+ * truncate with ellipsis via `<UserLink>`.
+ * ============================================================================ */
+
+.ga-match-card {
+  display: grid;
+  grid-template-rows: auto 1fr auto auto;
+  gap: var(--space-3);
+  min-height: 248px;
+  height: 100%;
+  min-width: 0;
+  position: relative;
+}
+
+/* Header: game icon + name on the left, watch-later star on the right */
+.ga-match-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.ga-match-card__game {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ga-match-card__game-icon {
+  flex-shrink: 0;
+  width: var(--space-8);
+  height: var(--space-8);
+  border-radius: var(--radius-md);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: var(--weight-bold);
+  font-size: var(--text-h3);
+}
+
+/* Players block: two participant rows separated by a centered "vs" */
+.ga-match-card__players {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.ga-match-card__player {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.ga-match-card__player-name {
+  font-weight: var(--weight-semibold);
+  color: var(--color-fg);
+  min-width: 0;
+  /* UserLink already truncates; reinforce here for any non-link variant */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ga-match-card__vs {
+  text-align: center;
+  color: var(--color-fg-subtle);
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: var(--weight-semibold);
+  padding-block: var(--space-1);
+}
+
+/* Stats row: move count + watch count + optional Rated badge */
+.ga-match-card__stats {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.ga-match-card__stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  color: var(--color-fg);
+  font-weight: var(--weight-semibold);
+}
+
+.ga-match-card__stat-icon {
+  color: var(--color-fg-muted);
+  font-weight: var(--weight-regular);
+}
+
+.ga-match-card__stat-label {
+  color: var(--color-fg-muted);
+  font-weight: var(--weight-regular);
+  margin-left: var(--space-1);
+}
+
+/* Footer: result + tier + elo chips on the left, date on the right */
+.ga-match-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.ga-match-card__chips {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.ga-match-card__date {
+  font-size: var(--text-small);
+  color: var(--color-fg-subtle);
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+@media (max-width: 480px) {
+  .ga-match-card {
+    min-height: 224px;
+  }
+}
