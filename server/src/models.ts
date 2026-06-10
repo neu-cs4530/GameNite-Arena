@@ -259,6 +259,21 @@ export interface TrainingCheckpoint {
 }
 
 /**
+ * An expiring API token for the LOCAL training channel. The trainer exchanges
+ * its password once (POST /api/training/token) and authenticates subsequent
+ * session calls with the token, so the password never lives in training
+ * loops or shell history. Keyed by the token string itself for O(1) lookup.
+ * Expired records are ignored at auth time (the Repo interface has no
+ * delete, so they age out with the store).
+ */
+export interface TrainingTokenRecord {
+  userId: RecordId; // References User records
+  username: string;
+  createdAt: DateISO;
+  expiresAt: DateISO;
+}
+
+/**
  * Represents a runtime deployment slot for a trained model. (Story 2.5, 2.9)
  *
  * A user can have at most three active deployments per game (enforced in

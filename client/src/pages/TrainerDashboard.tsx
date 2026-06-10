@@ -161,6 +161,14 @@ function Hero({ username: _username }: { username: string }): JSX.Element {
           <p>Upload heuristics, train new models, and manage live deployments.</p>
         </div>
         <div className="ga-trainer__hero-actions">
+          <Button
+            variant="secondary"
+            onClick={() => window.open("/api/training/kit/install.sh", "_blank")}
+            data-testid="download-training-kit"
+            title="One-line bootstrap: everything you need to train locally and stream the run here"
+          >
+            Get the local training kit
+          </Button>
           <HelloWorldTemplateButton />
           <Button
             variant="primary"

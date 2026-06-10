@@ -14,6 +14,37 @@
  */
 
 import { z } from "zod";
+import { zUserAuth } from "./auth.types.ts";
+
+/* --- Trainer auth ------------------------------------------------------ */
+
+/**
+ * The local trainer exchanges its password ONCE (POST /api/training/token)
+ * for an expiring session token and authenticates every subsequent call with
+ * it, so the password never sits in loops, logs, or long-running processes.
+ * Web-UI calls may keep using the username/password shape — both are valid
+ * on every training route.
+ */
+export const zTrainingTokenAuth = z.object({ token: z.string().min(16).max(128) });
+export type TrainingTokenAuth = z.infer<typeof zTrainingTokenAuth>;
+
+export const zTrainingAuth = z.union([zUserAuth, zTrainingTokenAuth]);
+export type TrainingAuth = z.infer<typeof zTrainingAuth>;
+
+/** Like auth.types.ts withAuth(), but accepting password OR token auth. */
+export function withTrainingAuth<T extends z.ZodType>(
+  zT: T,
+): z.ZodObject<{ auth: typeof zTrainingAuth; payload: T }> {
+  return z.object({ auth: zTrainingAuth, payload: zT });
+}
+
+/** Response of POST /api/training/token. */
+export interface TrainingTokenInfo {
+  token: string;
+  username: string;
+  /** ISO timestamp; the token stops working after this. */
+  expiresAt: string;
+}
 
 /**
  * Games a model can be trained for. Mirrors the trainer/replay surfaces in

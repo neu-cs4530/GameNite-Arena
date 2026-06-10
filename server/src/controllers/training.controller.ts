@@ -31,16 +31,25 @@ import * as fs from "node:fs";
 import { z } from "zod";
 import {
   withAuth,
-  zUserAuth,
+  withTrainingAuth,
+  zTrainingAuth,
   zStartTrainingSession,
   zReportTrainingProgress,
   zCompleteTrainingSession,
   zFailTrainingSession,
   type TrainingSessionInfo,
   type TrainingSessionListPage,
+  type TrainingTokenInfo,
 } from "@gamenite/shared";
 import { type RestAPI } from "../types.ts";
 import { checkAuth } from "../services/auth.service.ts";
+import { issueTrainingToken, checkTrainingAuth } from "../services/trainingToken.service.ts";
+import {
+  getKitManifest,
+  getKitFilePath,
+  buildInstallScript,
+  type KitManifest,
+} from "../services/trainingKit.service.ts";
 import {
   startTrainingSession,
   reportTrainingProgress,
@@ -116,11 +125,13 @@ function sendServiceError(res: Response<{ error: string }>, err: unknown): void 
 
 // Zod validators
 
-const zSubmitBody = withAuth(zStartTrainingSession);
-const zProgressBody = withAuth(zReportTrainingProgress);
-const zCompleteBody = withAuth(zCompleteTrainingSession);
-const zFailBody = withAuth(zFailTrainingSession);
-const zCancelBody = withAuth(z.object({}));
+const zSubmitBody = withTrainingAuth(zStartTrainingSession);
+const zProgressBody = withTrainingAuth(zReportTrainingProgress);
+const zCompleteBody = withTrainingAuth(zCompleteTrainingSession);
+const zFailBody = withTrainingAuth(zFailTrainingSession);
+const zCancelBody = withTrainingAuth(z.object({}));
+// token issuance itself always requires the password
+const zTokenBody = withAuth(z.object({}));
 
 // Controllers
 
@@ -131,7 +142,7 @@ export const postSubmit: RestAPI<TrainingSessionInfo> = async (req, res) => {
     res.status(400).send({ error: "Poorly-formed request" });
     return;
   }
-  const user = await checkAuth(body.data.auth);
+  const user = await checkTrainingAuth(body.data.auth);
   if (!user) {
     res.status(403).send({ error: "Invalid credentials" });
     return;
@@ -177,7 +188,7 @@ export const postProgress: RestAPI<TrainingSessionInfo, { jobId: string }> = asy
     res.status(400).send({ error: "Poorly-formed request" });
     return;
   }
-  const user = await checkAuth(body.data.auth);
+  const user = await checkTrainingAuth(body.data.auth);
   if (!user) {
     res.status(403).send({ error: "Invalid credentials" });
     return;
@@ -196,7 +207,7 @@ export const postComplete: RestAPI<TrainingSessionInfo, { jobId: string }> = asy
     res.status(400).send({ error: "Poorly-formed request" });
     return;
   }
-  const user = await checkAuth(body.data.auth);
+  const user = await checkTrainingAuth(body.data.auth);
   if (!user) {
     res.status(403).send({ error: "Invalid credentials" });
     return;
@@ -215,7 +226,7 @@ export const postFail: RestAPI<TrainingSessionInfo, { jobId: string }> = async (
     res.status(400).send({ error: "Poorly-formed request" });
     return;
   }
-  const user = await checkAuth(body.data.auth);
+  const user = await checkTrainingAuth(body.data.auth);
   if (!user) {
     res.status(403).send({ error: "Invalid credentials" });
     return;
@@ -234,7 +245,7 @@ export const postCancel: RestAPI<TrainingSessionInfo, { jobId: string }> = async
     res.status(400).send({ error: "Poorly-formed request" });
     return;
   }
-  const user = await checkAuth(body.data.auth);
+  const user = await checkTrainingAuth(body.data.auth);
   if (!user) {
     res.status(403).send({ error: "Invalid credentials" });
     return;
@@ -267,16 +278,16 @@ export const postArtifact: RestAPI<TrainingSessionInfo, { jobId: string }> = asy
     }
   };
 
-  let auth: z.infer<typeof zUserAuth>;
+  let auth: z.infer<typeof zTrainingAuth>;
   try {
-    auth = zUserAuth.parse(JSON.parse(String((req.body as Record<string, unknown>)?.auth)));
+    auth = zTrainingAuth.parse(JSON.parse(String((req.body as Record<string, unknown>)?.auth)));
   } catch {
     removeUpload();
     res.status(400).send({ error: "Invalid auth field (expected a JSON string)" });
     return;
   }
 
-  const user = await checkAuth(auth);
+  const user = await checkTrainingAuth(auth);
   if (!user) {
     removeUpload();
     res.status(403).send({ error: "Invalid credentials" });
@@ -301,13 +312,60 @@ export const getArtifact: RestAPI<never, { jobId: string }> = async (req, res) =
   res.download(artifactPath);
 };
 
+/**
+ * POST /api/training/token
+ * Password-in, token-out: the local trainer authenticates once and uses the
+ * expiring token for everything after (see trainingToken.service.ts).
+ */
+export const postToken: RestAPI<TrainingTokenInfo> = async (req, res) => {
+  const body = zTokenBody.safeParse(req.body);
+  if (body.error) {
+    res.status(400).send({ error: "Poorly-formed request" });
+    return;
+  }
+  const user = await checkAuth(body.data.auth);
+  if (!user) {
+    res.status(403).send({ error: "Invalid credentials" });
+    return;
+  }
+  res.status(201).send(await issueTrainingToken(user));
+};
+
+/** GET /api/training/kit — manifest of the local-training kit files. */
+export const getKit: RestAPI<KitManifest> = (_req, res) => {
+  res.send(getKitManifest());
+  return Promise.resolve();
+};
+
+/** GET /api/training/kit/install.sh — one-line bootstrap for the kit. */
+export const getKitInstallScript: RestAPI<string> = (req, res) => {
+  const baseUrl = `${req.protocol}://${req.get("host") ?? "localhost:8000"}`;
+  res.type("text/x-shellscript").send(buildInstallScript(baseUrl));
+  return Promise.resolve();
+};
+
+/** GET /api/training/kit/:name — one whitelisted kit file. */
+export const getKitFile: RestAPI<never, { name: string }> = (req, res) => {
+  const filePath = getKitFilePath(req.params.name);
+  if (!filePath) {
+    res.status(404).send({ error: `No such kit file: ${req.params.name}` });
+    return Promise.resolve();
+  }
+  res.download(filePath, req.params.name);
+  return Promise.resolve();
+};
+
 // Router (shared between app.ts and the controller spec)
 
 export function trainingRouter(): express.Router {
   return express
     .Router()
     .post("/submit", postSubmit)
+    .post("/token", postToken)
     .get("/list", getList)
+    .get("/kit", getKit)
+    .get("/kit/install.sh", getKitInstallScript)
+    .get("/kit/:name", getKitFile)
     .get("/:jobId", getById)
     .post("/:jobId/progress", postProgress)
     .post("/:jobId/complete", postComplete)

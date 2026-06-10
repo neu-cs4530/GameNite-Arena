@@ -29,14 +29,50 @@ Two producer paths coexist by design:
   same `TrainingProgressEvent`, so the dashboard does not care where a run
   executes.
 
+## Getting the kit (users and teammates)
+
+The platform distributes its own training kit — never copy files out of the
+repo by hand. One line fetches everything into `./gamenite-training-kit/`:
+
+```bash
+curl -fsSL http://localhost:8000/api/training/kit/install.sh | sh
+```
+
+(or click **Get the local training kit** on the AI Trainer dashboard, or fetch
+individual files from `GET /api/training/kit/<name>` — the manifest is at
+`GET /api/training/kit`). The kit contains `session_reporter.py`, the adapter
+SDK (`base_adapter.py` + per-game examples), `requirements.txt`, and the
+`demo_local_session.py` smoke harness.
+
+## Security model
+
+- The trainer exchanges its password **exactly once** at
+  `POST /api/training/token` for an opaque token that expires after 24 h;
+  every other call authenticates with the token. `GameNiteSession` does this
+  transparently (and re-exchanges once if the token expires mid-run), so the
+  password never sits in loops, logs, or shell history. A pre-issued token can
+  be used instead of a password: `GameNiteSession(url, token=...)`.
+- Every mutating route enforces ownership (only the session's owner can
+  report, cancel, complete, or upload to it). Payload sizes are capped in the
+  shared schemas.
+- Session info — including `fail()` reasons and `config.extra` — is **publicly
+  readable** (the platform displays runs). Send failure summaries, not stack
+  traces with machine paths.
+- Run production traffic over HTTPS (a deployment concern; localhost dev is
+  plain HTTP).
+
 ## Endpoints
 
-All mutating routes take the standard
-`{ auth: { username, password }, payload: ... }` body. Payload schemas:
+All mutating routes take `{ auth, payload }` bodies where `auth` is either
+`{ username, password }` or `{ token }`. Payload schemas:
 `shared/src/trainingSession.types.ts`.
 
 | Endpoint                        | Method | Purpose                                                                                                    |
 | ------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------- |
+| `/api/training/token`           | POST   | Exchange password for an expiring trainer token                                                            |
+| `/api/training/kit`             | GET    | Training-kit manifest                                                                                      |
+| `/api/training/kit/install.sh`  | GET    | One-line kit bootstrap script                                                                              |
+| `/api/training/kit/:name`       | GET    | One whitelisted kit file                                                                                   |
 | `/api/training/submit`          | POST   | Register a session (creates job + model if needed)                                                         |
 | `/api/training/list`            | GET    | Newest-first list, `?username=` filter, paginated                                                          |
 | `/api/training/:jobId`          | GET    | One session                                                                                                |

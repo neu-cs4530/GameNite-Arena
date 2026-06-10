@@ -34,6 +34,7 @@ field.
 | **PuzzleAttemptRepo** | `puzzleAttempt`  | UUID                                                   | Sprint 1 (new)              |
 | **BroadcastRepo**     | `broadcast`      | UUID                                                   | Sprint 1 (new)              |
 | **ChannelBlockRepo**  | `channelBlock`   | composite `${channelId}:${blockerId}:${blockedUserId}` | Sprint 1 (new)              |
+| **TrainingTokenRepo** | `trainingToken`  | the token string itself (random 256-bit hex)           | Sprint 2 (local training)   |
 | **MigrationLogRepo**  | `migrationLog`   | migration id (e.g. `000_sprint1_arena_baseline`)       | Sprint 1 (new, framework)   |
 
 ---
@@ -271,6 +272,20 @@ channel-wide scans. Use the `channelBlockKey()` helper in `models.ts`.
 | `blockerId`     | RecordId | yes      | 3.8   | References `UserRecord`                      |
 | `blockedUserId` | RecordId | yes      | 3.8   | References `UserRecord`                      |
 | `createdAt`     | DateISO  | yes      |       |                                              |
+
+### TrainingTokenRecord (`trainingToken`)
+
+Expiring API token for the local-training channel (the trainer exchanges its
+password once at `POST /api/training/token` and authenticates session calls
+with the token). Keyed by the token string for O(1) lookup; expired records
+are ignored at auth time.
+
+| Field       | Type     | Required | Notes                    |
+| ----------- | -------- | -------- | ------------------------ |
+| `userId`    | RecordId | yes      | References `UserRecord`  |
+| `username`  | string   | yes      | Snapshot for quick auth  |
+| `createdAt` | DateISO  | yes      |                          |
+| `expiresAt` | DateISO  | yes      | 24h TTL; checked at auth |
 
 ### MigrationLogRecord (`migrationLog`)
 

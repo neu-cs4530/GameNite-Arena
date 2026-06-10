@@ -300,3 +300,106 @@ describe("artifact upload / download", () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe("token auth channel", () => {
+  async function issueToken(): Promise<string> {
+    const res = await supertest(app).post("/api/training/token").send({ auth: AUTH0, payload: {} });
+    expect(res.status).toBe(201);
+    expect(res.body.username).toBe("user0");
+    return res.body.token as string;
+  }
+
+  it("issues a token for valid credentials and rejects bad ones", async () => {
+    const token = await issueToken();
+    expect(token.length).toBeGreaterThanOrEqual(32);
+
+    const bad = await supertest(app)
+      .post("/api/training/token")
+      .send({ auth: badAuth, payload: {} });
+    expect(bad.status).toBe(403);
+  });
+
+  it("accepts token auth on submit and progress", async () => {
+    const token = await issueToken();
+
+    const submitted = await supertest(app)
+      .post("/api/training/submit")
+      .send({ auth: { token }, payload: startPayload });
+    expect(submitted.status).toBe(201);
+
+    const progressed = await supertest(app)
+      .post(`/api/training/${submitted.body.jobId}/progress`)
+      .send({ auth: { token }, payload: { episodes: 10 } });
+    expect(progressed.status).toBe(200);
+    expect(progressed.body.status).toBe("running");
+  });
+
+  it("rejects a bogus token with 403", async () => {
+    const res = await supertest(app)
+      .post("/api/training/submit")
+      .send({ auth: { token: "f".repeat(64) }, payload: startPayload });
+    expect(res.status).toBe(403);
+  });
+
+  it("token ownership is enforced across users", async () => {
+    const token = await issueToken(); // user0's token
+    const theirs = await submitSession(AUTH1);
+
+    const res = await supertest(app)
+      .post(`/api/training/${theirs.jobId}/progress`)
+      .send({ auth: { token }, payload: { episodes: 1 } });
+    expect(res.status).toBe(403);
+  });
+
+  it("accepts a token in the multipart auth field", async () => {
+    const token = await issueToken();
+    const info = await submitSession();
+
+    const res = await supertest(app)
+      .post(`/api/training/${info.jobId}/artifact`)
+      .field("auth", JSON.stringify({ token }))
+      .attach("file", Buffer.from("token-auth weights"), "trained.pth");
+    expect(res.status).toBe(200);
+    const model = await ModelRepo.get(info.modelId);
+    UPLOADED_FILES.push(model.artifactRef!);
+  });
+});
+
+describe("training kit distribution", () => {
+  it("serves a manifest of the kit files", async () => {
+    const res = await supertest(app).get("/api/training/kit");
+    expect(res.status).toBe(200);
+    const names = (res.body.files as { name: string }[]).map((f) => f.name);
+    expect(names).toContain("session_reporter.py");
+    expect(names).toContain("base_adapter.py");
+    expect(names).toContain("requirements.txt");
+  });
+
+  it("serves whitelisted kit files with their real content", async () => {
+    const res = await supertest(app)
+      .get("/api/training/kit/session_reporter.py")
+      .buffer(true)
+      .parse((response, cb) => {
+        const chunks: Buffer[] = [];
+        response.on("data", (c: Buffer) => chunks.push(c));
+        response.on("end", () => cb(null, Buffer.concat(chunks)));
+      });
+    expect(res.status).toBe(200);
+    expect((res.body as Buffer).toString()).toContain("class GameNiteSession");
+  });
+
+  it("404s on non-whitelisted or traversal-shaped names", async () => {
+    for (const name of ["secrets.txt", "..%2F..%2Fpackage.json", "models.ts"]) {
+      const res = await supertest(app).get(`/api/training/kit/${name}`);
+      expect(res.status).toBe(404);
+    }
+  });
+
+  it("serves an install.sh bootstrap that fetches every manifest file", async () => {
+    const res = await supertest(app).get("/api/training/kit/install.sh");
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/x-shellscript");
+    expect(res.text).toContain("session_reporter.py");
+    expect(res.text).toContain("curl");
+  });
+});
