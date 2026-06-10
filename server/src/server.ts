@@ -6,7 +6,8 @@ import express from "express";
 import { Keyv } from "keyv";
 import * as path from "node:path";
 import "dotenv/config";
-import { app, httpServer } from "./app.ts";
+import { app, httpServer, io } from "./app.ts";
+import { createTrainingProgressBridge } from "./services/trainingAdapters.service.ts";
 import { resetEverythingToDefaults } from "./initRepository.ts";
 import { createRepo, setDbInitializer } from "./keyv.ts";
 import { trainingProcessor } from "./services/trainingWorker.ts";
@@ -64,6 +65,9 @@ if (process.env.MODE === "production") {
 // wire up the daily puzzle cron and start the worker
 await scheduleDailyPuzzleJob();
 registerPuzzleWorker();
+
+// start the training progress bridge (subscribes to Redis, registers socket handlers)
+await createTrainingProgressBridge(io);
 
 // Actually start the server
 const PORT = parseInt(process.env.PORT || "8000");
