@@ -153,5 +153,16 @@ test.describe("two players' game becomes a real watchable replay", () => {
     await expect(page2.getByTestId("match-header-watch-count")).toHaveText(
       String(startingWatchCount + 2),
     );
+
+    /* ----------------------------------------------------------------
+     * 4. Live presence is real: with both users on the replay page the
+     *    socket presence room has two members, and both headers show it.
+     *    When one leaves, the count drops for the viewer who stayed.
+     * ---------------------------------------------------------------- */
+    await expect(page1.getByTestId("live-watching")).toContainText("2");
+    await expect(page2.getByTestId("live-watching")).toContainText("2");
+
+    await page1.goto("/replays");
+    await expect(page2.getByTestId("live-watching")).toContainText("1");
   });
 });

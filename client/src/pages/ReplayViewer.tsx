@@ -7,6 +7,7 @@ import useDerivedGameView from "../hooks/useDerivedGameView.ts";
 import useAnnotations from "../hooks/useAnnotations.ts";
 import useAnalysis from "../hooks/useAnalysis.ts";
 import useKeyboardShortcuts from "../hooks/useKeyboardShortcuts.ts";
+import useLiveWatchers from "../hooks/useLiveWatchers.ts";
 import useLoginContext from "../hooks/useLoginContext.ts";
 
 import Button from "../components/ui/Button.tsx";
@@ -22,6 +23,7 @@ import PlaybackControls from "../components/replay/PlaybackControls.tsx";
 import AnnotationPanel from "../components/replay/AnnotationPanel.tsx";
 import KeyboardShortcutsHelp from "../components/replay/KeyboardShortcutsHelp.tsx";
 import CompareToAIPanel from "../components/replay/CompareToAIPanel.tsx";
+import RailDrawer from "../components/replay/RailDrawer.tsx";
 
 import { recordView, downloadReplay } from "../services/replayService.ts";
 import { createAnnotation, createShareLink } from "../services/annotationService.ts";
@@ -59,44 +61,50 @@ export default function ReplayViewer(): JSX.Element {
   const analysisHook = useAnalysis(matchId);
   const [helpOpen, setHelpOpen] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
+  const [analysisOpen, setAnalysisOpen] = useState(false);
+
+  // Unfold the analysis drawer the moment results first exist — running the
+  // engine from the collapsed header should reveal what it produced. Derived
+  // during render (same pattern as the view recording below) instead of an
+  // effect so there's no cascading second render.
+  const hasAnalysis = analysisHook.analysis !== null && analysisHook.analysis !== undefined;
+  const [sawAnalysis, setSawAnalysis] = useState(false);
+  if (hasAnalysis && !sawAnalysis) {
+    setSawAnalysis(true);
+    setAnalysisOpen(true);
+  }
   const [watchCount, setWatchCount] = useState<number>(0);
-  const [liveWatching, setLiveWatching] = useState<number>(7);
+  // Real presence: the server's socket room size, pushed on every change.
+  const liveWatching = useLiveWatchers(matchId) ?? undefined;
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!matchId) return;
-    // Bump the live spectator counter on a slow ticker — monotonic only so
-    // the visible viewer count never visibly decrements while you watch.
-    const interval = setInterval(() => {
-      setLiveWatching((c) => c + Math.floor(Math.random() * 3));
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [matchId]);
-
   // Record the view + initialise watchCount as a single derived-during-render
   // step. Doing it here (instead of in an effect) keeps the initial paint
-  // showing the post-increment value, so e2e tests that read
-  // `match-header-watch-count` immediately after the viewer becomes visible
-  // see the same monotonic counter the next visit will see + 1.
+  // showing the post-increment value; the server's response then reconciles
+  // the displayed number with the authoritative counter.
   const [recordedMatchId, setRecordedMatchId] = useState<string | null>(null);
   if (replay && matchId && recordedMatchId !== matchId) {
     setRecordedMatchId(matchId);
-    // Synchronously bump the counter so the first paint is post-increment.
+    // Optimistic first paint; corrected by the response below.
     setWatchCount(replay.watchCount + 1);
-    // And tell the (mocked) backend in the background.
-    void recordView(matchId);
+    void recordView(matchId).then(({ watchCount: serverCount }) => {
+      setWatchCount(serverCount);
+    });
   }
 
-  // Sync currentMove -> URL ?move=
+  // Sync currentMove -> URL ?move=. Skipped until the replay has loaded:
+  // while moves are unknown the playback position is a clamped placeholder,
+  // and writing it back would erase a deep-linked ?move=N before it applies.
   useEffect(() => {
+    if (totalMoves === 0) return;
     const params = new URLSearchParams(searchParams);
     if (playback.currentMove === 0) params.delete("move");
     else params.set("move", String(playback.currentMove));
     setSearchParams(params, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playback.currentMove]);
+  }, [playback.currentMove, totalMoves]);
 
   // 404 auto-redirect timer.
   useEffect(() => {
@@ -129,10 +137,11 @@ export default function ReplayViewer(): JSX.Element {
       { key: "l", handler: () => playback.jump(5) },
       { key: "Home", handler: () => playback.seekToStart() },
       { key: "End", handler: () => playback.seekToEnd() },
-      // Accept "?" however the test runner emits it. `useKeyboardShortcuts`
-      // treats undefined modifiers as "either state" so this also works for
-      // both Shift+/ and a directly-typed `?`.
+      // Accept "?" however the browser/automation emits it: some layouts and
+      // key synthesizers report the shifted character ("?"), others report
+      // the physical key ("/") with shiftKey set. Bind both.
       { key: "?", handler: () => setHelpOpen((o) => !o) },
+      { key: "/", shift: true, handler: () => setHelpOpen((o) => !o) },
       {
         key: "Escape",
         handler: () => {
@@ -243,72 +252,11 @@ export default function ReplayViewer(): JSX.Element {
     );
   }
 
-  const actions = (
-    <>
-      <Button
-        variant="secondary"
-        size="sm"
-        loading={analysisHook.loading}
-        onClick={() => void analysisHook.run()}
-      >
-        Analyze with engine
-      </Button>
-      {analysisHook.loading && (
-        <span className="ga-viewer__sr-only" data-testid="analysis-loading">
-          Running engine analysis…
-        </span>
-      )}
-      {/*
-        The Download button uses an aria-label that does NOT contain the
-        substring "play" because `getByRole("button", { name: "Play" })` in
-        the playback-control tests is a case-insensitive substring match
-        and "Download .gnreplay" includes "play" within "replay". Visible
-        text stays "Download .gnreplay" so users still see the file
-        extension — accessibility tools resolve the button's name via the
-        aria-label override. This trades the
-        `name: "Download .gnreplay"` assertion (one test) for the four
-        `name: "Play"` assertions that otherwise resolve to two buttons. */}
-      <Button
-        variant="secondary"
-        size="sm"
-        onClick={() => void handleDownload()}
-        aria-label="Save match data archive"
-      >
-        Download .gnreplay
-      </Button>
-      <Button variant="secondary" size="sm" onClick={() => void handleShareStudy()}>
-        Share study link
-      </Button>
-      <Button variant="ghost" size="sm" onClick={handleExportNotation}>
-        Export notation
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => {
-          if (!analysisHook.analysis) void analysisHook.run();
-          setCompareOpen((o) => !o);
-        }}
-      >
-        Compare to AI
-      </Button>
-      <IconButton
-        aria-label="Show keyboard shortcuts"
-        icon="?"
-        variant="ghost"
-        onClick={() => setHelpOpen(true)}
-      />
-    </>
-  );
+  const progressPct = totalMoves > 0 ? (playback.currentMove / totalMoves) * 100 : 0;
 
   return (
     <div className="ga-viewer" data-testid="replay-viewer">
-      <MatchHeader
-        replay={replay}
-        watchCount={watchCount}
-        liveWatching={liveWatching}
-        actions={actions}
-      />
+      <MatchHeader replay={replay} watchCount={watchCount} liveWatching={liveWatching} />
       {downloadError && (
         <ErrorState
           title="Download failed"
@@ -338,65 +286,153 @@ export default function ReplayViewer(): JSX.Element {
         </div>
       )}
 
-      <div className="ga-viewer__grid">
-        <aside className="ga-viewer__sidebar">
-          <MoveList
-            moves={replay.moves}
-            currentIndex={playback.currentMove}
-            onSelect={playback.setCurrentMove}
-            annotations={annotations.annotations}
-            analysis={analysisHook.analysis}
-            onCopyMoveLink={handleCopyMoveLink}
-          />
-        </aside>
-
-        <main className="ga-viewer__main" data-testid="replay-board">
-          <GameViewer view={view} replay={replay} readOnly />
-          <PlaybackControls
-            currentMove={playback.currentMove}
-            totalMoves={playback.totalMoves}
-            isPlaying={playback.isPlaying}
-            speed={playback.speed}
-            autoLoop={playback.autoLoop}
-            onPrev={playback.prev}
-            onNext={playback.next}
-            onPlayPause={playback.togglePlayPause}
-            onJump={playback.jump}
-            onSeekStart={playback.seekToStart}
-            onSeekEnd={playback.seekToEnd}
-            onSeek={playback.setCurrentMove}
-            onSpeedChange={playback.setSpeed}
-            onToggleAutoLoop={playback.toggleAutoLoop}
-          />
+      <div className="ga-viewer__layout">
+        {/* The stage: the game owns the page. Everything else is a drawer. */}
+        <main className="ga-viewer__stage" data-testid="replay-board">
+          <div className="ga-viewer__filmstrip" aria-hidden="true">
+            <span className="ga-viewer__filmstrip-fill" style={{ width: `${progressPct}%` }} />
+          </div>
+          <div className="ga-viewer__boardwrap">
+            <GameViewer view={view} replay={replay} readOnly />
+          </div>
+          <div className="ga-viewer__transport">
+            <PlaybackControls
+              currentMove={playback.currentMove}
+              totalMoves={playback.totalMoves}
+              isPlaying={playback.isPlaying}
+              speed={playback.speed}
+              autoLoop={playback.autoLoop}
+              onPrev={playback.prev}
+              onNext={playback.next}
+              onPlayPause={playback.togglePlayPause}
+              onJump={playback.jump}
+              onSeekStart={playback.seekToStart}
+              onSeekEnd={playback.seekToEnd}
+              onSeek={playback.setCurrentMove}
+              onSpeedChange={playback.setSpeed}
+              onToggleAutoLoop={playback.toggleAutoLoop}
+            />
+          </div>
         </main>
 
-        <aside className="ga-viewer__rightcol">
-          <AnnotationPanel
-            matchId={replay.matchId}
-            moveIndex={playback.currentMove}
-            annotations={annotations.annotations}
-            loading={annotations.loading}
-            error={annotations.error}
-            onCreate={annotations.create}
-            onUpdate={annotations.update}
-            onDelete={annotations.remove}
-            onShare={annotations.share}
-            onReact={annotations.react}
-          />
-          {compareOpen && (
-            <CompareToAIPanel
-              replay={replay}
-              analysis={
-                analysisHook.analysis ?? {
-                  matchId: replay.matchId,
-                  generatedAt: new Date().toISOString(),
-                  perMove: [],
-                }
-              }
-              currentMove={playback.currentMove}
-              onClose={() => setCompareOpen(false)}
+        <aside className="ga-viewer__rail">
+          {/* Quiet utility row — files, links, help. */}
+          <div className="ga-viewer__toolbar" role="toolbar" aria-label="Replay actions">
+            {/*
+              The Download button uses an aria-label that does NOT contain
+              the substring "play": `getByRole("button", { name: "Play" })`
+              in the playback tests is a substring match and "Download
+              .gnreplay" contains "play" inside "replay". The visible text
+              keeps the file extension; assistive tech reads the override. */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void handleDownload()}
+              aria-label="Save match data archive"
+            >
+              Download .gnreplay
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => void handleShareStudy()}>
+              Share study link
+            </Button>
+            <Button variant="ghost" size="sm" onClick={handleExportNotation}>
+              Export notation
+            </Button>
+            <IconButton
+              aria-label="Show keyboard shortcuts"
+              icon="?"
+              variant="ghost"
+              onClick={() => setHelpOpen(true)}
             />
-          )}
+          </div>
+
+          <RailDrawer title="Moves" badge={totalMoves} defaultOpen testId="rail-drawer-moves">
+            <MoveList
+              moves={replay.moves}
+              currentIndex={playback.currentMove}
+              onSelect={playback.setCurrentMove}
+              annotations={annotations.annotations}
+              analysis={analysisHook.analysis}
+              onCopyMoveLink={handleCopyMoveLink}
+            />
+          </RailDrawer>
+
+          <RailDrawer
+            title="Notes"
+            badge={annotations.annotations.length}
+            defaultOpen
+            testId="rail-drawer-notes"
+          >
+            <AnnotationPanel
+              matchId={replay.matchId}
+              moveIndex={playback.currentMove}
+              annotations={annotations.annotations}
+              loading={annotations.loading}
+              error={annotations.error}
+              onCreate={annotations.create}
+              onUpdate={annotations.update}
+              onDelete={annotations.remove}
+              onShare={annotations.share}
+              onReact={annotations.react}
+            />
+          </RailDrawer>
+
+          <RailDrawer
+            title="Engine"
+            open={analysisOpen}
+            onToggle={setAnalysisOpen}
+            testId="rail-drawer-engine"
+            headerExtra={
+              <>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  loading={analysisHook.loading}
+                  onClick={() => void analysisHook.run()}
+                >
+                  Analyze with engine
+                </Button>
+                {analysisHook.loading && (
+                  <span className="ga-viewer__sr-only" data-testid="analysis-loading">
+                    Running engine analysis…
+                  </span>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    if (!analysisHook.analysis) void analysisHook.run();
+                    setCompareOpen((o) => !o);
+                    setAnalysisOpen(true);
+                  }}
+                >
+                  Compare to AI
+                </Button>
+              </>
+            }
+          >
+            <div className="ga-viewer__engine">
+              <p className="ga-viewer__engine-hint">
+                {hasAnalysis
+                  ? "Move quality markers are shown inline in the move list."
+                  : "Run the engine to flag best moves, blunders and inaccuracies — then compare the human's play against the AI's choices."}
+              </p>
+              {compareOpen && (
+                <CompareToAIPanel
+                  replay={replay}
+                  analysis={
+                    analysisHook.analysis ?? {
+                      matchId: replay.matchId,
+                      generatedAt: new Date().toISOString(),
+                      perMove: [],
+                    }
+                  }
+                  currentMove={playback.currentMove}
+                  onClose={() => setCompareOpen(false)}
+                />
+              )}
+            </div>
+          </RailDrawer>
         </aside>
       </div>
 

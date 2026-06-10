@@ -7,6 +7,7 @@ import {
 import { type NewMessagePayload } from "./message.types.ts";
 import { type WithAuth } from "./auth.types.ts";
 import { type GameMakeMovePayload, type GamePlayInfo, type TaggedGameView } from "./game.types.ts";
+import { type ReplayWatchersPayload } from "./replay.types.ts";
 import { type SafeUserInfo } from "./user.types.ts";
 
 /**
@@ -20,6 +21,8 @@ export interface ClientToServerEvents {
   gameMakeMove: (payload: WithAuth<GameMakeMovePayload>) => void;
   gameStart: (payload: WithAuth<string>) => void;
   gameWatch: (payload: WithAuth<string>) => void;
+  replayWatch: (payload: WithAuth<string>) => void;
+  replayLeave: (payload: WithAuth<string>) => void;
 }
 
 /**
@@ -33,4 +36,5 @@ export interface ServerToClientEvents {
   gamePlayersUpdated: (payload: SafeUserInfo[]) => void;
   gameStateUpdated: (payload: TaggedGameView & { forPlayer: boolean }) => void;
   gameWatched: (payload: GamePlayInfo) => void;
+  replayWatchers: (payload: ReplayWatchersPayload) => void;
 }

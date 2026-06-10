@@ -64,8 +64,9 @@ test.describe("Spec extras: 'Watch later' star button on match cards", () => {
 
     await page.goto(`/profile/${DEFAULT_USER}?tab=watch-later`);
 
-    // The grid must show at least the starred items (could include more if
-    // the code agent decides to dedupe / order; that's fine).
+    // The starred matches resolve through the (real-first) replay service,
+    // so wait for the grid rather than counting synchronously.
+    await expect(page.getByTestId("match-card").first()).toBeVisible();
     expect(await page.getByTestId("match-card").count()).toBeGreaterThanOrEqual(1);
   });
 });
@@ -342,17 +343,15 @@ test.describe("Spec extras: spectator live-counter on the viewer", () => {
   /**
    * Design contract:
    *   - The replay viewer header shows a small "N watching" counter with
-   *     `data-testid="live-watching"`. It animates upward over time (mock).
-   *   - The animation is CSS-driven; we only assert the element exists and
-   *     contains a positive integer.
+   *     `data-testid="live-watching"`. The number is the server's socket
+   *     presence-room size (real watchers, no mock) — with one open viewer
+   *     it reads exactly 1.
    */
-  test("live spectator counter is rendered with a positive integer", async ({ page }) => {
+  test("live spectator counter shows the real presence count", async ({ page }) => {
     await gotoViewer(page);
     const counter = page.getByTestId("live-watching");
     await expect(counter).toBeVisible();
-    const text = await counter.innerText();
-    expect(text).toMatch(/\d+/);
-    expect(Number(text.match(/\d+/)![0])).toBeGreaterThan(0);
+    await expect(counter).toContainText("1");
   });
 });
 
