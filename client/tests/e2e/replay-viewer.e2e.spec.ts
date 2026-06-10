@@ -219,14 +219,19 @@ test.describe("The replay viewer", () => {
     await expect(annotation).toBeVisible();
 
     await annotation.getByRole("button", { name: "Edit" }).click();
-    await page.getByLabel("Annotation text").fill("updated text");
-    await page.getByRole("button", { name: "Save annotation" }).click();
+    // Scoped to the annotation item: the create-new form below renders its
+    // own "Annotation text" textarea at the same time.
+    await annotation.getByLabel("Annotation text").fill("updated text");
+    await annotation.getByRole("button", { name: "Save annotation" }).click();
 
     await expect(page.getByTestId("annotation-list").getByText("updated text")).toBeVisible();
   });
 
   test("delete an annotation", async ({ page }) => {
     await gotoViewer(page);
+    // Annotations load through the real-first service; wait for the list
+    // before taking a count snapshot.
+    await expect(page.getByTestId("annotation-item").first()).toBeVisible();
     const initialCount = await page.getByTestId("annotation-item").count();
     expect(initialCount).toBeGreaterThan(0);
 
@@ -269,7 +274,10 @@ test.describe("The replay viewer", () => {
   test("'Download .gnreplay' triggers a download", async ({ page }) => {
     await gotoViewer(page);
     const downloadPromise = page.waitForEvent("download");
-    await page.getByRole("button", { name: "Download .gnreplay" }).click();
+    // Click by visible text: the button's accessible name is overridden to
+    // avoid the "play"-substring collision with the transport's Play button
+    // (any name containing ".gnreplay" contains "play").
+    await page.getByText("Download .gnreplay").click();
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toMatch(/\.gnreplay$/);
   });

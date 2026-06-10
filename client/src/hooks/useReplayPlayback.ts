@@ -60,14 +60,22 @@ export default function useReplayPlayback(
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Sync currentMove if total changes (e.g., replay finishes loading).
-  // We compare via a sentinel ref and only update when total actually shrinks
-  // below the current value; doing this during render keeps the lint rule
+  // Sync currentMove when total changes (e.g., replay finishes loading).
+  // Derived during render (sentinel-state pattern) to keep the lint rule
   // against setState-in-effect happy.
+  //
+  // Deep-link case: the hook usually mounts while the replay is still being
+  // fetched (totalMoves = 0), which clamps a requested ?move=N down to 0.
+  // Remember the original request and re-apply it once the move count
+  // becomes known, so deep links survive the fetch latency.
+  const [pendingInitialMove, setPendingInitialMove] = useState(initialMove);
   const [lastTotalMoves, setLastTotalMoves] = useState(totalMoves);
   if (lastTotalMoves !== totalMoves) {
     setLastTotalMoves(totalMoves);
-    if (currentMove > totalMoves) {
+    if (lastTotalMoves === 0 && totalMoves > 0 && pendingInitialMove > 0) {
+      setCurrentMoveState(clamp(pendingInitialMove, 0, totalMoves));
+      setPendingInitialMove(0);
+    } else if (currentMove > totalMoves) {
       setCurrentMoveState(totalMoves);
     }
   }
