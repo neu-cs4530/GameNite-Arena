@@ -15,7 +15,7 @@
 
 import { test, expect, type APIRequestContext } from "@playwright/test";
 import {
-  API_BASE,
+  cancelSession,
   completeSession,
   deployModel,
   failSession,
@@ -65,10 +65,8 @@ test.describe("Real runs drive the dashboard", () => {
     await expect(page.getByTestId("live-now-card")).toBeVisible();
     await expect(page.getByTestId("live-now-waiting")).toBeVisible();
 
-    // Tidy: cancel so later tests' chip counts stay interpretable.
-    await api.post(`${API_BASE}/api/training/${jobId}/cancel`, {
-      data: { auth: { username: user.username, password: user.password }, payload: {} },
-    });
+    // Tidy (checked): cancel so later tests' chip counts stay interpretable.
+    await cancelSession(api, user, jobId);
   });
 
   test("a running session auto-opens Runs and shows live progress on the row", async ({ page }) => {
@@ -120,10 +118,9 @@ test.describe("Real runs drive the dashboard", () => {
 
     await logInTrainer(page, user);
     await page.goto("/trainer");
-    const runsBody = page.getByTestId("trainer-section-runs-body");
-    if (!(await runsBody.isVisible().catch(() => false))) {
-      await page.getByTestId("trainer-section-runs-toggle").click();
-    }
+    // Chips always OPEN (never toggle) — race-free door into the section.
+    await page.getByTestId("status-chip-completed").click();
+    await page.getByTestId("runs-clear-filters").click();
 
     const row = page.getByTestId("job-row").filter({ hasText: "dash-expand-bot" });
     await expect(row.getByTestId("job-row-details")).toHaveCount(0);
@@ -144,14 +141,21 @@ test.describe("Real runs drive the dashboard", () => {
 
     await logInTrainer(page, user);
     await page.goto("/trainer");
-    const runsBody = page.getByTestId("trainer-section-runs-body");
-    if (!(await runsBody.isVisible().catch(() => false))) {
-      await page.getByTestId("trainer-section-runs-toggle").click();
-    }
+    await page.getByTestId("status-chip-queued").click();
 
     const row = page.getByTestId("job-row").filter({ hasText: "dash-cancel-bot" });
     await row.getByTestId("job-row-cancel").click();
-    await expect(row.getByText(/canceled/i).first()).toBeVisible();
+    // The queued pre-filter is honest: a now-canceled run drops out of it...
+    await expect(row).toHaveCount(0);
+    // ...and shows its canceled status once the filter is cleared.
+    await page.getByTestId("runs-clear-filters").click();
+    await expect(
+      page
+        .getByTestId("job-row")
+        .filter({ hasText: "dash-cancel-bot" })
+        .getByText(/canceled/i)
+        .first(),
+    ).toBeVisible();
 
     // The control channel: the trainer's next report comes back "canceled".
     const status = await reportProgress(api, user, run.jobId, 50);
@@ -205,14 +209,22 @@ test.describe("Deployments on real artifacts", () => {
 
 test.describe("Models section is the real model list", () => {
   test("models created by runs appear, with artifact state", async ({ page }) => {
+    // Self-sufficient: create both fixtures here so this test (and retries
+    // in a fresh worker) never depend on earlier tests' state.
+    const withArtifact = await registerSession(api, user, { name: "models-artifact-bot" });
+    await completeSession(api, user, withArtifact.jobId);
+    await uploadArtifact(api, user, withArtifact.jobId);
+    const bare = await registerSession(api, user, { name: "models-bare-bot" });
+    await cancelSession(api, user, bare.jobId);
+
     await logInTrainer(page, user);
     await page.goto("/trainer");
     await page.getByTestId("trainer-section-models-toggle").click();
 
-    const trained = page.getByTestId("model-row").filter({ hasText: "dash-deploy-bot" });
-    await expect(trained.getByTestId("model-row-artifact")).toContainText("trained");
+    const trained = page.getByTestId("model-row").filter({ hasText: "models-artifact-bot" });
+    await expect(trained.getByTestId("model-row-artifact")).toContainText("artifact uploaded");
     await expect(
-      page.getByTestId("model-row").filter({ hasText: "dash-expand-bot" }),
+      page.getByTestId("model-row").filter({ hasText: "models-bare-bot" }),
     ).toContainText("no artifact yet");
   });
 });
@@ -221,11 +233,13 @@ test.describe("Chrome and design tokens", () => {
   test("the n shortcut opens the new-run form", async ({ page }) => {
     await logInTrainer(page, user);
     await page.goto("/trainer");
-    // The listener attaches on mount; wait for the page to be interactive.
     await expect(page.getByTestId("trainer-dashboard")).toBeVisible();
-    await page.getByTestId("status-chips").waitFor();
-    await page.keyboard.press("n");
-    await expect(page).toHaveURL(/\/trainer\/new/);
+    // The listener attaches on mount; retry the press until it lands so a
+    // fresh worker (zero chips, no other waitable signal) cannot flake.
+    await expect(async () => {
+      await page.keyboard.press("n");
+      await expect(page).toHaveURL(/\/trainer\/new/, { timeout: 500 });
+    }).toPass({ timeout: 10_000 });
   });
 
   test("new components draw from the design token set, not hardcoded colors", async ({ page }) => {

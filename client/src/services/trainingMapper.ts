@@ -45,3 +45,22 @@ export function mapSessionToJobDetail(info: TrainingSessionInfo): TrainingJobDet
 export function mapSessionToJobSummary(info: TrainingSessionInfo): TrainingJobSummary {
   return mapSessionToJobDetail(info);
 }
+
+/**
+ * The session as the platform knows it: strips the client-only fields the
+ * mapper fills with defaults (views, checkpoint/series placeholders) so the
+ * "raw session data" panels never present an invented value as recorded.
+ */
+export function rawSessionView(job: TrainingJobDetail): Record<string, unknown> {
+  const {
+    views: _views,
+    hasCheckpoint: _hasCheckpoint,
+    checkpoints: _checkpoints,
+    episodesSeries: _episodesSeries,
+    meanRewardSeries: _meanRewardSeries,
+    winRateSeries: _winRateSeries,
+    startedAt: _startedAt,
+    ...recorded
+  } = job;
+  return recorded;
+}

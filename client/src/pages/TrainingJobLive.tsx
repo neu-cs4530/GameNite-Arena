@@ -21,6 +21,7 @@ import useJob from "../hooks/useJob.ts";
 import useLiveTrainingProgress from "../hooks/useLiveTrainingProgress.ts";
 import useLoginContext from "../hooks/useLoginContext.ts";
 import { cancelJob, downloadArtifact } from "../services/trainingService.ts";
+import { rawSessionView } from "../services/trainingMapper.ts";
 import { createDeployment } from "../services/deploymentService.ts";
 import { countActiveForGame, listDeploymentViews } from "../services/trainerViewService.ts";
 
@@ -51,10 +52,10 @@ export default function TrainingJobLive(): JSX.Element {
   useEffect(() => {
     if (!(live.isComplete || live.hasFailed)) return;
     refetch();
-    // The reporter uploads the .pth AFTER complete(); one delayed re-read
-    // lets the Download button appear without a manual reload.
-    const lateRefetch = setTimeout(refetch, 3000);
-    return () => clearTimeout(lateRefetch);
+    // The reporter uploads the .pth AFTER complete(); a few staged re-reads
+    // let the Download button appear even when the upload takes a moment.
+    const lateRefetches = [1500, 4000, 9000].map((ms) => setTimeout(refetch, ms));
+    return () => lateRefetches.forEach(clearTimeout);
   }, [live.isComplete, live.hasFailed, refetch]);
   useEffect(() => {
     if (job?.status === "queued" && liveStatus === "running") refetch();
@@ -118,14 +119,19 @@ export default function TrainingJobLive(): JSX.Element {
     const winRate = job.winRateSeries.slice();
     for (const event of live.events) {
       if (event.epoch === undefined) continue;
+      const reward = event.metrics?.meanReward;
+      const rate = event.metrics?.winRate;
+      // Never chart a number the trainer didn't send: skip metric-less
+      // events; carry the last value when only one series is reported.
+      if (reward === undefined && rate === undefined) continue;
       episodes.push(event.epoch);
-      meanReward.push(event.metrics?.meanReward ?? 0);
-      winRate.push(event.metrics?.winRate ?? 0);
+      meanReward.push(reward ?? meanReward[meanReward.length - 1] ?? 0);
+      winRate.push(rate ?? winRate[winRate.length - 1] ?? 0);
     }
     return { episodes, meanReward, winRate };
   }, [job, live.events]);
 
-  if (loading) {
+  if (loading && !job) {
     return (
       <div className="ga-live-job" data-testid="training-job-live-loading">
         <Skeleton variant="rect" width={220} height={28} />
@@ -172,7 +178,13 @@ export default function TrainingJobLive(): JSX.Element {
         </div>
       </header>
 
-      {job.status === "queued" && <ConnectTrainerCard jobId={job.id} username={user.username} />}
+      {job.status === "queued" && (
+        <ConnectTrainerCard
+          jobId={job.id}
+          username={user.username}
+          targetEpisodes={job.targetEpisodes}
+        />
+      )}
 
       {showChart && (
         <section className="ga-live-job__chart" data-testid="live-chart-section">
@@ -247,7 +259,7 @@ export default function TrainingJobLive(): JSX.Element {
             onToggle={setRawOpen}
             testId="raw-session"
           >
-            <pre>{JSON.stringify(job, null, 2)}</pre>
+            <pre>{JSON.stringify(rawSessionView(job), null, 2)}</pre>
           </Disclosure>
         </div>
       </Disclosure>

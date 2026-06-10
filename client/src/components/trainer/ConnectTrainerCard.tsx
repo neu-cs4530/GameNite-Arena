@@ -6,6 +6,8 @@ import CopyField from "../ui/CopyField.tsx";
 interface ConnectTrainerCardProps {
   jobId: string;
   username: string;
+  /** Registered episode target, so the demo simulates the run as configured. */
+  targetEpisodes: number;
 }
 
 /**

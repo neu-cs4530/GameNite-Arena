@@ -8,6 +8,7 @@ import Disclosure from "../ui/Disclosure.tsx";
 import TimeAgo from "../ui/TimeAgo.tsx";
 import JobStatusPill from "./JobStatusPill.tsx";
 import { trainerGameNames } from "./trainerConsts.ts";
+import { rawSessionView } from "../../services/trainingMapper.ts";
 import type { TrainingJobDetail } from "../../util/types.ts";
 
 /** Queued sessions older than this read as stalled — connect or cancel. */
@@ -134,13 +135,16 @@ export default function JobRow({
             <dt>Learning rate</dt>
             <dd>{job.hyperparameters.learningRate}</dd>
           </div>
-          <div>
-            <dt>Progress</dt>
-            <dd>
-              {job.progressEpisodes.toLocaleString()} episodes · mean reward{" "}
-              {job.currentMeanReward.toFixed(3)} · win rate {(job.currentWinRate * 100).toFixed(1)}%
-            </dd>
-          </div>
+          {job.status !== "queued" && (
+            <div>
+              <dt>Progress</dt>
+              <dd>
+                {job.progressEpisodes.toLocaleString()} episodes · mean reward{" "}
+                {job.currentMeanReward.toFixed(3)} · win rate{" "}
+                {(job.currentWinRate * 100).toFixed(1)}%
+              </dd>
+            </div>
+          )}
           {job.completedAt && (
             <div>
               <dt>Finished</dt>
@@ -177,7 +181,7 @@ export default function JobRow({
           onToggle={setRawOpen}
           testId="job-row-raw"
         >
-          <pre className="ga-job-row__raw">{JSON.stringify(job, null, 2)}</pre>
+          <pre className="ga-job-row__raw">{JSON.stringify(rawSessionView(job), null, 2)}</pre>
         </Disclosure>
       </div>
     </Disclosure>

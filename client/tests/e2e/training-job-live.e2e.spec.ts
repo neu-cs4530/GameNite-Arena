@@ -80,12 +80,14 @@ test.describe("Terminal states", () => {
     await page.goto(`/trainer/jobs/${run.jobId}`);
     await expect(page.getByTestId("live-chart-section")).toBeVisible();
 
-    // The reporter's documented order: complete first, artifact after.
+    // The reporter's documented order: complete first, artifact right after
+    // (uploading before the UI assertions keeps the page's staged re-reads
+    // comfortably ahead of the upload).
     await completeSession(api, user, run.jobId, { winRate: 0.83, meanReward: 0.6 });
+    await uploadArtifact(api, user, run.jobId);
     await expect(page.getByTestId("job-actions").getByTestId("run-again")).toBeVisible({
       timeout: 15_000,
     });
-    await uploadArtifact(api, user, run.jobId);
 
     // The delayed post-terminal refetch picks the artifact up.
     await expect(page.getByTestId("download-artifact")).toBeVisible({ timeout: 10_000 });

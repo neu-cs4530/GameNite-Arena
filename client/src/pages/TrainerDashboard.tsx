@@ -1,5 +1,5 @@
 import "./TrainerDashboard.css";
-import { useCallback, useEffect, useMemo, useState, type JSX } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import type { DeploymentView } from "@gamenite/shared";
 import Badge from "../components/ui/Badge.tsx";
@@ -115,17 +115,31 @@ export default function TrainerDashboard(): JSX.Element {
   );
   const sections = openSections ?? derivedSections;
 
-  /* Deep links scroll to their (now open) section once data is up. */
+  /* Freeze the derived open-set the moment the first jobs payload lands —
+   * a genuine initial-state decision. Background refetches can then never
+   * open or close a section on their own. */
   useEffect(() => {
-    if (jobsResult.data === null) return;
+    if (openSections !== null || jobsResult.data === null) return;
+    // Deferred a tick (lint: no sync setState in effects). Not render-driving:
+    // the derived record is already exactly what is on screen.
+    const freeze = window.setTimeout(() => setOpenSections(derivedSections), 0);
+    return () => window.clearTimeout(freeze);
+  }, [openSections, jobsResult.data, derivedSections]);
+
+  /* Deep links scroll to their (now open) section exactly once. */
+  const didScrollRef = useRef(false);
+  const dataReady = jobsResult.data !== null;
+  useEffect(() => {
+    if (!dataReady || didScrollRef.current) return;
     if (!deepLinkTab && !highlightDeployment) return;
+    didScrollRef.current = true;
     const target =
       deepLinkTab === "jobs" || deepLinkTab === "runs" ? "runs" : (deepLinkTab ?? "deployments");
     const timer = setTimeout(() => {
       document.getElementById(`trainer-section-${target}`)?.scrollIntoView({ block: "start" });
     }, 50);
     return () => clearTimeout(timer);
-  }, [jobsResult.data, deepLinkTab, highlightDeployment]);
+  }, [dataReady, deepLinkTab, highlightDeployment]);
 
   /* Keep the page current while runs are active — the interval refetches
    * data only and never touches disclosure state. */
@@ -262,7 +276,7 @@ export default function TrainerDashboard(): JSX.Element {
               <li>
                 <strong>Start a run</strong> from the kit folder and watch it appear here live:
                 <CopyField
-                  value={`python3 demo_local_session.py --username ${user.username} --password <your password>`}
+                  value={`python3 demo_local_session.py --base-url ${window.location.origin} --username ${user.username} --password <your password>`}
                   testId="quickstart-run-command"
                 />
               </li>
@@ -405,7 +419,7 @@ export default function TrainerDashboard(): JSX.Element {
                 <Badge variant="default">{trainerGameNames[model.gameKey]}</Badge>
                 {model.hasArtifact ? (
                   <Badge variant="success" testId="model-row-artifact">
-                    trained
+                    artifact uploaded
                   </Badge>
                 ) : (
                   <Badge variant="default">no artifact yet</Badge>

@@ -97,6 +97,20 @@ export async function reportProgress(
   return body.status;
 }
 
+export async function cancelSession(
+  request: APIRequestContext,
+  user: TrainerUser,
+  jobId: string,
+): Promise<void> {
+  const res = await request.post(`${API_BASE}/api/training/${jobId}/cancel`, {
+    data: {
+      auth: { username: user.username, password: user.password },
+      payload: {},
+    },
+  });
+  expect(res.ok()).toBeTruthy();
+}
+
 export async function completeSession(
   request: APIRequestContext,
   user: TrainerUser,
