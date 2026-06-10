@@ -41,7 +41,7 @@ bower_components
 build/Release
 
 # Dependency directories
-node_modules/
+node_modules
 jspm_packages/
 .pnp
 .pnp.js
@@ -142,3 +142,7 @@ __pycache__/
 .pytest_cache/
 
 CLAUDE.md
+
+# Python virtual environments
+.venv/
+ai/.venv/

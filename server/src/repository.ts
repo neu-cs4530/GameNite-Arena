@@ -17,6 +17,7 @@ import type {
   RatingRecord,
   ThreadRecord,
   TrainingJobRecord,
+  TrainingTokenRecord,
   UserRecord,
 } from "./models.ts";
 
@@ -40,6 +41,7 @@ export const PuzzleRepo = createRepo<PuzzleRecord>("puzzle");
 export const PuzzleAttemptRepo = createRepo<PuzzleAttemptRecord>("puzzleAttempt");
 export const RatingRepo = createRepo<RatingRecord>("rating");
 export const TrainingJobRepo = createRepo<TrainingJobRecord>("trainingJob");
+export const TrainingTokenRepo = createRepo<TrainingTokenRecord>("trainingToken");
 
 /* Migration framework */
 export const MigrationLogRepo = createRepo<MigrationLogRecord>("migrationLog");
