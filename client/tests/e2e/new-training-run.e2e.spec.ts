@@ -8,8 +8,7 @@ import { SAMPLE_HEURISTIC_PY } from "./trainerTestUtils.ts";
 // Node and a real global Buffer is available. We `declare` a minimal
 // shape just to satisfy TypeScript without adding `@types/node` to the
 // app's resolution.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-declare const Buffer: any;
+declare const Buffer: { from(input: string, encoding?: string): Uint8Array };
 
 /**
  * Tests for `/trainer/new` (spec section "Tests the trainer test agent must

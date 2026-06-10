@@ -96,8 +96,7 @@
   --radius-pill: 999px;
 
   /* Typography */
-  --font-sans:
-    "Inter", "Helvetica Neue", Arial, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-sans: "Inter", "Helvetica Neue", Arial, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, "SFMono-Regular", monospace;
 
   --text-display: 3.5rem; /* 56px */

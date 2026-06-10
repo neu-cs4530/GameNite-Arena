@@ -43,11 +43,5 @@ export const RatingRepo = createRepo<RatingRecord>("rating");
 export const TrainingJobRepo = createRepo<TrainingJobRecord>("trainingJob");
 export const TrainingTokenRepo = createRepo<TrainingTokenRecord>("trainingToken");
 
-/**
- * Replay watch counts, keyed by matchId (Story 3.2). Kept separate from
- * MatchRepo so the archival MatchRecord stays immutable while counts mutate.
- */
-export const WatchCountRepo = createRepo<number>("watchCount");
-
 /* Migration framework */
 export const MigrationLogRepo = createRepo<MigrationLogRecord>("migrationLog");

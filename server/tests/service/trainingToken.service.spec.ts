@@ -1,8 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import {
-  issueTrainingToken,
-  checkTrainingAuth,
-} from "../../src/services/trainingToken.service.ts";
+import { issueTrainingToken, checkTrainingAuth } from "../../src/services/trainingToken.service.ts";
 import { TrainingTokenRepo } from "../../src/repository.ts";
 import { getUserByUsername } from "../../src/services/auth.service.ts";
 import type { UserWithId } from "../../src/types.ts";
