@@ -15,7 +15,7 @@ import { type GameServer } from "./types.ts";
 
 export const app = express();
 export const httpServer = http.createServer(app);
-const io: GameServer = new Server(httpServer);
+export const io: GameServer = new Server(httpServer);
 
 app.use(express.json());
 
