@@ -107,6 +107,18 @@ else:
     session.upload_artifact("my-nim-bot.pth")
 ```
 
+## The real thing
+
+`ai/example_local_training_nim.py` is the canonical full workflow with nothing
+faked: chunked SB3 PPO training through the adapter SDK, real rollout
+evaluation per chunk, live reporting, artifact upload, and a round-trip check
+that rebuilds the platform-stored `.pth` the way the inference service does.
+Verified end to end (a 30k-step run reaches the optimal Nim policy):
+
+```bash
+python3 ai/example_local_training_nim.py --username user0 --password pwd0000
+```
+
 ## Demo runbook
 
 1. **Redis** must be running (`redis-server`, or `brew services start redis`).

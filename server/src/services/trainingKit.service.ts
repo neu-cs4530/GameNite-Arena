@@ -37,6 +37,11 @@ const KIT_FILES: KitFile[] = [
     description: "GameNiteAdapter base class (SB3 PPO loop, .pth serialization)",
   },
   {
+    name: "example_local_training_nim.py",
+    relPath: "example_local_training_nim.py",
+    description: "REAL end-to-end run: SB3 training + live reporting + artifact upload",
+  },
+  {
     name: "demo_local_session.py",
     relPath: "demo_local_session.py",
     description: "Fake run with synthetic metrics — verify your setup end to end",

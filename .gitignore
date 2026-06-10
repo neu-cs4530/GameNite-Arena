@@ -142,3 +142,7 @@ __pycache__/
 .pytest_cache/
 
 CLAUDE.md
+
+# Python virtual environments
+.venv/
+ai/.venv/
