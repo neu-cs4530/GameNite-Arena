@@ -9,7 +9,7 @@ import type { ReplayDetail, ReplayListPage, ReplayWatchCountResponse } from "@ga
 import { getReplay, listReplays, recordWatch } from "../services/replay.service.ts";
 import { type RestAPI } from "../types.ts";
 
-const zGameKey = z.enum(["tictactoe", "connect4", "checkers", "nim", "numguesser"]);
+const zGameKey = z.enum(["tictactoe", "connect4", "checkers", "nim", "guess"]);
 const zSort = z.enum([
   "newest",
   "oldest",

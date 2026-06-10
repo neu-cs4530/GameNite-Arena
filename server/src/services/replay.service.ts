@@ -1,14 +1,21 @@
 /**
  * Replay service — read APIs for the replay viewer / discovery surfaces.
  *
- * Today this is backed by an in-memory `Map` seeded with a small fixture so
- * the endpoints return something useful in dev. The interface (`ReplayStore`)
- * is intentionally minimal so a Keyv/Mongo-backed implementation can replace
- * the in-memory one once Jasdeep's MatchRepo is wired (see issues #22/#34).
+ * Reads come from two layered stores:
+ *   1. `KeyvMatchReplayStore` — real finished games, written by the
+ *      MatchRecorder at game end into the Keyv `MatchRepo` (in-memory by
+ *      default, MongoDB when MONGO_STR is configured).
+ *   2. `InMemoryReplayStore` seeded with the dev fixture — keeps the
+ *      discovery page populated before anyone has played a real game.
+ *
+ * The composite checks real matches first, so a captured game with the same
+ * id always wins over a fixture entry.
  */
 
 import type {
+  GameKey,
   ReplayDetail,
+  ReplayGameKey,
   ReplayListPage,
   ReplayListQuery,
   ReplaySummary,
@@ -16,6 +23,8 @@ import type {
 } from "@gamenite/shared";
 
 import { SEED_REPLAYS } from "../__fixtures__/replays.fixture.ts";
+import type { MatchRecord } from "../models.ts";
+import { MatchRepo as matchRepoStore, UserRepo } from "../repository.ts";
 
 export interface ReplayStore {
   getById(matchId: string): Promise<ReplayDetail | undefined>;
@@ -46,9 +55,146 @@ export class InMemoryReplayStore implements ReplayStore {
   }
 }
 
+/** Server GameKey → wire ReplayGameKey (identity today; map point if they diverge). */
+const wireGameKey: Record<GameKey, ReplayGameKey> = {
+  nim: "nim",
+  guess: "guess",
+};
+
+/**
+ * Human-readable move summary for the move list and notation export. The
+ * live games store bare numeric payloads, so notate per game key; anything
+ * unrecognized falls back to compact JSON.
+ */
+function notateMove(gameKey: GameKey, move: unknown): string {
+  if (typeof move === "number") {
+    return gameKey === "nim" ? `Take ${move}` : `Guess ${move}`;
+  }
+  return JSON.stringify(move);
+}
+
+/**
+ * Projects an archival {@link MatchRecord} into the wire `ReplayDetail`.
+ * Human usernames are resolved via UserRepo so the FE can link profiles;
+ * `ratingAtMatchTime` is omitted (ratings snapshots aren't recorded yet).
+ */
+async function matchToReplayDetail(
+  matchId: string,
+  record: MatchRecord,
+  watchCount: number,
+): Promise<ReplayDetail> {
+  const participants = await Promise.all(
+    record.participants.map(async (p) => ({
+      id: p.id,
+      type: p.type,
+      displayName: p.displayName,
+      username: p.type === "human" ? (await UserRepo.find(p.id))?.username : undefined,
+    })),
+  );
+  const nameById = new Map(participants.map((p) => [p.id, p.displayName]));
+  return {
+    matchId,
+    gameId: record.gameId,
+    gameKey: wireGameKey[record.gameKey],
+    rated: record.rated,
+    participants,
+    result: record.result,
+    moveCount: record.moves.length,
+    watchCount,
+    completedAt: record.completedAt,
+    initialState: record.initialState,
+    moves: record.moves.map((m, index) => ({
+      index,
+      actor: m.actor,
+      actorDisplayName: nameById.get(m.actor) ?? m.actor,
+      move: m.move,
+      notation: notateMove(record.gameKey, m.move),
+      timestamp: m.timestamp,
+    })),
+  };
+}
+
+/**
+ * Read-side adapter over the Keyv `MatchRepo` the recorder writes into.
+ * Watch counts live in a process-local overlay until they get their own
+ * persistent home — the archival MatchRecord itself stays immutable.
+ */
+export class KeyvMatchReplayStore implements ReplayStore {
+  private readonly _watchCounts = new Map<string, number>();
+
+  async getById(matchId: string): Promise<ReplayDetail | undefined> {
+    const record = await matchRepoStore.find(matchId);
+    if (!record) return undefined;
+    return matchToReplayDetail(matchId, record, this._watchCounts.get(matchId) ?? 0);
+  }
+
+  async listAll(): Promise<ReplayDetail[]> {
+    const keys = await matchRepoStore.getAllKeys();
+    const records = await matchRepoStore.getMany(keys);
+    return Promise.all(
+      records.map((record, i) =>
+        matchToReplayDetail(keys[i], record, this._watchCounts.get(keys[i]) ?? 0),
+      ),
+    );
+  }
+
+  setWatchCount(matchId: string, count: number): Promise<void> {
+    this._watchCounts.set(matchId, count);
+    return Promise.resolve();
+  }
+}
+
+/** Layers stores; earlier stores shadow later ones for the same matchId. */
+export class CompositeReplayStore implements ReplayStore {
+  private readonly _stores: ReplayStore[];
+
+  constructor(stores: ReplayStore[]) {
+    this._stores = stores;
+  }
+
+  async getById(matchId: string): Promise<ReplayDetail | undefined> {
+    for (const s of this._stores) {
+      const found = await s.getById(matchId);
+      if (found) return found;
+    }
+    return undefined;
+  }
+
+  async listAll(): Promise<ReplayDetail[]> {
+    const seen = new Set<string>();
+    const all: ReplayDetail[] = [];
+    for (const s of this._stores) {
+      for (const r of await s.listAll()) {
+        if (!seen.has(r.matchId)) {
+          seen.add(r.matchId);
+          all.push(r);
+        }
+      }
+    }
+    return all;
+  }
+
+  async setWatchCount(matchId: string, count: number): Promise<void> {
+    for (const s of this._stores) {
+      if (await s.getById(matchId)) {
+        await s.setWatchCount(matchId, count);
+        return;
+      }
+    }
+  }
+}
+
+/** Builds the production store stack: real matches first, dev seed second. */
+export function makeDefaultStore(): ReplayStore {
+  return new CompositeReplayStore([
+    new KeyvMatchReplayStore(),
+    new InMemoryReplayStore(SEED_REPLAYS),
+  ]);
+}
+
 // Module-level store keeps the watch counts persistent across requests within
-// a process. Replace with a real repo once available.
-let store: ReplayStore = new InMemoryReplayStore(SEED_REPLAYS);
+// a process.
+let store: ReplayStore = makeDefaultStore();
 
 /** Exposed for tests so each spec can start from a clean fixture. */
 export function replaceStoreForTests(next: ReplayStore): void {

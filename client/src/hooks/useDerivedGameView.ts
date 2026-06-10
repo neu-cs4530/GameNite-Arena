@@ -28,9 +28,13 @@ export default function useDerivedGameView(
 }
 
 function derivedNimView(replay: ReplayDetail, moveIndex: number): TaggedGameView {
-  // We don't always have an initial state; default to the standard 21-pile
-  // and player 0 to move.
-  let state = { remaining: NIM_DEFAULT_START, nextPlayer: 0 };
+  // Prefer the recorded initial state; older replays without one default to
+  // the standard 21-pile and player 0 to move.
+  const recorded = replay.initialState as { remaining?: number; nextPlayer?: number } | undefined;
+  let state = {
+    remaining: recorded?.remaining ?? NIM_DEFAULT_START,
+    nextPlayer: recorded?.nextPlayer ?? 0,
+  };
   for (let i = 0; i < moveIndex && i < replay.moves.length; i++) {
     const move = replay.moves[i].move as NimMove;
     state = applyNimMove(state, move);

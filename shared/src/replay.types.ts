@@ -1,14 +1,15 @@
 /**
  * Wire format for the replay viewer surfaces.
  *
- * Distinct from `ReplayRecord` in matchRecorder.types.ts: that one is the
- * raw storage shape written by the recorder; this one is the projection
+ * Distinct from `MatchRecord` in server/src/models.ts: that one is the raw
+ * archival shape written by the MatchRecorder; this one is the projection
  * served over `/api/replay/...` and consumed by the discovery / viewer pages.
  *
- * Server-side `replay.service.ts` maps `ReplayRecord -> ReplayDetail`.
+ * Server-side `replay.service.ts` maps `MatchRecord -> ReplayDetail`.
  */
 
-export type ReplayGameKey = "tictactoe" | "connect4" | "checkers" | "nim" | "numguesser";
+// Must stay in sync with client/src/util/types.ts ALL_GAME_KEYS.
+export type ReplayGameKey = "tictactoe" | "connect4" | "checkers" | "nim" | "guess";
 
 export type ReplayMatchOutcome = "win" | "draw" | "abandoned" | "forfeit";
 
