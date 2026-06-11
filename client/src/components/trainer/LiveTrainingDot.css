@@ -1,0 +1,26 @@
+.ga-live-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-micro);
+  color: var(--color-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: var(--weight-semibold);
+}
+
+.ga-live-dot__dot {
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-fg-subtle);
+}
+
+.ga-live-dot--active .ga-live-dot__dot {
+  background: var(--color-danger);
+  animation: ga-pulse 1.4s ease-in-out infinite;
+}
+
+.ga-live-dot--active {
+  color: var(--color-danger);
+}

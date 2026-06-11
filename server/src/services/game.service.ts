@@ -1,6 +1,7 @@
 import { type GameInfo, type GameKey, type TaggedGameView } from "@gamenite/shared";
 import { createChat } from "./chat.service.ts";
 import { matchRecorder } from "./matchRecorder.service.ts";
+import { updateRatingsForGame } from "./rating.service.ts";
 import { populateSafeUserInfo } from "./user.service.ts";
 import { updateRatingsForGame } from "./rating.service.ts";
 import { type GameServicer } from "../games/gameServiceManager.ts";

@@ -1,0 +1,77 @@
+.ga-model-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  height: 100%;
+}
+
+.ga-model-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.ga-model-card__game {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ga-model-card__game-icon {
+  width: var(--space-8);
+  height: var(--space-8);
+  border-radius: var(--radius-md);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: var(--weight-bold);
+  font-size: var(--text-h3);
+}
+
+.ga-model-card__title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ga-model-card__title {
+  font-size: var(--text-h3);
+  font-weight: var(--weight-semibold);
+  color: var(--color-fg);
+}
+
+.ga-model-card__owner {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}
+
+.ga-model-card__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}
+
+.ga-model-card__footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--color-border);
+}
+
+.ga-model-card__footer-time {
+  margin-left: auto;
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}

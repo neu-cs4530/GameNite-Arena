@@ -15,6 +15,7 @@ import { registerTrainingWorker } from "./services/trainingQueue.service.ts";
 import { setTrainingSessionPublisher } from "./services/trainingSession.service.ts";
 import { createRedisConnection } from "./services/redis.ts";
 import { scheduleDailyPuzzleJob, registerPuzzleWorker } from "./services/puzzleQueue.service.ts";
+import { startMatchmakerLoop } from "./controllers/matchmaker.controller.ts";
 
 // If a MONGO_STR environment variable is given (or set in `server/.env`),
 // then use MongoDB to create the repository.
@@ -67,6 +68,8 @@ if (process.env.MODE === "production") {
 // wire up the daily puzzle cron and start the worker
 await scheduleDailyPuzzleJob();
 registerPuzzleWorker();
+
+startMatchmakerLoop(io);
 
 // start the training progress bridge (subscribes to Redis, registers socket handlers)
 await createTrainingProgressBridge(io);

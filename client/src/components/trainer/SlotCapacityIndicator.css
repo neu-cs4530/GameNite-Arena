@@ -1,0 +1,53 @@
+.ga-slot-cap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  min-width: 150px;
+}
+
+.ga-slot-cap__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.ga-slot-cap__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--color-fg);
+}
+
+.ga-slot-cap__count {
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}
+
+.ga-slot-cap__bar {
+  height: var(--space-2);
+  background: var(--color-surface-strong);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.ga-slot-cap__fill {
+  height: 100%;
+  background: var(--color-primary);
+  transition: width var(--duration-base) var(--ease-out);
+}
+
+.ga-slot-cap--full .ga-slot-cap__fill {
+  background: var(--color-danger);
+}
+
+.ga-slot-cap--full .ga-slot-cap__count {
+  color: var(--color-danger);
+  font-weight: var(--weight-semibold);
+}

@@ -1,0 +1,53 @@
+.ga-hpi {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.ga-hpi__label {
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--color-fg);
+}
+
+.ga-hpi__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ga-hpi__input {
+  flex: 1;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-elevated);
+  color: var(--color-fg);
+  font-size: var(--text-body);
+  min-height: var(--space-10);
+}
+
+.ga-hpi__input:focus-visible {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-focus);
+}
+
+.ga-hpi__input--error {
+  border-color: var(--color-danger);
+}
+
+.ga-hpi__unit {
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}
+
+.ga-hpi__hint {
+  font-size: var(--text-micro);
+  color: var(--color-fg-muted);
+}
+
+.ga-hpi__error {
+  font-size: var(--text-micro);
+  color: var(--color-danger);
+}

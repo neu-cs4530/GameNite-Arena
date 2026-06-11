@@ -1,12 +1,13 @@
 .sideBarNav {
-  padding-inline: 1rem;
+  padding-inline: var(--space-4);
   display: flex;
   flex-direction: column;
-  width: 200px;
-  gap: 1rem;
-  padding-block: 1rem;
-  background-color: var(--gray-background);
+  width: var(--layout-sidebar-width, 220px);
+  gap: var(--space-2);
+  padding-block: var(--space-4);
+  background-color: var(--color-surface);
   grid-area: sidebar;
+  border-right: 1px solid var(--color-border);
 }
 
 .menu_button {
@@ -15,11 +16,52 @@
   align-items: center;
   min-height: 2.5rem;
   width: 100%;
-  border-radius: 0.5rem;
-  color: cornflowerblue;
+  border-radius: var(--radius-md);
+  color: var(--color-fg-muted);
   text-decoration: none;
+  padding-inline: var(--space-3);
+  font-weight: var(--weight-medium);
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.menu_button:hover {
+  background-color: var(--color-surface-2);
+  color: var(--color-fg);
 }
 
 .menu_selected {
-  background: #cccccc;
+  background-color: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.menu_selected:hover {
+  background-color: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+/* Mobile: collapse sidebar into a horizontal scroll top-bar */
+@media (max-width: 768px) {
+  .sideBarNav {
+    flex-direction: row;
+    width: 100%;
+    height: auto;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-block: var(--space-2);
+    padding-inline: var(--space-2);
+    gap: var(--space-1);
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+    -webkit-overflow-scrolling: touch;
+  }
+  .menu_button {
+    width: auto;
+    flex: 0 0 auto;
+    min-height: 2rem;
+    padding-inline: var(--space-3);
+    font-size: var(--text-small);
+    white-space: nowrap;
+  }
 }

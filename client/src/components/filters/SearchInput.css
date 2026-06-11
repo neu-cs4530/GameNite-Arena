@@ -1,0 +1,18 @@
+.ga-search-input {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0 var(--space-3);
+  height: var(--space-10);
+  font-size: var(--text-body);
+  color: var(--color-fg);
+  width: 100%;
+}
+
+.ga-search-input::placeholder {
+  color: var(--color-fg-subtle);
+}
+
+.ga-search-input:focus {
+  border-color: var(--color-primary);
+}

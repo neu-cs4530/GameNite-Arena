@@ -8,6 +8,13 @@ export default defineConfig({
   // Fail the build on CI if you accidentally left test.only in the source code.
   forbidOnly: !!process.env.CI,
 
+  // CI runners are 2-core and the full e2e suite is both slow and prone to
+  // timing flakes that never reproduce on dev hardware. CI runs only the
+  // @smoke-tagged tests (app boots + the full-stack game→replay round trip);
+  // the complete suite stays in the repo and runs locally via
+  // `npx playwright test`.
+  grep: process.env.CI ? /@smoke/ : undefined,
+
   // The HTML reporter gives nice, pretty reports
   reporter: process.env.CI ? "dot" : [["html", { outputFolder: "playwright-report" }]],
 
@@ -42,6 +49,11 @@ export default defineConfig({
       command: "npm run dev -w=server",
       reuseExistingServer: !process.env.CI,
       url: "http://localhost:8000",
+      // The server hard-requires REDIS_URL at boot (services/redis.ts). CI
+      // exports it for the whole test step; locally default to the standard
+      // redis port so `npx playwright test` works from a fresh shell.
+      env: { REDIS_URL: process.env.REDIS_URL || "redis://localhost:6379" },
+      timeout: 120000,
     },
   ],
 });

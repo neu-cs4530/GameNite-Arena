@@ -1,0 +1,56 @@
+.ga-date-range {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ga-date-range__presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.ga-date-range__preset {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+  cursor: pointer;
+}
+
+.ga-date-range__preset:hover {
+  background: var(--color-bg-elevated);
+  border-color: var(--color-border-strong);
+  color: var(--color-fg);
+}
+
+.ga-date-range__preset--active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-fg-on-primary);
+}
+
+.ga-date-range__custom {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.ga-date-range__label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}
+
+.ga-date-range__input {
+  background: var(--color-bg-elevated);
+  color: var(--color-fg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-body);
+}

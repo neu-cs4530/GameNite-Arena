@@ -12,9 +12,9 @@ export default function Header() {
   return (
     <div id="header" className="header">
       <div className="title">GameNite!</div>
-      signed in as {user.display}
+      <span className="header__user-label">signed in as {user.display}</span>
       <button
-        className="narrowcenter secondary"
+        className="narrow secondary"
         onClick={async () => {
           reset();
           await navigate("/login");
@@ -22,10 +22,7 @@ export default function Header() {
       >
         Log Out
       </button>
-      <button
-        className="narrowcenter secondary"
-        onClick={() => navigate(`/profile/${user.username}`)}
-      >
+      <button className="narrow secondary" onClick={() => navigate(`/profile/${user.username}`)}>
         View Profile
       </button>
     </div>

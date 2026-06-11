@@ -1,0 +1,222 @@
+/* ============================================================================
+ * Replay viewer — "the match is the theater, the data lives in drawers".
+ *
+ * The stage (board + transport) owns the page; every piece of secondary
+ * information sits in one consistent drawer shape in the right rail. All
+ * color/spacing through design tokens; light + dark follow automatically.
+ * ============================================================================ */
+
+.ga-viewer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  max-width: var(--layout-max-content);
+  margin: 0 auto;
+}
+
+.ga-viewer__panel-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ga-viewer__board-skeleton {
+  min-height: 220px;
+}
+
+/* -- Layout: stage takes the expanse, rail holds the drawers ------------- */
+
+.ga-viewer__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: var(--space-5);
+  align-items: start;
+}
+
+/* -- The stage ------------------------------------------------------------ */
+
+.ga-viewer__stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background:
+    radial-gradient(120% 90% at 50% 0%, var(--color-primary-soft), transparent 60%),
+    var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  animation: ga-viewer-rise var(--duration-slow) var(--ease-emphasis) both;
+}
+
+/* Thin progress edge across the top of the stage — playback position at a
+ * glance without reading numbers. */
+.ga-viewer__filmstrip {
+  height: 3px;
+  background: var(--color-border);
+}
+
+.ga-viewer__filmstrip-fill {
+  display: block;
+  height: 100%;
+  background: var(--color-primary);
+  transition: width var(--duration-base) var(--ease-standard);
+}
+
+.ga-viewer__boardwrap {
+  display: grid;
+  place-items: center;
+  min-height: clamp(320px, 52vh, 560px);
+  padding: var(--space-8) var(--space-6);
+}
+
+.ga-viewer__boardwrap > * {
+  width: 100%;
+  max-width: 720px;
+}
+
+/* Transport docked under the board, like a video player. */
+.ga-viewer__transport {
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+  padding: var(--space-3) var(--space-4);
+}
+
+/* -- The rail ------------------------------------------------------------- */
+
+.ga-viewer__rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  animation: ga-viewer-rise var(--duration-slow) var(--ease-emphasis) both;
+  animation-delay: 80ms;
+}
+
+.ga-viewer__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1);
+}
+
+.ga-viewer__engine {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.ga-viewer__engine-hint {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+  line-height: var(--leading-normal);
+}
+
+/* -- Shared bits ----------------------------------------------------------- */
+
+.ga-viewer__share {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-primary-soft);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+}
+
+.ga-viewer__share input {
+  flex: 1 1 auto;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-small);
+  color: var(--color-fg);
+}
+
+.ga-viewer__toast {
+  position: fixed;
+  bottom: var(--space-6);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--color-fg);
+  color: var(--color-bg);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-small);
+  box-shadow: var(--shadow-lg);
+  z-index: 40;
+}
+
+.ga-viewer__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.ga-viewer__hint {
+  padding: var(--space-3);
+  background: var(--color-warning-soft);
+  border-color: var(--color-warning);
+  color: var(--color-fg);
+  font-size: var(--text-small);
+}
+
+@keyframes ga-viewer-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ga-viewer__stage,
+  .ga-viewer__rail {
+    animation: none;
+  }
+  .ga-viewer__filmstrip-fill {
+    transition: none;
+  }
+}
+
+/* -- Responsive ------------------------------------------------------------ */
+
+@media (max-width: 1100px) {
+  .ga-viewer__layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ga-viewer__boardwrap {
+    min-height: clamp(280px, 40vh, 440px);
+    padding: var(--space-6) var(--space-4);
+  }
+
+  .ga-viewer__toolbar {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 768px) {
+  .ga-viewer {
+    padding: var(--space-4);
+  }
+
+  .ga-viewer__transport {
+    padding: var(--space-2) var(--space-3);
+  }
+}

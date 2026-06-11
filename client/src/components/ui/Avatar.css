@@ -1,0 +1,69 @@
+.ga-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  font-weight: var(--weight-semibold);
+  /* White text reads on saturated tinted background for both light and dark. */
+  color: #ffffff;
+  background: linear-gradient(
+    135deg,
+    oklch(0.62 0.18 calc(var(--avatar-hue, 0) * 1deg)) 0%,
+    oklch(0.46 0.2 calc(var(--avatar-hue, 0) * 1deg + 30)) 100%
+  );
+  /* Tiny inset highlight for depth without an external asset. */
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 25%);
+  user-select: none;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+/* Human (default) variant — explicit color tokens so the visible chips on
+   match cards never wash out into the surrounding card. */
+.ga-avatar--default {
+  background: linear-gradient(
+    135deg,
+    oklch(0.62 0.18 calc(var(--avatar-hue, 0) * 1deg)) 0%,
+    oklch(0.46 0.2 calc(var(--avatar-hue, 0) * 1deg + 30)) 100%
+  );
+  color: #ffffff;
+}
+
+/* Human variant — explicitly a human user (saturated soft tone). */
+.ga-avatar--human {
+  background: var(--color-human-soft);
+  color: var(--color-human);
+  box-shadow: inset 0 0 0 1px var(--color-human);
+}
+
+.ga-avatar--sm {
+  width: var(--space-6);
+  height: var(--space-6);
+  font-size: var(--text-micro);
+}
+
+.ga-avatar--md {
+  width: var(--space-10);
+  height: var(--space-10);
+  font-size: var(--text-small);
+}
+
+.ga-avatar--lg {
+  width: var(--space-16);
+  height: var(--space-16);
+  font-size: var(--text-h3);
+}
+
+.ga-avatar--xl {
+  width: calc(var(--space-20) + var(--space-2));
+  height: calc(var(--space-20) + var(--space-2));
+  font-size: var(--text-h1);
+}
+
+.ga-avatar--ai {
+  background: linear-gradient(135deg, var(--color-ai) 0%, var(--color-primary) 100%);
+}
+
+.ga-avatar__initials {
+  letter-spacing: 0.02em;
+}
