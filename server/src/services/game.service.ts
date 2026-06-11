@@ -197,13 +197,27 @@ export async function updateGame(gameId: string, user: UserWithId, move: unknown
 
   let gameResult: MatchResult | undefined;
   if (result.done) {
-    gameResult = await postGameUpdates(game, gameId, user.userId, canonicalMove, stateBeforeMove, winnerId);
+    gameResult = await postGameUpdates(
+      game,
+      gameId,
+      user.userId,
+      canonicalMove,
+      stateBeforeMove,
+      winnerId,
+    );
   } else {
     // Move is validated and persisted — archive it for the replay viewer.
     // Archival is a side-channel: a failed write must not fail the move or
     // swallow the view broadcast, so log and continue.
     try {
-      await matchRecorder.captureMove(game, gameId, user.userId, canonicalMove, false, stateBeforeMove);
+      await matchRecorder.captureMove(
+        game,
+        gameId,
+        user.userId,
+        canonicalMove,
+        false,
+        stateBeforeMove,
+      );
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error(`match capture failed for game ${gameId}:`, err);

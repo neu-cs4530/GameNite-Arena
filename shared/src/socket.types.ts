@@ -13,9 +13,8 @@ import {
   type MatchmakingJoinPayload,
   type TaggedGameView,
 } from "./game.types.ts";
-import { type ReplayWatchersPayload } from "./replay.types.ts";
+import { type MatchResultView, type ReplayWatchersPayload } from "./replay.types.ts";
 import { type SafeUserInfo } from "./user.types.ts";
-import { type MatchResultView } from "./replay.types.ts";
 
 /**
  * The Socket.io interface for client to server communication
