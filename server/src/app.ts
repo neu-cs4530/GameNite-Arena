@@ -79,6 +79,7 @@ app.use(
       express
         .Router()
         .get("/list", replay.getList)
+        .get("/:matchId/download", replay.getDownload)
         .get("/:matchId", replay.getById)
         .post("/:matchId/view", replay.postView),
     )
