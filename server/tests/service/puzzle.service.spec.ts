@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { dailyPuzzleKey, type MatchRecord } from "../../src/models.ts";
-import { MatchRepo, PuzzleRepo } from "../../src/repository.ts";
+import { MatchRepo, PuzzleAttemptRepo, PuzzleRepo, UserRepo } from "../../src/repository.ts";
+import { getUserByUsername } from "../../src/services/auth.service.ts";
 import {
   generatePuzzleForGame,
   getOrGenerateTodaysPuzzle,
+  submitAttempt,
 } from "../../src/services/puzzle.service.ts";
 
 /* ---------------------------------------------------------------------------
@@ -188,5 +190,132 @@ describe("getOrGenerateTodaysPuzzle", () => {
 
   it("still returns null when the archive has nothing to mine", async () => {
     expect(await getOrGenerateTodaysPuzzle("nim")).toBeNull();
+  });
+});
+
+/* ---------------------------------------------------------------------------
+ * Daily rated-attempt economy (submitAttempt)
+ *
+ * Attempts are unlimited and the hint reveals the grading key, so rating must
+ * be gated server-side: only the FIRST UNHINTED attempt of the UTC day per
+ * (user, game) is rated. Everything else is practice — still graded honestly,
+ * but eloDelta 0 and rating/streak frozen, flagged `rated: false`.
+ * ------------------------------------------------------------------------- */
+
+describe("submitAttempt: daily rated-attempt economy", () => {
+  const todayIso = today.toISOString().slice(0, 10);
+
+  /** Seed today's nim puzzle with a known winning move to grade against. */
+  async function seedNimPuzzle(winningMove: number): Promise<void> {
+    await PuzzleRepo.set(dailyPuzzleKey({ gameKey: "nim", date: today }), {
+      gameKey: "nim",
+      date: todayIso,
+      position: { remaining: 4, nextPlayer: 1 },
+      solution: { moves: [winningMove], explanation: "seeded by test" },
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  /** The seeded default user — recreated fresh by the global test setup. */
+  async function user1Id(): Promise<string> {
+    return (await getUserByUsername("user1"))!.userId;
+  }
+
+  it("returns null when there is no puzzle for today", async () => {
+    const outcome = await submitAttempt("nim", await user1Id(), {
+      move: 3,
+      timeMs: 500,
+      hintsUsed: 0,
+    });
+    expect(outcome).toBeNull();
+  });
+
+  it("rates the first unhinted attempt of the day and persists rating + streak", async () => {
+    await seedNimPuzzle(3);
+    const userId = await user1Id();
+    const before = await UserRepo.get(userId);
+
+    const outcome = await submitAttempt("nim", userId, { move: 3, timeMs: 900, hintsUsed: 0 });
+
+    expect(outcome).not.toBeNull();
+    expect(outcome!.rated).toBe(true);
+    expect(outcome!.success).toBe(true);
+    expect(outcome!.eloDelta).toBeGreaterThan(0);
+    expect(outcome!.newRating.rating).toBeGreaterThan(before.puzzleRating.rating);
+    expect(outcome!.streak).toStrictEqual({ current: 1, best: 1, lastSolvedAt: todayIso });
+
+    const after = await UserRepo.get(userId);
+    expect(after.puzzleRating).toStrictEqual(outcome!.newRating);
+    expect(after.puzzleStreak).toStrictEqual(outcome!.streak);
+  });
+
+  it("treats the second attempt of the day as practice: graded, but rating and streak frozen", async () => {
+    await seedNimPuzzle(3);
+    const userId = await user1Id();
+
+    // The first (rated) attempt fails — today's rated slot is now spent.
+    const first = await submitAttempt("nim", userId, { move: 1, timeMs: 700, hintsUsed: 0 });
+    expect(first!.rated).toBe(true);
+    expect(first!.eloDelta).toBeLessThan(0);
+    const afterFirst = await UserRepo.get(userId);
+
+    // The retry finds the right move but cannot farm the rating back.
+    const second = await submitAttempt("nim", userId, { move: 3, timeMs: 400, hintsUsed: 0 });
+    expect(second!.rated).toBe(false);
+    expect(second!.success).toBe(true); // still graded honestly
+    expect(second!.eloDelta).toBe(0);
+    expect(second!.newRating).toStrictEqual(afterFirst.puzzleRating);
+    expect(second!.streak).toStrictEqual(afterFirst.puzzleStreak);
+
+    const afterSecond = await UserRepo.get(userId);
+    expect(afterSecond.puzzleRating).toStrictEqual(afterFirst.puzzleRating);
+    expect(afterSecond.puzzleStreak).toStrictEqual(afterFirst.puzzleStreak);
+  });
+
+  it("treats a hinted attempt as practice — the hint reveals the answer, so rating never moves", async () => {
+    await seedNimPuzzle(3);
+    const userId = await user1Id();
+    const before = await UserRepo.get(userId);
+
+    const outcome = await submitAttempt("nim", userId, { move: 3, timeMs: 300, hintsUsed: 1 });
+
+    expect(outcome!.success).toBe(true);
+    expect(outcome!.rated).toBe(false);
+    expect(outcome!.eloDelta).toBe(0);
+    expect(outcome!.newRating).toStrictEqual(before.puzzleRating);
+
+    const after = await UserRepo.get(userId);
+    expect(after.puzzleRating).toStrictEqual(before.puzzleRating);
+    expect(after.puzzleStreak).toStrictEqual(before.puzzleStreak);
+  });
+
+  it("a hinted attempt does not spend the day's rated slot — the first UNHINTED attempt is the rated one", async () => {
+    await seedNimPuzzle(3);
+    const userId = await user1Id();
+
+    const hinted = await submitAttempt("nim", userId, { move: 3, timeMs: 300, hintsUsed: 1 });
+    expect(hinted!.rated).toBe(false);
+
+    const unhinted = await submitAttempt("nim", userId, { move: 3, timeMs: 800, hintsUsed: 0 });
+    expect(unhinted!.rated).toBe(true);
+    expect(unhinted!.eloDelta).toBeGreaterThan(0);
+  });
+
+  it("logs practice attempts too, with a zero eloDelta", async () => {
+    await seedNimPuzzle(3);
+    const userId = await user1Id();
+
+    await submitAttempt("nim", userId, { move: 3, timeMs: 300, hintsUsed: 1 });
+
+    const attempts = await PuzzleAttemptRepo.getMany(await PuzzleAttemptRepo.getAllKeys());
+    expect(attempts).toContainEqual(
+      expect.objectContaining({
+        puzzleId: dailyPuzzleKey({ gameKey: "nim", date: today }),
+        attemptedBy: { id: userId, type: "human" },
+        success: true,
+        hintsUsed: 1,
+        eloDelta: 0,
+      }),
+    );
   });
 });

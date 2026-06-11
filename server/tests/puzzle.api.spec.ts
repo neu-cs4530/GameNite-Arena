@@ -92,6 +92,7 @@ describe("POST /api/puzzle/:gameKey/attempt", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);
+    expect(response.body.rated).toBe(true);
     expect(response.body.eloDelta).toBeGreaterThan(0);
     expect(response.body.newRating.rating).toBeGreaterThan(before.puzzleRating.rating);
     expect(response.body.newRating.rd).toBeLessThan(before.puzzleRating.rd);
@@ -126,8 +127,10 @@ describe("POST /api/puzzle/:gameKey/attempt", () => {
     response = await supertest(app).post("/api/puzzle/nim/attempt").send(attempt);
     expect(response.body.streak).toStrictEqual({ current: 1, best: 1, lastSolvedAt: today() });
 
-    // solving it again the same day shouldn't bump the streak further
+    // solving it again the same day is practice: no streak bump, no rating move
     response = await supertest(app).post("/api/puzzle/nim/attempt").send(attempt);
+    expect(response.body.rated).toBe(false);
+    expect(response.body.eloDelta).toBe(0);
     expect(response.body.streak).toStrictEqual({ current: 1, best: 1, lastSolvedAt: today() });
   });
 

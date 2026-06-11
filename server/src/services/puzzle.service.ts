@@ -1,7 +1,19 @@
 import type { GameKey } from "@gamenite/shared";
-import { dailyPuzzleKey, type MatchRecord, type PuzzleRecord } from "../models.ts";
-import { MatchRepo, PuzzleRepo } from "../repository.ts";
+import {
+  dailyPuzzleKey,
+  type GlickoRating,
+  type MatchRecord,
+  type PuzzleRecord,
+  type PuzzleStreak,
+} from "../models.ts";
+import { MatchRepo, PuzzleAttemptRepo, PuzzleRepo, UserRepo } from "../repository.ts";
 import { gameServices } from "./game.service.ts";
+import {
+  updateRating,
+  DEFAULT_RATING,
+  DEFAULT_RD,
+  type Glicko2GameResult,
+} from "./glicko2.service.ts";
 
 // games we generate daily puzzles for
 const PUZZLE_GAME_KEYS: GameKey[] = ["nim", "guess"];
@@ -176,4 +188,115 @@ export async function generatePuzzleForGame(
  */
 export async function generateAllDailyPuzzles(date: Date = new Date()): Promise<void> {
   await Promise.all(PUZZLE_GAME_KEYS.map((gameKey) => generatePuzzleForGame(gameKey, date)));
+}
+
+// The daily puzzle has no dynamic rating of its own, so a rated attempt is
+// scored against a fresh average player (1500 rating, 350 rd).
+const puzzleOpponent = { opponentRating: DEFAULT_RATING, opponentRd: DEFAULT_RD };
+
+/** One graded submission against today's puzzle. */
+export interface PuzzleAttemptInput {
+  move: unknown;
+  timeMs: number;
+  hintsUsed: number;
+}
+
+/**
+ * What the attempt endpoint returns. `rated: false` marks a practice attempt:
+ * still graded honestly, but the eloDelta is 0 and `newRating`/`streak` echo
+ * the user's unchanged state.
+ */
+export interface AttemptResult {
+  success: boolean;
+  rated: boolean;
+  eloDelta: number;
+  newRating: GlickoRating;
+  streak: PuzzleStreak;
+}
+
+/**
+ * Grades one attempt against today's puzzle and applies the daily
+ * rated-attempt economy:
+ *
+ * - Only the FIRST UNHINTED attempt of the UTC day per (user, game) is rated:
+ *   it moves the user's puzzle Glicko and (on success) the streak, and spends
+ *   the day's rated slot (`puzzleLastRatedAt[gameKey]`).
+ * - Every other attempt is practice — retries, and ANY attempt with
+ *   `hintsUsed > 0` (the hint reveals the winning move, so a hinted solve
+ *   must never gain rating). Practice attempts are still graded and logged,
+ *   but `eloDelta` is 0 and rating/streak stay frozen.
+ * - A hinted attempt does not spend the rated slot: the first unhinted
+ *   attempt of the day is the rated one even if hints were browsed earlier.
+ *
+ * @param gameKey - Which game's daily puzzle was attempted.
+ * @param userId - The attempting user (already authenticated by the caller).
+ * @param attempt - The raw move plus elapsed time and hint count.
+ * @returns The graded result, or null when there is no puzzle for today.
+ */
+export async function submitAttempt(
+  gameKey: GameKey,
+  userId: string,
+  attempt: PuzzleAttemptInput,
+): Promise<AttemptResult | null> {
+  const puzzleKey = dailyPuzzleKey({ gameKey, date: new Date() });
+  const puzzle = await getTodaysPuzzle(gameKey);
+  if (!puzzle) return null;
+
+  // check the submitted move against the first solution move
+  const success = JSON.stringify(attempt.move) === JSON.stringify(puzzle.solution.moves[0]);
+
+  const userRecord = await UserRepo.get(userId);
+  const today = new Date().toISOString().slice(0, 10);
+  const rated = attempt.hintsUsed === 0 && userRecord.puzzleLastRatedAt?.[gameKey] !== today;
+
+  let newRating = userRecord.puzzleRating;
+  let newStreak = userRecord.puzzleStreak;
+  let eloDelta = 0;
+
+  if (rated) {
+    const result: Glicko2GameResult = { ...puzzleOpponent, score: success ? 1.0 : 0.0 };
+    const updated = updateRating(
+      {
+        rating: userRecord.puzzleRating.rating,
+        rd: userRecord.puzzleRating.rd,
+        volatility: userRecord.puzzleRating.vol,
+      },
+      [result],
+    );
+    newRating = { rating: updated.rating, rd: updated.rd, vol: updated.volatility };
+    eloDelta = Math.round(newRating.rating - userRecord.puzzleRating.rating);
+
+    // streak only updates on the first successful solve of each day
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    if (success && userRecord.puzzleStreak.lastSolvedAt !== today) {
+      const current =
+        userRecord.puzzleStreak.lastSolvedAt === yesterday
+          ? userRecord.puzzleStreak.current + 1
+          : 1;
+      newStreak = {
+        current,
+        best: Math.max(current, userRecord.puzzleStreak.best),
+        lastSolvedAt: today,
+      };
+    }
+
+    await UserRepo.set(userId, {
+      ...userRecord,
+      puzzleRating: newRating,
+      puzzleStreak: newStreak,
+      puzzleLastRatedAt: { ...userRecord.puzzleLastRatedAt, [gameKey]: today },
+    });
+  }
+
+  await PuzzleAttemptRepo.add({
+    puzzleId: puzzleKey,
+    attemptedBy: { id: userId, type: "human" },
+    success,
+    timeMs: attempt.timeMs,
+    hintsUsed: attempt.hintsUsed,
+    eloDelta,
+    createdAt: new Date().toISOString(),
+  });
+
+  return { success, rated, eloDelta, newRating, streak: newStreak };
 }
