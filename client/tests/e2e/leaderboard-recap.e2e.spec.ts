@@ -34,16 +34,10 @@ test.afterEach(async () => {
 async function queueRankedNim(page: Page): Promise<void> {
   await page.goto("/games");
   await page.getByTestId("game-tile-nim").click();
-  // The ranked/casual picker may render as pills (radio) or buttons.
-  await page
-    .getByRole("radio", { name: /ranked/i })
-    .or(page.getByRole("button", { name: /ranked/i }))
-    .first()
-    .click();
-  await page
-    .getByRole("button", { name: /^play\b/i })
-    .first()
-    .click();
+  await page.getByTestId("mode-chooser").getByRole("radio", { name: /ranked/i }).click();
+  // The rating preview loads before Play arms — wait on the portal's own ids.
+  await page.getByTestId("portal-rating").waitFor();
+  await page.getByTestId("play-button").click();
 }
 
 /**
