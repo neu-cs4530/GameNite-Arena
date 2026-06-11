@@ -1,0 +1,55 @@
+.ga-game-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--space-4);
+}
+
+.ga-game-grid__tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-4);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: var(--color-fg);
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.ga-game-grid__tile:hover {
+  border-color: var(--color-primary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.ga-game-grid__tile:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.ga-game-grid__tile--selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+.ga-game-grid__name {
+  font-size: var(--text-h3);
+  font-weight: var(--weight-semibold);
+}
+
+.ga-game-grid__tagline {
+  color: var(--color-fg-muted);
+  font-size: var(--text-small);
+}
+
+.ga-game-grid__extra {
+  margin-top: var(--space-1);
+  width: 100%;
+}

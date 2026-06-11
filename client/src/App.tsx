@@ -11,9 +11,9 @@ import Profile from "./pages/Profile.tsx";
 import { io } from "socket.io-client";
 import type { GameSocket } from "./util/types.ts";
 import LoggedInRoute from "./components/LoggedInRoute.tsx";
-import NewGame from "./pages/NewGame.tsx";
 import Game from "./pages/Game.tsx";
-import GameList from "./pages/GameList.tsx";
+import GamesPortal from "./pages/GamesPortal.tsx";
+import MatchmakingQueue from "./pages/MatchmakingQueue.tsx";
 import ThreadPage from "./pages/ThreadPage.tsx";
 import { ErrorBoundary } from "react-error-boundary";
 import fallback from "./fallback.tsx";
@@ -130,8 +130,8 @@ export default function App() {
             <Route path="/forum" element={<ThreadList />} />
             <Route path="/forum/post/new" element={<NewThread />} />
             <Route path="/forum/post/:threadId" element={<ThreadPage />} />
-            <Route path="/games" element={<GameList />} />
-            <Route path="/game/new" element={<NewGame />} />
+            <Route path="/games" element={<GamesPortal />} />
+            <Route path="/games/queue/:gameKey" element={<MatchmakingQueue />} />
             <Route path="/game/:gameId" element={<Game />} />
             <Route path="/profile/:username" element={<Profile />} />
             <Route path="/replays" element={<ReplaysDiscovery />} />
