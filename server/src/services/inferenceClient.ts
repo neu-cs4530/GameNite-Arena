@@ -1,4 +1,6 @@
 /**
+ * server/src/services/inferenceClient.ts
+ * ======================================
  * Thin HTTP client the main backend uses to talk to the inference service
  * (a separate Render Web Service). Base URL comes from env so local dev and
  * Render deploys differ only by config.
@@ -43,13 +45,13 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 export function loadModel(input: {
   deploymentId: string;
   game: string;
-  storageKey: string;
+  modelId: string;
 }): Promise<unknown> {
   /* eslint-disable @typescript-eslint/naming-convention */
   return post("/inference/load", {
     deployment_id: input.deploymentId,
     game: input.game,
-    storage_key: input.storageKey,
+    model_id: input.modelId,
   });
   /* eslint-enable @typescript-eslint/naming-convention */
 }

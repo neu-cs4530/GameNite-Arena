@@ -1,4 +1,10 @@
 /**
+ * server/src/services/trainingWorker.ts
+ *
+ * Register at startup in server.ts:
+ *   import { trainingProcessor } from "./services/trainingWorker.ts";
+ *   import { registerTrainingWorker } from "./services/trainingQueue.service.ts";
+ *   registerTrainingWorker(trainingProcessor);  // inside httpServer.listen callback
  *
  * SANDBOX APPROACH (Render-constrained):
  *   Render does NOT allow spawning Docker containers at runtime (no docker
@@ -14,6 +20,10 @@
  *   Residual gap: without privileged access we cannot fully network-isolate the
  *   child on Render; outbound network is mitigated by the AST scan, not blocked.
  *   Documented as a known limitation in the final report.
+ *
+ * STORAGE: POST-DEMO — wire to artifactStore.service.ts (local filesystem,
+ * matching Zach's canonical <modelId>.pth layout) when server-side training
+ * is enabled. objectStorage/R2 approach was removed; local disk is shared.
  */
 
 import { spawn } from "node:child_process";
@@ -23,7 +33,6 @@ import * as path from "node:path";
 import type { TrainingJobData, TrainingJobResult } from "@gamenite/shared";
 import type { TrainingProcessor } from "./trainingQueue.service.ts";
 import { ModelRepo, TrainingJobRepo } from "../repository.ts";
-import * as objectStorage from "./objectStorage.ts";
 
 // Hard ceiling for a single training job. Kills the process group on expiry.
 const TRAINING_TIMEOUT_MS = Number(process.env["TRAINING_TIMEOUT_MS"] ?? 10 * 60_000);
@@ -57,8 +66,9 @@ export const trainingProcessor: TrainingProcessor = async (
   const outputKey = `trained-${modelId}-${Date.now()}.pth`;
 
   try {
-    // 1. Pull the user's adapter from the shared store into the scratch dir.
-    await objectStorage.downloadTo(data.modelStorageKey, localAdapter);
+    // 1. TODO(post-demo): copy adapter from local artifact store to scratch dir.
+    // await artifactStore.resolveArtifactRef(data.modelStorageKey) -> copy to localAdapter
+    // For now this path is not exercised (training is local, not server-side).
 
     // 2. Train (guarded subprocess). Captures final metrics from the last line.
     const finalMetrics = await runTrainingSubprocess(
@@ -77,8 +87,7 @@ export const trainingProcessor: TrainingProcessor = async (
       },
     );
 
-    // 3. Upload the trained artifact to the shared store.
-    await objectStorage.uploadFile(localOutput, outputKey);
+    // 3. TODO(post-demo): store artifact via artifactStore.storeModelArtifact(modelId, localOutput).
 
     // 4. Point the model record at the object key (NOT a local path).
     const model = await ModelRepo.find(modelId);

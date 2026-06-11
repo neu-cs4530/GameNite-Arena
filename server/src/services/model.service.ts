@@ -1,23 +1,18 @@
 /**
  *
  * Business logic for AI model upload, validation, and deployment management.
- * Uses ModelRecord (trained artifact) + DeploymentRecord (runtime slot).
  *
- * Sprint 2 changes (local train + upload decision):
- *   - uploadModel: uploads .pth to R2 (objectStorage) instead of keeping local path.
- *     artifactRef is now the R2 object key, not a local filesystem path.
- *   - deployModel: calls inferenceClient.loadModel() after creating the
- *     DeploymentRecord so the inference service actually loads the model.
- *   - updateDeploymentStatus: calls inferenceClient.unloadModel() on retire.
+ * Sprint 2: uses Zach's artifactStore.service.ts for .pth storage (local
+ * filesystem, shared with inference service on combined Render service).
+ * No object storage needed.
  */
 
-import * as fs from "node:fs";
 import type { GameKey } from "@gamenite/shared";
 import type { DeploymentRecord, RecordId } from "../models.ts";
 import { ModelRepo, DeploymentRepo } from "../repository.ts";
 import { populateSafeUserInfo } from "./user.service.ts";
 import type { UserWithId } from "../types.ts";
-import * as objectStorage from "./objectStorage.ts";
+import { storeModelArtifact } from "./artifactStore.service.ts";
 import * as inferenceClient from "./inferenceClient.ts";
 
 // Constants
@@ -91,11 +86,9 @@ async function populateDeploymentInfo(deploymentId: RecordId): Promise<Deploymen
 // Service functions
 
 /**
- * Validate and store an uploaded .pth artifact as a ModelRecord.
- *
- * Sprint 2: uploads the .pth to R2 and stores the object key as artifactRef,
- * replacing the old local-path approach. The local temp file is always cleaned
- * up after upload (success or failure).
+ * Validate and store an uploaded .pth artifact.
+ * Uses artifactStore.storeModelArtifact() to move the file into the
+ * canonical models/ directory as <modelId>.pth.
  */
 export async function uploadModel(
   user: UserWithId,
@@ -107,63 +100,49 @@ export async function uploadModel(
     trainedAt: number;
   },
 ): Promise<ModelInfo> {
-  // Validate game key
   if (!SUPPORTED_GAME_KEYS.includes(metadata.game as GameKey)) {
-    fs.unlinkSync(filePath);
     throw new Error(
       `Unsupported game '${metadata.game}'. Supported: ${SUPPORTED_GAME_KEYS.join(", ")}`,
     );
   }
-
-  // Validate adapter version
   if (metadata.adapterVersion !== CURRENT_ADAPTER_VERSION) {
-    fs.unlinkSync(filePath);
     throw new Error(
       `Adapter version mismatch: model=${metadata.adapterVersion}, ` +
         `current=${CURRENT_ADAPTER_VERSION}. Please retrain with the latest adapter.`,
     );
   }
 
-  // Upload to R2 — key includes userId so artifacts are namespaced per user.
-  const objectKey = `models/${user.userId}/${Date.now()}-${metadata.game}.pth`;
-  try {
-    await objectStorage.uploadFile(filePath, objectKey);
-  } finally {
-    // Always remove the multer temp file, whether upload succeeded or not.
-    try {
-      fs.unlinkSync(filePath);
-    } catch {
-      /* already gone */
-    }
-  }
-
   const now = new Date().toISOString();
+  // Create the model record first to get the modelId for the artifact name.
   const modelId = await ModelRepo.add({
     userId: user.userId,
     gameKey: metadata.game as GameKey,
     displayName: displayName.trim() || `${metadata.game}-model`,
-    sourceRef: objectKey,
-    artifactRef: objectKey, // R2 object key, not a local path
+    sourceRef: "",
+    artifactRef: undefined,
     visibility: "private",
     createdAt: now,
     updatedAt: now,
   });
 
+  // Store artifact as models/<modelId>.pth
+  const { ref } = await storeModelArtifact(modelId, filePath);
+
+  // Update record with artifact ref
+  const record = await ModelRepo.get(modelId);
+  record.artifactRef = ref;
+  record.updatedAt = new Date().toISOString();
+  await ModelRepo.set(modelId, record);
+
   return populateModelInfo(modelId);
 }
 
-/**
- * Retrieve a single model by ID.
- */
 export async function getModelById(modelId: RecordId): Promise<ModelInfo | null> {
   const record = await ModelRepo.find(modelId);
   if (!record) return null;
   return populateModelInfo(modelId);
 }
 
-/**
- * Retrieve all models owned by a specific user, reverse chronological.
- */
 export async function getModelsByUser(userId: RecordId): Promise<ModelInfo[]> {
   const allKeys = await ModelRepo.getAllKeys();
   const owned = (
@@ -180,9 +159,8 @@ export async function getModelsByUser(userId: RecordId): Promise<ModelInfo[]> {
 }
 
 /**
- * Deploy a model — creates a DeploymentRecord and loads it into the inference
- * service. Sprint 2: adds the inferenceClient.loadModel() call so the model
- * is actually available to serve moves.
+ * Deploy a model — creates a DeploymentRecord and loads it into the
+ * inference service.
  */
 export async function deployModel(
   user: UserWithId,
@@ -198,7 +176,7 @@ export async function deployModel(
     throw new Error(`Model ${modelId} has no trained artifact yet`);
   }
 
-  // Enforce per-user per-game cap (CoS 2.7)
+  // CoS 2.7 cap
   const allDepKeys = await DeploymentRepo.getAllKeys();
   const activeCount = (await Promise.all(allDepKeys.map((key) => DeploymentRepo.find(key)))).filter(
     (r): r is DeploymentRecord =>
@@ -226,31 +204,39 @@ export async function deployModel(
     updatedAt: now,
   });
 
-  // Load the model into the inference service (storage -> inference handoff, #27).
-  // If this fails, roll back the DeploymentRecord so the DB stays consistent.
-  try {
-    await inferenceClient.loadModel({
-      deploymentId,
-      game: model.gameKey,
-      storageKey: model.artifactRef,
-    });
-  } catch (err) {
-    // Roll back: mark the deployment as retired so it doesn't appear as active.
-    const dep = await DeploymentRepo.find(deploymentId);
-    if (dep) {
-      dep.status = "retired";
-      dep.updatedAt = new Date().toISOString();
-      await DeploymentRepo.set(deploymentId, dep);
+  // Load into inference service only when INFERENCE_SERVICE_URL is configured.
+  // Best-effort: absence of the service never blocks a deploy on a dev machine
+  // or in the demo environment. A 4xx from the service (bad model, unknown game)
+  // is a real error and deletes the record so the list doesn't fill with junk.
+  if (process.env["INFERENCE_SERVICE_URL"]) {
+    try {
+      await inferenceClient.loadModel({ deploymentId, game: model.gameKey, modelId });
+    } catch (err) {
+      const e = err as inferenceClient.InferenceError;
+      const isClientError = typeof e.status === "number" && e.status >= 400 && e.status < 500;
+      if (isClientError) {
+        // Delete the record rather than leaving a retired ghost.
+        const dep = await DeploymentRepo.find(deploymentId);
+        if (dep) {
+          dep.status = "retired";
+          dep.updatedAt = new Date().toISOString();
+          await DeploymentRepo.set(deploymentId, dep);
+        }
+        throw new Error(`Inference load failed: ${e.message}`);
+      }
+      // Connection error / 5xx — inference is down, proceed anyway.
+      // eslint-disable-next-line no-console
+      console.warn(`Inference service unreachable during deploy ${deploymentId}: ${e.message}`);
     }
-    throw new Error(`Deployment created but inference load failed: ${(err as Error).message}`);
   }
 
   return populateDeploymentInfo(deploymentId);
 }
 
 /**
- * Update deployment status (pause, retire). Owner only (CoS 2.9).
- * Retiring unloads the model from the inference service.
+ * Update deployment status. Retiring unloads from inference service.
+ * Best-effort: connection errors and 5xx are swallowed so an unreachable
+ * inference service never prevents a user from retiring a deployment.
  */
 export async function updateDeploymentStatus(
   deploymentId: RecordId,
@@ -263,13 +249,16 @@ export async function updateDeploymentStatus(
     throw new Error(`User ${user.username} does not own deployment ${deploymentId}`);
   }
 
-  // Unload from inference service when retiring (CoS 2.9).
-  // Best-effort: if inference already dropped it, that's fine.
   if (newStatus === "retired") {
     try {
       await inferenceClient.unloadModel(deploymentId);
     } catch (err) {
-      if ((err as inferenceClient.InferenceError).status !== 404) throw err;
+      const e = err as inferenceClient.InferenceError;
+      // Only rethrow real client errors (e.g. auth failures).
+      // 404 = already unloaded (fine), 5xx / no status = service down (fine).
+      if (typeof e.status === "number" && e.status >= 400 && e.status < 500 && e.status !== 404) {
+        throw err;
+      }
     }
   }
 
