@@ -7,6 +7,7 @@ const zLeaderboardQuery = z.object({
   type: z.enum(["human", "ai", "all"]).default("all"),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(50),
+  fresh: z.enum(["0", "1"]).default("0"),
 });
 
 /**
@@ -16,6 +17,8 @@ const zLeaderboardQuery = z.object({
  *   type  - "human" | "ai" | "all" (default "all")
  *   page  - 1-indexed page number (default 1)
  *   limit - entries per page, max 100 (default 50)
+ *   fresh - "1" bypasses the 5-minute cache read so post-match consumers see
+ *           just-updated ratings (the rebuild re-warms the cache); default "0"
  *
  * @returns A paginated LeaderboardPage.
  */
@@ -37,6 +40,7 @@ export const getByGame: RestAPI<LeaderboardPage, { gameKey: string }> = async (r
     entityType: query.data.type,
     page: query.data.page,
     limit: query.data.limit,
+    fresh: query.data.fresh === "1",
   });
 
   res.send(result);
