@@ -1,0 +1,160 @@
+.ga-recap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-top: var(--space-3);
+}
+
+.ga-recap__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.ga-recap__headline {
+  margin: 0;
+  font-size: var(--text-h2);
+  font-weight: var(--weight-bold);
+  color: var(--color-fg);
+}
+
+.ga-recap__headline--success {
+  color: var(--color-success);
+}
+
+.ga-recap__headline--danger {
+  color: var(--color-danger);
+}
+
+.ga-recap__tiles {
+  display: flex;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+}
+
+/* --- Movement strip ----------------------------------------------------- */
+
+.ga-recap__strip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ga-recap__strip-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  font-size: var(--text-small);
+}
+
+.ga-recap__direction {
+  font-weight: var(--weight-semibold);
+}
+
+.ga-recap__direction--up {
+  color: var(--color-success);
+}
+
+.ga-recap__direction--new {
+  color: var(--color-primary);
+}
+
+.ga-recap__direction--down {
+  color: var(--color-danger);
+}
+
+.ga-recap__direction--none {
+  color: var(--color-fg-muted);
+}
+
+.ga-recap__from-to {
+  color: var(--color-fg-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.ga-recap__rows {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.ga-recap__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-small);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.ga-recap__row:last-child {
+  border-bottom: none;
+}
+
+.ga-recap__row-rank {
+  width: var(--space-10);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-fg-muted);
+}
+
+.ga-recap__row-rating {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-fg-muted);
+}
+
+/* The player's own row slides into place and settles, tinted by direction. */
+.ga-recap__row--self {
+  font-weight: var(--weight-semibold);
+  animation: ga-recap-settle var(--duration-slow) var(--ease-emphasis);
+}
+
+.ga-recap__row--up {
+  background: var(--color-success-soft);
+}
+
+.ga-recap__row--new {
+  background: var(--color-primary-soft);
+}
+
+.ga-recap__row--down {
+  background: var(--color-danger-soft);
+}
+
+.ga-recap__row--none {
+  background: var(--color-surface);
+}
+
+@keyframes ga-recap-settle {
+  from {
+    transform: translateY(var(--space-4));
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ga-recap__row--self {
+    animation: none;
+  }
+}
+
+.ga-recap__board-link {
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--color-primary);
+}
+
+/* --- Casual variant ------------------------------------------------------ */
+
+.ga-recap--casual p {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}
