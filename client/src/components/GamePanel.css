@@ -3,6 +3,8 @@
   padding-right: 0;
   display: grid;
   grid-template-rows: max-content 1fr;
+  /* The post-match recap renders below the frame; let the column scroll. */
+  overflow-y: auto;
 }
 
 .gameRoster {
