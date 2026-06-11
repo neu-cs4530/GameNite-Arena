@@ -145,18 +145,32 @@ describe("generatePuzzleForGame (nim)", () => {
   });
 });
 
-describe("generatePuzzleForGame (guess)", () => {
-  it("hydrates a watcher view of the position that never includes the secret", async () => {
+describe("PUZZLE_GAME_KEYS: only deducible games get daily puzzles", () => {
+  // Guess's watcher view shows only WHO guessed, never the values, so its
+  // "puzzle" can only be solved via the leaked answer — it must never serve.
+
+  it("does not generate a guess puzzle even when a guess win is archived", async () => {
     await MatchRepo.set("match-guess-1", guessWin());
 
-    const puzzle = await generatePuzzleForGame("guess", today);
+    expect(await generatePuzzleForGame("guess", today)).toBeNull();
+    expect(await getOrGenerateTodaysPuzzle("guess")).toBeNull();
+  });
 
-    // 4 moves - 2 solution moves = the first 2 guesses are already in.
-    expect(puzzle!.position).toStrictEqual({
-      finished: false,
-      guesses: [true, true, false, false],
+  it("never serves or grades against a stale stored guess puzzle", async () => {
+    // a record left over from before the restriction (or a hand-seeded one)
+    await PuzzleRepo.set(dailyPuzzleKey({ gameKey: "guess", date: today }), {
+      gameKey: "guess",
+      date: today.toISOString().slice(0, 10),
+      position: { finished: false, guesses: [true, true, false, false] },
+      solution: { moves: [41], explanation: "seeded by test" },
+      createdAt: new Date().toISOString(),
     });
-    expect(puzzle!.solution.moves).toStrictEqual([80, 41]);
+
+    expect(await getOrGenerateTodaysPuzzle("guess")).toBeNull();
+
+    const userId = (await getUserByUsername("user1"))!.userId;
+    const outcome = await submitAttempt("guess", userId, { move: 41, timeMs: 100, hintsUsed: 0 });
+    expect(outcome).toBeNull();
   });
 });
 

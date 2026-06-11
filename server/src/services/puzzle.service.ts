@@ -15,8 +15,18 @@ import {
   type Glicko2GameResult,
 } from "./glicko2.service.ts";
 
-// games we generate daily puzzles for
-const PUZZLE_GAME_KEYS: GameKey[] = ["nim", "guess"];
+/**
+ * Games we generate daily puzzles for — deliberately a subset of all playable
+ * games. A game qualifies only when its daily position is DEDUCIBLE: the
+ * stored watcher view must contain everything a solver needs to find the
+ * winning move from the board alone. Nim qualifies (the whole pile and whose
+ * turn it is are the entire state). Guess does NOT — its watcher view shows
+ * only who has guessed, never the values or the secret, so a guess "puzzle"
+ * could only be solved by leaking the answer.
+ *
+ * Mirrors PUZZLE_GAME_KEYS in client/src/util/consts.ts; update both together.
+ */
+const PUZZLE_GAME_KEYS: GameKey[] = ["nim"];
 
 // need at least this many moves to carve out a position + solution
 const MIN_MOVES_FOR_PUZZLE = 4;
@@ -26,11 +36,14 @@ const SOLUTION_MOVE_COUNT = 2;
 
 /**
  * Returns today's puzzle for a game, or null if none has been generated yet.
+ * Games outside PUZZLE_GAME_KEYS always resolve null — even a stale stored
+ * record (written before a game was delisted) must never serve.
  *
  * @param gameKey - Which game to look up.
  * @returns The PuzzleRecord for today, or null.
  */
 export async function getTodaysPuzzle(gameKey: GameKey): Promise<PuzzleRecord | null> {
+  if (!PUZZLE_GAME_KEYS.includes(gameKey)) return null;
   const key = dailyPuzzleKey({ gameKey, date: new Date() });
   return PuzzleRepo.find(key);
 }
@@ -119,7 +132,8 @@ function explainSolution(gameKey: GameKey, solutionMoves: unknown[]): string {
 
 /**
  * Finds a suitable match for the given game and writes a PuzzleRecord for
- * that day. Skips silently if no suitable match exists yet.
+ * that day. Skips silently if no suitable match exists yet, and refuses
+ * outright for games outside PUZZLE_GAME_KEYS (positions not deducible).
  *
  * The stored record uses per-game shapes end to end: `position` is the
  * hydrated watcher view of the game state (e.g. `{remaining, nextPlayer}`
@@ -134,6 +148,7 @@ export async function generatePuzzleForGame(
   gameKey: GameKey,
   date: Date,
 ): Promise<PuzzleRecord | null> {
+  if (!PUZZLE_GAME_KEYS.includes(gameKey)) return null;
   const key = dailyPuzzleKey({ gameKey, date });
 
   // don't overwrite a puzzle already generated for today

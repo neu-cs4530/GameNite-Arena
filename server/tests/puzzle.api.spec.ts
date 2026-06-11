@@ -55,6 +55,33 @@ describe("GET /api/puzzle/:gameKey", () => {
       solution: { moves: [3] },
     });
   });
+
+  it("should return 404 for guess — not a daily-puzzle game (position isn't deducible)", async () => {
+    // even with a finished guess match in the archive to mine from
+    const guessMatch: MatchRecord = {
+      gameId: "game-guess-404",
+      gameKey: "guess",
+      rated: false,
+      participants: ["u-g0", "u-g1", "u-g2", "u-g3"].map((id, i) => ({
+        id,
+        type: "human",
+        displayName: `Guesser ${i}`,
+      })),
+      moves: [10, 55, 80, 41].map((guess, i) => ({
+        actor: `u-g${i}`,
+        move: guess,
+        timestamp: `2026-06-09T01:0${i}:00.000Z`,
+      })),
+      result: { outcome: "win", winnerId: "u-g3" },
+      initialState: { secret: 40, guesses: [null, null, null, null] },
+      createdAt: "2026-06-09T01:10:00.000Z",
+      completedAt: "2026-06-09T01:10:00.000Z",
+    };
+    await MatchRepo.set("match-guess-404", guessMatch);
+
+    response = await supertest(app).get("/api/puzzle/guess");
+    expect(response.status).toBe(404);
+  });
 });
 
 describe("POST /api/puzzle/:gameKey/attempt", () => {
