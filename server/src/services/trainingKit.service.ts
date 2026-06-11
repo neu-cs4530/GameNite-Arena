@@ -126,10 +126,13 @@ ${fetches}
 echo ""
 echo "GameNite training kit ready in ./$KIT_DIR"
 echo ""
-echo "Next steps:"
-echo "  1. python3 -m pip install -r requirements.txt"
-echo "  2. Verify your setup with a fake run:"
+echo "Next steps (all from inside ./$KIT_DIR — the kit is flat, no subfolders):"
+echo "  1. cd $KIT_DIR && python3 -m pip install -r requirements.txt"
+echo "  2. Real training run (SB3 PPO on Nim, streams live to the dashboard):"
+echo "     python3 example_local_training_nim.py --base-url $BASE --username <you> --password <pwd>"
+echo "     (append --job-id <id> to attach to a run registered on the web)"
+echo "  3. Optional smoke test with synthetic metrics, no learning:"
 echo "     python3 demo_local_session.py --base-url $BASE --username <you> --password <pwd>"
-echo "  3. Wire session_reporter.py into your adapter loop (see its docstring)."
+echo "  4. Wire session_reporter.py into your own adapter loop (see its docstring)."
 `;
 }

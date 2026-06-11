@@ -140,9 +140,21 @@ evaluation per chunk, live reporting, artifact upload, and a round-trip check
 that rebuilds the platform-stored `.pth` the way the inference service does.
 Verified end to end (a 30k-step run reaches the optimal Nim policy):
 
+From the repo:
+
 ```bash
 python3 ai/example_local_training_nim.py --username user0 --password pwd0000
 ```
+
+From a downloaded training kit (the kit is FLAT — there is no `ai/` folder):
+
+```bash
+cd gamenite-training-kit
+python3 example_local_training_nim.py --username user0 --password pwd0000
+```
+
+Append `--job-id <id>` to attach to a run registered from the web form
+instead of starting a new one.
 
 ## The trainer UI is real data, full stop
 
