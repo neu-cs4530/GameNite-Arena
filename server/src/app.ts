@@ -61,6 +61,7 @@ app.use(
         .patch("/deployment/:id", model.patchDeploymentStatus),
     )
     .use("/leaderboard", express.Router().get("/:gameKey", leaderboard.getByGame))
+    .use("/matchmaker", express.Router().get("/queue", matchmaker.getQueueStatus))
     .use(
       "/puzzle",
       express

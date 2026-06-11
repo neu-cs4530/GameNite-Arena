@@ -1,5 +1,5 @@
 import { type GameKey, type GuessState, type NimState } from "@gamenite/shared";
-import { ratingKey, type GameRecord } from "../models.ts";
+import { ratingKey, type GameRecord, type MatchResult } from "../models.ts";
 import { MatchRepo, RatingRepo } from "../repository.ts";
 import { newRating, updateRating, type Glicko2Rating } from "./glicko2.service.ts";
 
@@ -75,9 +75,14 @@ function getWinnerId(gameKey: GameKey, state: unknown, players: string[]): strin
  *
  * @param game - The finished GameRecord (state and done already updated).
  * @param gameId - The id `game` is stored under (also the MatchRecord's id).
+ * @returns the match result (winner, outcome, rating changes), or undefined
+ * if the game wasn't a ratable 1v1.
  */
-export async function updateRatingsForGame(game: GameRecord, gameId: string): Promise<void> {
-  if (game.players.length !== 2) return;
+export async function updateRatingsForGame(
+  game: GameRecord,
+  gameId: string,
+): Promise<MatchResult | undefined> {
+  if (game.players.length !== 2) return undefined;
 
   const [playerA, playerB] = game.players;
   const winnerId = getWinnerId(game.type, game.state, game.players);
@@ -96,19 +101,20 @@ export async function updateRatingsForGame(game: GameRecord, gameId: string): Pr
   await saveRating(playerA, game.type, newRatingA);
   await saveRating(playerB, game.type, newRatingB);
 
+  const matchResult: MatchResult = {
+    winnerId,
+    outcome: winnerId === undefined ? "draw" : "win",
+    ratingChanges: [
+      { entityId: playerA, delta: newRatingA.rating - ratingA.rating },
+      { entityId: playerB, delta: newRatingB.rating - ratingB.rating },
+    ],
+  };
+
   // record the result on the match's archival record, if it was created
   const match = await MatchRepo.find(gameId);
   if (match) {
-    await MatchRepo.set(gameId, {
-      ...match,
-      result: {
-        winnerId,
-        outcome: winnerId === undefined ? "draw" : "win",
-        ratingChanges: [
-          { entityId: playerA, delta: newRatingA.rating - ratingA.rating },
-          { entityId: playerB, delta: newRatingB.rating - ratingB.rating },
-        ],
-      },
-    });
+    await MatchRepo.set(gameId, { ...match, result: matchResult });
   }
+
+  return matchResult;
 }

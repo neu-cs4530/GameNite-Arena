@@ -7,7 +7,7 @@ import { type GameServicer } from "../games/gameServiceManager.ts";
 import { nimGameService } from "../games/nim.ts";
 import { guessGameService } from "../games/guess.ts";
 import { type GameViewUpdates, type UserWithId } from "../types.ts";
-import { type GameRecord } from "../models.ts";
+import { type GameRecord, type MatchResult } from "../models.ts";
 import { GameRepo } from "../repository.ts";
 /**
  * The service interface for individual games
@@ -157,7 +157,8 @@ export async function getGames(): Promise<GameInfo[]> {
  * @param gameId - Ostensible game id
  * @param user - Authenticated user
  * @param move - Unsanitized game move
- * @returns the view updates to send to players and watchers
+ * @returns the view updates to send to players and watchers, plus the match
+ * result (winner, outcome, rating changes) if this move ended a rated game
  * @throws if the game id or move is not valid
  */
 export async function updateGame(gameId: string, user: UserWithId, move: unknown) {
@@ -181,8 +182,9 @@ export async function updateGame(gameId: string, user: UserWithId, move: unknown
   if (result.done) game.matchId = gameId;
   await GameRepo.set(gameId, game);
 
+  let gameResult: MatchResult | undefined;
   if (result.done) {
-    await postGameUpdates(game, gameId, user.userId, move, stateBeforeMove);
+    gameResult = await postGameUpdates(game, gameId, user.userId, move, stateBeforeMove);
   } else {
     // Move is validated and persisted — archive it for the replay viewer.
     // Archival is a side-channel: a failed write must not fail the move or
@@ -195,7 +197,7 @@ export async function updateGame(gameId: string, user: UserWithId, move: unknown
     }
   }
 
-  return result.views;
+  return { views: result.views, gameResult };
 }
 
 /**
@@ -215,6 +217,8 @@ export async function updateGame(gameId: string, user: UserWithId, move: unknown
  * @param userId - The user who made the game-ending move
  * @param move - The game-ending move payload
  * @param stateBeforeMove - Game state before the final move was applied
+ * @returns the match result (winner, outcome, rating changes) for rated
+ * games, or undefined for unrated games or if the rating update failed
  */
 export async function postGameUpdates(
   game: GameRecord,
@@ -222,7 +226,7 @@ export async function postGameUpdates(
   userId: string,
   move: unknown,
   stateBeforeMove: unknown,
-): Promise<void> {
+): Promise<MatchResult | undefined> {
   // 1. Archive the final move; the recorder finalizes and persists the
   //    complete MatchRecord for the replay viewer.
   try {
@@ -233,13 +237,13 @@ export async function postGameUpdates(
   }
 
   // 2. Update Glicko ratings for rated games.
-  if (game.rated) {
-    try {
-      await updateRatingsForGame(game, gameId);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error(`rating update failed for game ${gameId}:`, err);
-    }
+  if (!game.rated) return undefined;
+  try {
+    return await updateRatingsForGame(game, gameId);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`rating update failed for game ${gameId}:`, err);
+    return undefined;
   }
 }
 

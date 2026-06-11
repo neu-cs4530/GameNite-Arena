@@ -1,13 +1,16 @@
-import { withAuth, zGameKey } from "@gamenite/shared";
-import { type GameServer, type SocketAPI } from "../types.ts";
+import { withAuth, zGameKey, zMatchmakingJoinPayload } from "@gamenite/shared";
+import { type GameServer, type RestAPI, type SocketAPI } from "../types.ts";
 import { enforceAuth } from "../services/auth.service.ts";
 import { createGame, joinGame, startGame } from "../services/game.service.ts";
 import {
   getPlayerRating,
+  getQueueCounts,
+  getQueueSnapshot,
   joinQueue,
   leaveQueue,
   runMatchmakingTick,
   TICK_INTERVAL_MS,
+  type QueueCounts,
   type QueueEntry,
 } from "../services/matchmaker.service.ts";
 import { logSocketError } from "./socket.controller.ts";
@@ -17,7 +20,10 @@ import { logSocketError } from "./socket.controller.ts";
  */
 export const socketJoinQueue: SocketAPI = (socket) => async (body) => {
   try {
-    const { auth, payload: gameKey } = withAuth(zGameKey).parse(body);
+    const {
+      auth,
+      payload: { gameKey, rated },
+    } = withAuth(zMatchmakingJoinPayload).parse(body);
     const user = await enforceAuth(auth);
     const rating = await getPlayerRating(user.userId, gameKey);
 
@@ -26,6 +32,7 @@ export const socketJoinQueue: SocketAPI = (socket) => async (body) => {
       username: user.username,
       gameKey,
       rating,
+      rated,
       joinedAt: new Date(),
       socketId: socket.id,
     });
@@ -48,12 +55,13 @@ export const socketLeaveQueue: SocketAPI = (socket) => async (body) => {
 };
 
 /**
- * Creates a rated game for a matched pair, the same way two players would by
- * hand: create, join, then start.
+ * Creates a game for a matched pair (rated or unrated, per their shared
+ * queue choice), the same way two players would by hand: create, join, then
+ * start.
  */
 async function startMatchedGame(io: GameServer, a: QueueEntry, b: QueueEntry): Promise<void> {
   const now = new Date();
-  const game = await createGame(a, a.gameKey, now, true);
+  const game = await createGame(a, a.gameKey, now, a.rated);
   await joinGame(game.gameId, b);
   await startGame(game.gameId, a);
 
@@ -67,7 +75,8 @@ async function startMatchedGame(io: GameServer, a: QueueEntry, b: QueueEntry): P
  */
 export function startMatchmakerLoop(io: GameServer): NodeJS.Timeout {
   return setInterval(() => {
-    const { matched, timedOut } = runMatchmakingTick(new Date());
+    const now = new Date();
+    const { matched, timedOut } = runMatchmakingTick(now);
 
     for (const [a, b] of matched) {
       startMatchedGame(io, a, b).catch((err: unknown) => {
@@ -79,5 +88,20 @@ export function startMatchmakerLoop(io: GameServer): NodeJS.Timeout {
     for (const entry of timedOut) {
       io.to(entry.socketId).emit("matchmakingTimeout", { gameKey: entry.gameKey });
     }
+
+    for (const { socketId, gameKey, window } of getQueueSnapshot(now)) {
+      io.to(socketId).emit("matchmakingWindowUpdate", { gameKey, window });
+    }
   }, TICK_INTERVAL_MS);
 }
+
+/**
+ * GET /api/matchmaker/queue
+ *
+ * @returns how many players are currently queued for each game, broken down
+ * by rated/unrated.
+ */
+export const getQueueStatus: RestAPI<QueueCounts> = (req, res) => {
+  res.send(getQueueCounts());
+  return Promise.resolve();
+};

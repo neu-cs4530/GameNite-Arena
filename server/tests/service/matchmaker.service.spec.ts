@@ -5,6 +5,8 @@ import { RatingRepo } from "../../src/repository.ts";
 import { DEFAULT_RATING } from "../../src/services/glicko2.service.ts";
 import {
   getPlayerRating,
+  getQueueCounts,
+  getQueueSnapshot,
   joinQueue,
   leaveQueue,
   runMatchmakingTick,
@@ -18,8 +20,17 @@ function entry(
   rating: number,
   joinedAt: Date,
   gameKey: GameKey = "nim",
+  rated = true,
 ): QueueEntry {
-  return { userId, username: userId, gameKey, rating, joinedAt, socketId: `socket-${userId}` };
+  return {
+    userId,
+    username: userId,
+    gameKey,
+    rating,
+    rated,
+    joinedAt,
+    socketId: `socket-${userId}`,
+  };
 }
 
 beforeEach(async () => {
@@ -81,6 +92,18 @@ describe("joinQueue / leaveQueue / runMatchmakingTick", () => {
     leaveQueue("y", "guess");
   });
 
+  it("never matches a rated-seeker with an unrated-seeker", () => {
+    const now = new Date();
+    joinQueue(entry("ranked", 1500, now, "nim", true));
+    joinQueue(entry("casual", 1500, now, "nim", false)); // same rating/game, different mode
+
+    const { matched } = runMatchmakingTick(now);
+    expect(matched).toHaveLength(0);
+
+    leaveQueue("ranked", "nim");
+    leaveQueue("casual", "nim");
+  });
+
   it("times out a player who has waited at least MAX_WAIT_MS", () => {
     const now = new Date();
     joinQueue(entry("lonely", 1500, now));
@@ -137,5 +160,66 @@ describe("getPlayerRating", () => {
 
     const rating = await getPlayerRating("vet", "nim");
     expect(rating).toBe(1700);
+  });
+});
+
+describe("getQueueSnapshot", () => {
+  it("reports each queued player's game, rated mode, and current rating window", () => {
+    const now = new Date();
+    joinQueue(entry("snap-a", 1500, now, "nim", true));
+    joinQueue(entry("snap-b", 1500, now, "guess", false));
+
+    const snapshot = getQueueSnapshot(now);
+
+    expect(snapshot.find((e) => e.socketId === "socket-snap-a")).toEqual({
+      socketId: "socket-snap-a",
+      gameKey: "nim",
+      window: 100, // INITIAL_WINDOW, no time has passed
+    });
+    expect(snapshot.find((e) => e.socketId === "socket-snap-b")).toEqual({
+      socketId: "socket-snap-b",
+      gameKey: "guess",
+      window: 100,
+    });
+
+    leaveQueue("snap-a", "nim");
+    leaveQueue("snap-b", "guess");
+  });
+
+  it("grows the window the longer a player has been queued", () => {
+    const now = new Date();
+    joinQueue(entry("snap-c", 1500, now, "nim"));
+
+    // after 2 ticks the window has grown to 100 + 50*2 = 200
+    const later = new Date(now.getTime() + 2 * TICK_INTERVAL_MS);
+    const snapshot = getQueueSnapshot(later);
+
+    expect(snapshot.find((e) => e.socketId === "socket-snap-c")?.window).toBe(200);
+
+    leaveQueue("snap-c", "nim");
+  });
+});
+
+describe("getQueueCounts", () => {
+  it("breaks down the queue by game and rated mode", () => {
+    const before = getQueueCounts();
+
+    const now = new Date();
+    joinQueue(entry("count-a", 1500, now, "nim", true));
+    joinQueue(entry("count-b", 1500, now, "nim", true));
+    joinQueue(entry("count-c", 1500, now, "nim", false));
+    joinQueue(entry("count-d", 1500, now, "guess", false));
+
+    const after = getQueueCounts();
+
+    expect(after.nim.rated - before.nim.rated).toBe(2);
+    expect(after.nim.unrated - before.nim.unrated).toBe(1);
+    expect(after.guess.unrated - before.guess.unrated).toBe(1);
+    expect(after.guess.rated).toBe(before.guess.rated);
+
+    leaveQueue("count-a", "nim");
+    leaveQueue("count-b", "nim");
+    leaveQueue("count-c", "nim");
+    leaveQueue("count-d", "guess");
   });
 });

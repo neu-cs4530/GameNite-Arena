@@ -60,6 +60,12 @@ export * from "./games/guess.types.ts";
 export type GameKey = z.infer<typeof zGameKey>;
 export const zGameKey = z.union([z.literal("nim"), z.literal("guess")]);
 
+export type MatchmakingJoinPayload = z.infer<typeof zMatchmakingJoinPayload>;
+export const zMatchmakingJoinPayload = z.object({
+  gameKey: zGameKey,
+  rated: z.boolean(),
+});
+
 /**
  * The TaggedGameView type allows the views for different game to be
  * distinguished.

@@ -1,4 +1,5 @@
 import { type GameKey } from "@gamenite/shared";
+import { gameServices } from "./game.service.ts";
 import { getRating } from "./rating.service.ts";
 
 // how often the matchmaker loop runs
@@ -16,6 +17,7 @@ export interface QueueEntry {
   username: string;
   gameKey: GameKey;
   rating: number;
+  rated: boolean;
   joinedAt: Date;
   socketId: string;
 }
@@ -38,6 +40,7 @@ function findMatch(now: Date): [QueueEntry, QueueEntry] | null {
       const a = queue[i];
       const b = queue[j];
       if (a.gameKey !== b.gameKey) continue;
+      if (a.rated !== b.rated) continue;
 
       const diff = Math.abs(a.rating - b.rating);
       const window = Math.min(currentWindow(a.joinedAt, now), currentWindow(b.joinedAt, now));
@@ -67,6 +70,32 @@ export function leaveQueue(userId: string, gameKey: GameKey): void {
 export async function getPlayerRating(userId: string, gameKey: GameKey): Promise<number> {
   const rating = await getRating(userId, gameKey);
   return rating.rating;
+}
+
+/** Each queued player's game/rated mode and current rating window, for live updates. */
+export function getQueueSnapshot(
+  now: Date,
+): { socketId: string; gameKey: GameKey; window: number }[] {
+  return queue.map((entry) => ({
+    socketId: entry.socketId,
+    gameKey: entry.gameKey,
+    window: currentWindow(entry.joinedAt, now),
+  }));
+}
+
+export type QueueCounts = Record<GameKey, { rated: number; unrated: number }>;
+
+/** How many players are queued for each game, broken down by rated/unrated. */
+export function getQueueCounts(): QueueCounts {
+  const counts = Object.fromEntries(
+    (Object.keys(gameServices) as GameKey[]).map((gameKey) => [gameKey, { rated: 0, unrated: 0 }]),
+  ) as QueueCounts;
+
+  for (const entry of queue) {
+    counts[entry.gameKey][entry.rated ? "rated" : "unrated"]++;
+  }
+
+  return counts;
 }
 
 /**
