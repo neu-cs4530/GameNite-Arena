@@ -22,6 +22,7 @@ function makeApp(): express.Express {
     express
       .Router()
       .get("/list", replay.getList)
+      .get("/:matchId/download", replay.getDownload)
       .get("/:matchId", replay.getById)
       .post("/:matchId/view", replay.postView),
   );
@@ -190,6 +191,33 @@ describe("GET /api/replay/:matchId", () => {
 
   it("returns 404 for an unknown match id", async () => {
     const res = await supertest(makeApp()).get("/api/replay/no-such-match");
+    expect(res.status).toBe(404);
+    expect(res.body).toMatchObject({ error: expect.any(String) });
+  });
+});
+
+describe("GET /api/replay/:matchId/download", () => {
+  it("serves the replay as a JSON file attachment with 200", async () => {
+    const res = await supertest(makeApp()).get("/api/replay/ctrl-tic/download");
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toMatch(/application\/json/);
+    expect(res.headers["content-disposition"]).toBe('attachment; filename="replay-ctrl-tic.json"');
+  });
+
+  it("returns the full detail body so it can be re-imported into the viewer", async () => {
+    const res = await supertest(makeApp()).get("/api/replay/ctrl-tic/download");
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      matchId: "ctrl-tic",
+      gameId: "g-tic",
+      gameKey: "tictactoe",
+      moveCount: 7,
+    });
+    expect(res.body.moves).toHaveLength(1);
+  });
+
+  it("returns 404 for an unknown match id", async () => {
+    const res = await supertest(makeApp()).get("/api/replay/no-such-match/download");
     expect(res.status).toBe(404);
     expect(res.body).toMatchObject({ error: expect.any(String) });
   });
