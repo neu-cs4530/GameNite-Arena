@@ -5,6 +5,7 @@ import dayjs from "dayjs";
 import type { GameKey } from "@gamenite/shared";
 import Badge from "../components/ui/Badge.tsx";
 import GameSelectGrid from "../components/ui/GameSelectGrid.tsx";
+import PageHero from "../components/ui/PageHero.tsx";
 import { DailyPuzzleCard } from "../components/puzzles/index.ts";
 import { gameNames, PUZZLE_GAME_KEYS } from "../util/consts.ts";
 
@@ -21,8 +22,8 @@ import { gameNames, PUZZLE_GAME_KEYS } from "../util/consts.ts";
  * playable list — deep-linking `?game=` to a non-puzzle game like guess
  * falls back to the pick-a-game state instead of an unsolvable board.
  *
- * "Solved ✓" tile markers are session-only: there is no endpoint for past
- * attempts, so we only know about solves the user made on this visit.
+ * "Solved today ✓" tile markers are session-only: there is no endpoint for
+ * past attempts, so we only know about solves the user made on this visit.
  */
 export default function Puzzles(): JSX.Element {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -31,20 +32,17 @@ export default function Puzzles(): JSX.Element {
   const rawGame = searchParams.get("game");
   const selected = PUZZLE_GAME_KEYS.find((key) => key === rawGame) ?? null;
 
+  // The daily cycle flips at UTC midnight — show the puzzle day, which can
+  // differ from the local calendar day in the evening, and say why.
+  const puzzleDay = dayjs(dayjs().toISOString().slice(0, 10)).format("dddd, MMMM D, YYYY");
+
   return (
     <div className="ga-puzzles" data-testid="puzzles-page">
-      <header className="ga-puzzles__hero">
-        <h1 className="ga-puzzles__title">Daily puzzles</h1>
-        {/* The daily cycle flips at UTC midnight — show the puzzle day, which
-            can differ from the local calendar day in the evening. */}
-        <p className="ga-puzzles__date">
-          {dayjs(dayjs().toISOString().slice(0, 10)).format("dddd, MMMM D, YYYY")}
-        </p>
-        <p className="ga-puzzles__lede">
-          One position per game, mined from real archived matches. Pick a game to play today&apos;s
-          puzzle — solves build your streak and your Puzzle Glicko.
-        </p>
-      </header>
+      <PageHero
+        title="Daily puzzles"
+        kicker={`${puzzleDay} · resets at UTC midnight`}
+        lede="One position per game, mined from real archived matches. Pick a game to play today's puzzle — solves build your streak and your Puzzle Glicko."
+      />
 
       <GameSelectGrid
         games={PUZZLE_GAME_KEYS.map((key) => ({ key, label: gameNames[key] }))}
@@ -53,9 +51,11 @@ export default function Puzzles(): JSX.Element {
         renderTileExtra={(key) =>
           solvedToday[key as GameKey] ? (
             <Badge variant="success" testId={`puzzle-solved-${key}`}>
-              Solved ✓
+              Solved today ✓
             </Badge>
-          ) : null
+          ) : (
+            <span className="ga-puzzles__tile-note">Daily puzzle</span>
+          )
         }
         testIdPrefix="puzzle-game-tile"
       />
