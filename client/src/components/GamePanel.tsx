@@ -1,6 +1,6 @@
 import "./GamePanel.css";
 import { useEffect, useState } from "react";
-import type { GameInfo } from "@gamenite/shared";
+import type { GameInfo, MatchResultView } from "@gamenite/shared";
 import { gameNames } from "../util/consts.ts";
 import useLoginContext from "../hooks/useLoginContext.ts";
 import GameDispatch from "../games/GameDispatch.tsx";
@@ -8,7 +8,8 @@ import useSocketsForGame from "../hooks/useSocketsForGame.ts";
 import useTimeSince from "../hooks/useTimeSince.ts";
 import Card from "./ui/Card.tsx";
 import RecapPanel from "./recap/RecapPanel.tsx";
-import { isViewDone, recapMode } from "../util/recap.ts";
+import { getReplay } from "../services/replayService.ts";
+import { isViewDone, recapMode, resultFromReplay } from "../util/recap.ts";
 
 /**
  * How long a finished game waits for a `gameResult` event before concluding
@@ -42,7 +43,37 @@ export default function GamePanel({
     return () => window.clearTimeout(timer);
   }, [done]);
 
-  const recap = recapMode({ done, hasResult: result !== null, graceElapsed });
+  // Refresh / late-join recovery: gameResult is a one-shot socket event, so
+  // a remount after a rated match never sees it. Once the grace period runs
+  // out with no result, ask the persisted match record (matchId === gameId)
+  // whether the game was rated and synthesize the same result shape.
+  const [recovered, setRecovered] = useState<null | MatchResultView>(null);
+  const [recoverySettled, setRecoverySettled] = useState(false);
+  useEffect(() => {
+    if (!done || !graceElapsed || result !== null) return;
+    let cancelled = false;
+    getReplay(gameId)
+      .then((replay) => {
+        if (!cancelled) setRecovered(resultFromReplay(replay));
+      })
+      .catch(() => {
+        // No persisted record (or it is unreadable) — genuinely casual.
+      })
+      .finally(() => {
+        if (!cancelled) setRecoverySettled(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [done, graceElapsed, result, gameId]);
+
+  const effectiveResult = result ?? recovered;
+  const recap = recapMode({
+    done,
+    hasResult: effectiveResult !== null,
+    graceElapsed,
+    recoverySettled,
+  });
 
   return hasWatched ? (
     <div className="gamePanel">
@@ -87,8 +118,8 @@ export default function GamePanel({
       ) : (
         <div className="gameFrame waiting content">waiting for game to begin</div>
       )}
-      {recap === "rated" && result && (
-        <RecapPanel gameKey={type} result={result} userPlayerIndex={userPlayerIndex} />
+      {recap === "rated" && effectiveResult && (
+        <RecapPanel gameKey={type} result={effectiveResult} userPlayerIndex={userPlayerIndex} />
       )}
       {recap === "casual" && (
         <Card className="ga-recap ga-recap--casual" testId="recap-casual">

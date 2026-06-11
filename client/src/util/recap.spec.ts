@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { deriveOutcome, extractMyChange, isViewDone, recapMode } from "./recap.ts";
+import {
+  deriveOutcome,
+  extractMyChange,
+  isViewDone,
+  recapMode,
+  resultFromReplay,
+} from "./recap.ts";
 import type { MatchResultView } from "./types.ts";
 
 const win = (winnerId: string): MatchResultView => ({ winnerId, outcome: "win" });
@@ -92,17 +98,59 @@ describe("isViewDone", () => {
 
 describe("recapMode", () => {
   it("shows the rated recap as soon as a gameResult arrives", () => {
-    expect(recapMode({ done: true, hasResult: true, graceElapsed: false })).toBe("rated");
+    expect(
+      recapMode({ done: true, hasResult: true, graceElapsed: false, recoverySettled: false }),
+    ).toBe("rated");
     // Even if the view lags behind the result event.
-    expect(recapMode({ done: false, hasResult: true, graceElapsed: false })).toBe("rated");
+    expect(
+      recapMode({ done: false, hasResult: true, graceElapsed: false, recoverySettled: false }),
+    ).toBe("rated");
   });
 
   it("waits out the grace period before declaring a finished game casual", () => {
-    expect(recapMode({ done: true, hasResult: false, graceElapsed: false })).toBe("none");
-    expect(recapMode({ done: true, hasResult: false, graceElapsed: true })).toBe("casual");
+    expect(
+      recapMode({ done: true, hasResult: false, graceElapsed: false, recoverySettled: false }),
+    ).toBe("none");
+    expect(
+      recapMode({ done: true, hasResult: false, graceElapsed: true, recoverySettled: true }),
+    ).toBe("casual");
+  });
+
+  it("keeps waiting after the grace period until the persisted-record check settles", () => {
+    // Grace elapsed but the replay fetch is still in flight: a refreshed
+    // rated game must not flash "casual" while we recover the record.
+    expect(
+      recapMode({ done: true, hasResult: false, graceElapsed: true, recoverySettled: false }),
+    ).toBe("none");
   });
 
   it("shows nothing while the game is in progress", () => {
-    expect(recapMode({ done: false, hasResult: false, graceElapsed: true })).toBe("none");
+    expect(
+      recapMode({ done: false, hasResult: false, graceElapsed: true, recoverySettled: true }),
+    ).toBe("none");
+  });
+});
+
+describe("resultFromReplay", () => {
+  // Mirrors what GET /api/replay/:matchId returns after a rated match:
+  // rating.service.ts writes ratingChanges onto the archived record in
+  // game.players order, the same order the socket gameResult payload uses.
+  const ratedResult: MatchResultView = {
+    winnerId: "u2",
+    outcome: "win",
+    ratingChanges: [
+      { entityId: "u1", delta: -11.5 },
+      { entityId: "u2", delta: 12.25 },
+    ],
+  };
+
+  it("recovers the socket-shaped result from a rated record", () => {
+    expect(resultFromReplay({ rated: true, result: ratedResult })).toEqual(ratedResult);
+  });
+
+  it("returns null for casual records — they never have Glicko changes", () => {
+    expect(
+      resultFromReplay({ rated: false, result: { winnerId: "u1", outcome: "win" } }),
+    ).toBeNull();
   });
 });

@@ -1,10 +1,13 @@
 import type { TaggedGameView } from "@gamenite/shared";
-import type { MatchResultView } from "./types.ts";
+import type { MatchResultView, ReplayDetail } from "./types.ts";
 
 /**
  * Pure logic for the post-match recap. The socket `gameResult` event only
  * fires for RATED games (the server returns no MatchResult for casual ones),
- * so "a result arrived" is itself the rated/casual discriminator.
+ * but it is a one-shot: a refresh or late join after the final move never
+ * sees it. The persisted match record (`GET /api/replay/:matchId`) is the
+ * durable source of truth, so a finished game with no socket result falls
+ * back to it via {@link resultFromReplay} before being declared casual.
  */
 
 export interface RecapOutcome {
@@ -62,17 +65,36 @@ export type RecapMode = "rated" | "casual" | "none";
 
 /**
  * Which recap (if any) to show. A gameResult always wins; a finished view
- * without one only counts as casual after a grace period, so rated recaps
- * never flash "casual" while the result event is in flight.
+ * without one only counts as casual after BOTH the grace period has passed
+ * (the live result event may be in flight) AND the persisted-record check
+ * has settled (a refreshed rated game recovers its result from the replay
+ * archive). Rated recaps therefore never flash "casual" first.
  */
 export function recapMode(args: {
   done: boolean;
   hasResult: boolean;
   graceElapsed: boolean;
+  recoverySettled: boolean;
 }): RecapMode {
   if (args.hasResult) return "rated";
-  if (args.done && args.graceElapsed) return "casual";
+  if (args.done && args.graceElapsed && args.recoverySettled) return "casual";
   return "none";
+}
+
+/**
+ * Recovers the socket `gameResult` payload from a persisted replay record
+ * (`GET /api/replay/:matchId`, where matchId === gameId). The server writes
+ * `result.ratingChanges` onto the archived record in `game.players` order
+ * (rating.service.ts) — the same order the live socket payload uses — so the
+ * recovered result renders through RecapPanel identically.
+ *
+ * @returns the result for rated records, or null for casual ones (casual
+ * games never change Glicko, so there is nothing to recap).
+ */
+export function resultFromReplay(
+  replay: Pick<ReplayDetail, "rated" | "result">,
+): MatchResultView | null {
+  return replay.rated ? replay.result : null;
 }
 
 /** Formats a Glicko delta for display: "+12" / "-12" (rounded). */

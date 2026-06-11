@@ -128,6 +128,14 @@ test.describe("Leaderboards and post-match recap", () => {
     await expect(winner.getByTestId("movement-strip")).toBeVisible({ timeout: 15000 });
     await expect(loser.getByTestId("movement-strip")).toBeVisible({ timeout: 15000 });
 
+    // A refresh must not lose the rated recap: the one-shot gameResult event
+    // is gone, so the client has to recover the persisted match record and
+    // render the same panel — not the casual fallback.
+    await winner.reload();
+    await expect(winner.getByTestId("recap-panel")).toBeVisible({ timeout: 15000 });
+    await expect(winner.getByTestId("recap-headline")).toHaveText("You won");
+    await expect(winner.getByTestId("recap-delta")).toContainText("+");
+
     // The recap links to the game's board; follow it as the winner.
     await winner.getByTestId("recap-view-leaderboard").click();
     await winner.waitForURL(/\/leaderboards\?game=nim/);
