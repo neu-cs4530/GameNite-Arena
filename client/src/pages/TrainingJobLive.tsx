@@ -182,6 +182,7 @@ export default function TrainingJobLive(): JSX.Element {
         <ConnectTrainerCard
           jobId={job.id}
           username={user.username}
+          gameKey={job.gameKey}
           targetEpisodes={job.targetEpisodes}
         />
       )}

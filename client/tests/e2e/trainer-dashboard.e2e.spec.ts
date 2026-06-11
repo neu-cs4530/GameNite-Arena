@@ -47,6 +47,10 @@ test.describe("Fresh trainer (tier 0 at rest)", () => {
 
     await expect(page.getByTestId("trainer-quickstart")).toBeVisible();
     await expect(page.getByTestId("quickstart-kit-command")).toContainText("install.sh");
+    // The quickstart's run command is the real trainer, not the demo harness.
+    await expect(page.getByTestId("quickstart-run-command")).toContainText(
+      "example_local_training_nim.py",
+    );
     await expect(page.getByTestId("status-chips")).toHaveCount(0);
     // Sections are present but closed — their bodies don't exist in the DOM.
     await expect(page.getByTestId("trainer-section-runs")).toBeVisible();
