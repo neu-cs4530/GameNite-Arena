@@ -201,9 +201,7 @@ describe("GET /api/replay/:matchId/download", () => {
     const res = await supertest(makeApp()).get("/api/replay/ctrl-tic/download");
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toMatch(/application\/json/);
-    expect(res.headers["content-disposition"]).toBe(
-      'attachment; filename="replay-ctrl-tic.json"',
-    );
+    expect(res.headers["content-disposition"]).toBe('attachment; filename="replay-ctrl-tic.json"');
   });
 
   it("returns the full detail body so it can be re-imported into the viewer", async () => {
