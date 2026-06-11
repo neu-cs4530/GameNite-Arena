@@ -27,13 +27,16 @@ export async function fetchDailyPuzzle(gameKey: GameKey): Promise<DailyPuzzle | 
 
 /**
  * POST /api/puzzle/:gameKey/attempt — grade one attempt against today's
- * puzzle. The server moves the user's Puzzle Glicko on EVERY attempt and
- * bumps the streak only on the first daily success.
+ * puzzle. The server rates only the FIRST UNHINTED attempt of the UTC day:
+ * that one moves the user's Puzzle Glicko (and the streak on success).
+ * Retries and hinted attempts come back `rated: false` — graded, but with a
+ * zero eloDelta and rating/streak untouched.
  *
  * @param gameKey - Which game's daily puzzle was attempted.
  * @param auth - The signed-in user's credentials (house body-auth pattern).
  * @param payload - The raw move plus internally measured time and hint count.
- * @returns The server's verdict: success flag, rating delta, new rating, streak.
+ * @returns The server's verdict: success + rated flags, rating delta, new
+ *          rating, streak.
  */
 export async function submitPuzzleAttempt(
   gameKey: GameKey,

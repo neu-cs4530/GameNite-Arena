@@ -13,6 +13,13 @@
 /** The server's verdict on one attempt (mirror of the attempt endpoint). */
 export interface AttemptResultView {
   success: boolean;
+  /**
+   * Whether this attempt moved rating/streak. Only the first UNHINTED
+   * attempt of the UTC day is rated; retries and hinted attempts come back
+   * `rated: false` (practice) with a zero eloDelta and the user's state
+   * echoed unchanged in `newRating`/`streak`.
+   */
+  rated: boolean;
   eloDelta: number;
   newRating: { rating: number; rd: number; vol: number };
   streak: { current: number; best: number; lastSolvedAt?: string };

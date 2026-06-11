@@ -119,3 +119,17 @@ export function formatEloDelta(delta: number): string {
   if (delta < 0) return `${delta}`;
   return "±0";
 }
+
+/**
+ * The Puzzle Glicko tile's sub-line for one attempt. Rated attempts show the
+ * signed delta; practice attempts (retries, hinted solves) say so outright —
+ * a "±0" there would read as a rated attempt that happened to move nothing.
+ *
+ * @param rated - Whether the server rated the attempt.
+ * @param eloDelta - The rating change (0 for practice attempts).
+ * @returns "+12 this attempt" or "practice — rating unchanged".
+ */
+export function describeRatingChange(rated: boolean, eloDelta: number): string {
+  if (!rated) return "practice — rating unchanged";
+  return `${formatEloDelta(eloDelta)} this attempt`;
+}

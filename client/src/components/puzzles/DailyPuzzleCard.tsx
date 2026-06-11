@@ -16,7 +16,7 @@ import useAsync from "../../hooks/useAsync.ts";
 import useAuth from "../../hooks/useAuth.ts";
 import {
   describePuzzleMove,
-  formatEloDelta,
+  describeRatingChange,
   type DailyPuzzle,
 } from "../../services/puzzleMapper.ts";
 import { fetchDailyPuzzle, submitPuzzleAttempt } from "../../services/puzzleService.ts";
@@ -152,7 +152,7 @@ export default function DailyPuzzleCard({ gameKey, onSolved }: DailyPuzzleCardPr
               <strong>{describePuzzleMove(gameKey, puzzle.solutionMoves[0])}</strong>
             </p>
             <p className="ga-puzzle-card__fine-print">
-              Hints count toward this attempt and can cost rating.
+              Using a hint makes this attempt practice — no rating change.
             </p>
           </Disclosure>
         </div>
@@ -214,7 +214,7 @@ function ResultPanel({
         <StatTile
           label="Puzzle Glicko"
           value={Math.round(result.newRating.rating)}
-          sub={`${formatEloDelta(result.eloDelta)} this attempt`}
+          sub={describeRatingChange(result.rated, result.eloDelta)}
           tone={result.success ? "success" : "danger"}
           testId="puzzle-glicko-tile"
         />
@@ -249,7 +249,7 @@ function ResultPanel({
           Try again
         </Button>
         <span className="ga-puzzle-card__fine-print">
-          Every attempt moves your Puzzle Glicko — retries included.
+          Retries are practice — your first unhinted attempt of the day is the rated one.
         </span>
       </div>
     </div>

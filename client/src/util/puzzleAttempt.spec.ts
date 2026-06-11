@@ -16,7 +16,21 @@ import {
 
 const RESULT: AttemptResultView = {
   success: true,
+  rated: true,
   eloDelta: 12,
+  newRating: { rating: 1512, rd: 290, vol: 0.06 },
+  streak: { current: 3, best: 5, lastSolvedAt: "2026-06-10" },
+};
+
+/**
+ * A practice verdict: the server grades retries and hinted attempts but
+ * freezes rating and streak — `rated: false`, eloDelta always 0. The UI shows
+ * "practice — rating unchanged" instead of a delta for these.
+ */
+const practiceResult: AttemptResultView = {
+  success: true,
+  rated: false,
+  eloDelta: 0,
   newRating: { rating: 1512, rd: 290, vol: 0.06 },
   streak: { current: 3, best: 5, lastSolvedAt: "2026-06-10" },
 };
@@ -106,6 +120,14 @@ describe("attemptReducer: submitting", () => {
       timeMs: 1_000,
       result: RESULT,
     });
+  });
+
+  it("carries a practice verdict (rated: false) through to the result phase untouched", () => {
+    let state = attemptReducer(viewingAt(1_000), { type: "submitted", move: 3, now: 2_000 });
+    state = attemptReducer(state, { type: "resolved", result: practiceResult });
+    expect(state.phase).toBe("result");
+    expect(state.phase === "result" && state.result.rated).toBe(false);
+    expect(state.phase === "result" && state.result.eloDelta).toBe(0);
   });
 
   it("drops a stale resolve that arrives after a reset (game switch)", () => {

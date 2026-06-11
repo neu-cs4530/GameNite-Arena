@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   describePuzzleMove,
+  describeRatingChange,
   formatEloDelta,
   mapPuzzleRecord,
   type PuzzleRecordWire,
@@ -89,5 +90,16 @@ describe("formatEloDelta", () => {
     expect(formatEloDelta(12)).toBe("+12");
     expect(formatEloDelta(-8)).toBe("-8");
     expect(formatEloDelta(0)).toBe("±0");
+  });
+});
+
+describe("describeRatingChange", () => {
+  it("shows the signed delta on a rated attempt", () => {
+    expect(describeRatingChange(true, 12)).toBe("+12 this attempt");
+    expect(describeRatingChange(true, -8)).toBe("-8 this attempt");
+  });
+
+  it("says so instead of a misleading ±0 on a practice attempt", () => {
+    expect(describeRatingChange(false, 0)).toBe("practice — rating unchanged");
   });
 });
