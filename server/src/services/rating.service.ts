@@ -1,7 +1,40 @@
 import { type GameKey, type GuessState, type NimState } from "@gamenite/shared";
 import { ratingKey, type GameRecord, type MatchResult } from "../models.ts";
 import { MatchRepo, RatingRepo } from "../repository.ts";
-import { newRating, updateRating, type Glicko2Rating } from "./glicko2.service.ts";
+import {
+  DEFAULT_RATING,
+  DEFAULT_RD,
+  PROVISIONAL_THRESHOLD,
+  newRating,
+  updateRating,
+  type Glicko2Rating,
+} from "./glicko2.service.ts";
+
+/** A player's rating in a shape safe to show on portal surfaces. */
+export interface RatingSummary {
+  rating: number;
+  rd: number;
+  gamesPlayed: number;
+  provisional: boolean;
+}
+
+/**
+ * Looks up a player's displayable rating summary for a game. Unlike
+ * {@link getRating} this keeps gamesPlayed, because "provisional" must stay
+ * true until at least one rated game exists — a fresh default record has a
+ * neutral 1500 but says nothing about the player.
+ *
+ * @param entityId - The player's user id.
+ * @param gameKey - Which game's rating to look up.
+ * @returns rating/rd/gamesPlayed plus the derived provisional flag.
+ */
+export async function getRatingSummary(entityId: string, gameKey: GameKey): Promise<RatingSummary> {
+  const record = await RatingRepo.find(ratingKey({ entityType: "human", entityId, gameKey }));
+  const rating = record?.rating ?? DEFAULT_RATING;
+  const rd = record?.rd ?? DEFAULT_RD;
+  const gamesPlayed = record?.gamesPlayed ?? 0;
+  return { rating, rd, gamesPlayed, provisional: rd > PROVISIONAL_THRESHOLD || gamesPlayed === 0 };
+}
 
 /**
  * Looks up a player's current rating for a game, or a fresh default rating
