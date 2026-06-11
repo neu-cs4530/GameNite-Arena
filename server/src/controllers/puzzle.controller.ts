@@ -7,6 +7,7 @@ import {
   DEFAULT_RD,
   type Glicko2GameResult,
 } from "../services/glicko2.service.ts";
+import { getOrGenerateTodaysPuzzle } from "../services/puzzle.service.ts";
 import { PuzzleAttemptRepo, PuzzleRepo, UserRepo } from "../repository.ts";
 import { dailyPuzzleKey, type GlickoRating, type PuzzleStreak } from "../models.ts";
 import { type RestAPI } from "../types.ts";
@@ -30,7 +31,9 @@ export interface AttemptResult {
 }
 
 /**
- * Returns today's puzzle for the requested game.
+ * Returns today's puzzle for the requested game, lazily generating it from
+ * the match archive when the midnight cron hasn't produced one yet. 404 only
+ * when there is genuinely nothing to mine a puzzle from.
  * @param req The request containing the gameKey route param.
  * @param res The response, either returning the PuzzleRecord or an error.
  */
@@ -41,7 +44,7 @@ export const getToday: RestAPI<unknown, { gameKey: string }> = async (req, res) 
     return;
   }
 
-  const puzzle = await PuzzleRepo.find(dailyPuzzleKey({ gameKey: parsed.data, date: new Date() }));
+  const puzzle = await getOrGenerateTodaysPuzzle(parsed.data);
   if (!puzzle) {
     res.status(404).send({ error: "No puzzle available for today" });
     return;
