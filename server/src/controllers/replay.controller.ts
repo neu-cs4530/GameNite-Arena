@@ -82,6 +82,24 @@ export const getById: RestAPI<ReplayDetail, { matchId: string }> = async (req, r
   res.send(replay);
 };
 
+/**
+ * GET /api/replay/:matchId/download — the same replay payload as getById, but
+ * served as a downloadable JSON file (Content-Disposition: attachment) so users
+ * can save a match locally and re-import it into the viewer (COS 3.6).
+ */
+export const getDownload: RestAPI<ReplayDetail, { matchId: string }> = async (req, res) => {
+  const replay = await getReplay(req.params.matchId);
+  if (!replay) {
+    res.status(404).send({ error: "Replay not found" });
+    return;
+  }
+  // matchId is an untrusted route param, so never interpolate it raw into a
+  // response header — strip it to filename-safe characters first.
+  const safeId = req.params.matchId.replace(/[^a-zA-Z0-9_-]/g, "") || "replay";
+  res.attachment(`replay-${safeId}.json`);
+  res.send(replay);
+};
+
 /** POST /api/replay/:matchId/view — bumps the watch counter and returns it. */
 export const postView: RestAPI<ReplayWatchCountResponse, { matchId: string }> = async (
   req,
