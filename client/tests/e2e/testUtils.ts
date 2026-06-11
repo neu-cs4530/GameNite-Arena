@@ -73,23 +73,12 @@ export async function createAndLoadGame(
   // Log in user2
   await logInUser(page2, username2, password2);
 
-  // The always-on expectation here gives the page a chance to load
-  await expect(page2.getByRole("listitem").filter({ hasText: username1 })).toHaveCount(1);
-
-  if (doAssess) {
-    await expect(
-      page2
-        .getByRole("listitem")
-        .filter({ hasText: username1 })
-        .getByRole("link", { name: /^A game of .+/ }),
-    ).toHaveCount(1);
-  }
-
-  await page2
-    .getByRole("listitem")
-    .filter({ hasText: username1 })
-    .getByRole("link", { name: /^A game of .+/ })
-    .click();
+  // Navigate straight to the fixture game. Discovery-by-list is no longer
+  // the product flow (games start through matchmaking), and clicking the
+  // home-list link is racy under test: the click can land in the same
+  // frame as a list re-render, leaving Playwright's post-click check
+  // waiting on a detached element forever while the app moves on.
+  await page2.goto(`/game/${createdGameId}`);
 
   if (doAssess) {
     await expect(page1.getByText("waiting for game to begin")).toBeVisible();
