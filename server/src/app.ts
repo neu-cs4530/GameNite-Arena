@@ -8,6 +8,7 @@ import * as http from "node:http";
 import * as chat from "./controllers/chat.controller.ts";
 import * as game from "./controllers/game.controller.ts";
 import * as leaderboard from "./controllers/leaderboard.controller.ts";
+import * as matchmaker from "./controllers/matchmaker.controller.ts";
 import * as user from "./controllers/user.controller.ts";
 import * as model from "./controllers/model.controller.ts";
 import * as thread from "./controllers/thread.controller.ts";
@@ -62,6 +63,7 @@ app.use(
         .patch("/deployment/:id", model.patchDeploymentStatus),
     )
     .use("/leaderboard", express.Router().get("/:gameKey", leaderboard.getByGame))
+    .use("/matchmaker", express.Router().get("/queue", matchmaker.getQueueStatus))
     .use(
       "/puzzle",
       express
@@ -96,6 +98,9 @@ io.on("connection", (socket) => {
   socket.on("gameMakeMove", game.socketMakeMove(socket, io));
   socket.on("gameStart", game.socketStart(socket, io));
   socket.on("gameWatch", game.socketWatch(socket, io));
+
+  socket.on("matchmakingJoin", matchmaker.socketJoinQueue(socket, io));
+  socket.on("matchmakingLeave", matchmaker.socketLeaveQueue(socket, io));
 
   socket.on("replayWatch", replay.socketReplayWatch(socket, io));
   socket.on("replayLeave", replay.socketReplayLeave(socket, io));
