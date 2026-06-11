@@ -47,6 +47,13 @@ test.describe("The sidebar navigation", () => {
       "Home",
       "Games",
       "Puzzles",
+    // Original spec order plus the surfaces added later: Leaderboards
+    // (after Games — rankings sit beside the arena) and the
+    // trainer-platform pages (Trainer, Models) ahead of Profile.
+    expect(cleaned).toEqual([
+      "Home",
+      "Games",
+      "Leaderboards",
       "Forum",
       "Replays",
       "Trainer",

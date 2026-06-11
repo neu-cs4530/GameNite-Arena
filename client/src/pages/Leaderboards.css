@@ -1,0 +1,140 @@
+.ga-leaderboards {
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: var(--layout-max-content);
+  margin: 0 auto;
+}
+
+.ga-leaderboards__pick-hint {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: var(--text-body);
+}
+
+.ga-leaderboards__board {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.ga-leaderboards__board-title {
+  margin: 0;
+  font-size: var(--text-h2);
+  font-weight: var(--weight-semibold);
+  color: var(--color-fg);
+}
+
+/* --- "You" strip ------------------------------------------------------- */
+
+/* The Card is already a flex column; pin its children to the left and keep
+   the label-to-stats gap tight so the strip reads as one compact unit. */
+.ga-leaderboards__self {
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.ga-leaderboards__self-label {
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--color-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ga-leaderboards__self-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.ga-leaderboards__self-empty {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}
+
+.ga-leaderboards__summary {
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}
+
+/* --- Rows --------------------------------------------------------------- */
+
+.ga-leaderboards__rows {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elevated);
+  overflow: hidden;
+}
+
+.ga-leaderboards__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--text-body);
+}
+
+.ga-leaderboards__row:last-child {
+  border-bottom: none;
+}
+
+.ga-leaderboards__row--self {
+  background: var(--color-primary-soft);
+}
+
+.ga-leaderboards__rank {
+  width: var(--space-10);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-semibold);
+  color: var(--color-fg-muted);
+}
+
+.ga-leaderboards__name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: 1;
+}
+
+.ga-leaderboards__stats {
+  display: flex;
+  gap: var(--space-4);
+  margin-left: auto;
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ga-leaderboards__stat {
+  white-space: nowrap;
+}
+
+/* --- Narrow ------------------------------------------------------------- */
+
+@media (max-width: 640px) {
+  .ga-leaderboards__row {
+    flex-wrap: wrap;
+    row-gap: var(--space-1);
+    padding-block: var(--space-3);
+  }
+
+  /* The name never shrinks below a readable width — badges and stats wrap
+     to their own lines instead of squeezing it out. */
+  .ga-leaderboards__name {
+    flex: 1 1 auto;
+    min-width: 14ch;
+  }
+
+  .ga-leaderboards__stats {
+    flex-basis: 100%;
+    margin-left: calc(var(--space-10) + var(--space-3));
+  }
+}
