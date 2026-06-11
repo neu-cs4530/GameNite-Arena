@@ -8,6 +8,7 @@ import Card from "../components/ui/Card.tsx";
 import EmptyState from "../components/ui/EmptyState.tsx";
 import ErrorState from "../components/ui/ErrorState.tsx";
 import GameSelectGrid from "../components/ui/GameSelectGrid.tsx";
+import PageHero from "../components/ui/PageHero.tsx";
 import Pagination from "../components/ui/Pagination.tsx";
 import RatingEmblem from "../components/ui/RatingEmblem.tsx";
 import Skeleton from "../components/ui/Skeleton.tsx";
@@ -55,10 +56,10 @@ export default function Leaderboards(): JSX.Element {
 
   return (
     <div className="ga-leaderboards" data-testid="leaderboards-page">
-      <header className="ga-leaderboards__hero">
-        <h1>Leaderboards</h1>
-        <p>The top Glicko ratings for every arena game. Pick a game to see its board.</p>
-      </header>
+      <PageHero
+        title="Leaderboards"
+        lede="The top Glicko ratings for every arena game. Pick a game to see its board."
+      />
 
       <GameSelectGrid
         games={PLAYABLE_GAME_KEYS.map((key) => ({

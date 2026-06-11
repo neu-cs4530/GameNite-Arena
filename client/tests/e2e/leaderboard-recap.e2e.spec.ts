@@ -72,6 +72,9 @@ test.describe("Leaderboards and post-match recap", () => {
     await page1.waitForURL("/leaderboards");
     await expect(page1.getByTestId("leaderboards-page")).toBeVisible();
 
+    // The page opens with the shared PageHero banner, like every other tab.
+    await expect(page1.locator(".ga-page-hero__title")).toHaveText("Leaderboards");
+
     // Progressive disclosure: no board until a game is picked.
     await expect(page1.getByTestId("lb-pick-hint")).toBeVisible();
     await page1.getByTestId("lb-game-tile-nim").click();
