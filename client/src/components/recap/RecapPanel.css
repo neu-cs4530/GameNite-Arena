@@ -51,9 +51,12 @@
   font-weight: var(--weight-semibold);
 }
 
-.ga-recap__direction--up,
-.ga-recap__direction--new {
+.ga-recap__direction--up {
   color: var(--color-success);
+}
+
+.ga-recap__direction--new {
+  color: var(--color-primary);
 }
 
 .ga-recap__direction--down {
@@ -109,9 +112,12 @@
   animation: ga-recap-settle var(--duration-slow) var(--ease-emphasis);
 }
 
-.ga-recap__row--up,
-.ga-recap__row--new {
+.ga-recap__row--up {
   background: var(--color-success-soft);
+}
+
+.ga-recap__row--new {
+  background: var(--color-primary-soft);
 }
 
 .ga-recap__row--down {

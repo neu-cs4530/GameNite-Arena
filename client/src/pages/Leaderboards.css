@@ -139,3 +139,25 @@
 .ga-leaderboards__stat {
   white-space: nowrap;
 }
+
+/* --- Narrow ------------------------------------------------------------- */
+
+@media (max-width: 640px) {
+  .ga-leaderboards__row {
+    flex-wrap: wrap;
+    row-gap: var(--space-1);
+    padding-block: var(--space-3);
+  }
+
+  /* The name never shrinks below a readable width — badges and stats wrap
+     to their own lines instead of squeezing it out. */
+  .ga-leaderboards__name {
+    flex: 1 1 auto;
+    min-width: 14ch;
+  }
+
+  .ga-leaderboards__stats {
+    flex-basis: 100%;
+    margin-left: calc(var(--space-10) + var(--space-3));
+  }
+}
