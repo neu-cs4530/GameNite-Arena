@@ -8,6 +8,7 @@ import * as http from "node:http";
 import * as chat from "./controllers/chat.controller.ts";
 import * as game from "./controllers/game.controller.ts";
 import * as leaderboard from "./controllers/leaderboard.controller.ts";
+import * as matchmaker from "./controllers/matchmaker.controller.ts";
 import * as user from "./controllers/user.controller.ts";
 import * as model from "./controllers/model.controller.ts";
 import * as thread from "./controllers/thread.controller.ts";
@@ -63,6 +64,7 @@ app.use(
         .patch("/deployment/:id", model.patchDeploymentStatus),
     )
     .use("/leaderboard", express.Router().get("/:gameKey", leaderboard.getByGame))
+    .use("/matchmaker", express.Router().get("/queue", matchmaker.getQueueStatus))
     .use(
       "/puzzle",
       express
@@ -104,6 +106,9 @@ io.on("connection", (socket) => {
   // Closed tabs never send replayLeave; broadcast corrected watcher counts
   // while the departing socket's rooms are still known.
   socket.on("disconnecting", () => replay.handleReplayDisconnecting(socket, io));
+
+  socket.on("matchmakingJoin", matchmaker.socketJoinQueue(socket, io));
+  socket.on("matchmakingLeave", matchmaker.socketLeaveQueue(socket, io));
 
   socket.onAny((name, payload) => {
     // The training progress bridge's events carry a bare { jobId } payload by

@@ -150,8 +150,11 @@ export const socketMakeMove: SocketAPI = (socket, io) => async (body) => {
       payload: { gameId, move },
     } = withAuth(zGameMakeMovePayload).parse(body);
     const user = await enforceAuth(auth);
-    const viewUpdates = await updateGame(gameId, user, move);
-    sendViewUpdates(io, gameId, viewUpdates);
+    const { views, gameResult } = await updateGame(gameId, user, move);
+    sendViewUpdates(io, gameId, views);
+    if (gameResult) {
+      io.to(gameId).emit("gameResult", { gameId, ...gameResult });
+    }
   } catch (err) {
     logSocketError(socket, err);
   }
