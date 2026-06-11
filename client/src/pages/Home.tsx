@@ -23,8 +23,9 @@ export default function Home() {
           </div>
         )}
         <div>
-          <button className="primary narrow" onClick={() => navigate("/game/new")}>
-            Create New Game
+          {/* Games start through matchmaking now — the portal is the only door. */}
+          <button className="primary narrow" onClick={() => navigate("/games")}>
+            Find a Match
           </button>
         </div>
       </div>

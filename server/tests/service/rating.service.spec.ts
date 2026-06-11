@@ -7,6 +7,7 @@ import {
   DEFAULT_VOLATILITY,
 } from "../../src/services/glicko2.service.ts";
 import { getRating, updateRatingsForGame } from "../../src/services/rating.service.ts";
+import { createRedisConnection } from "../../src/services/redis.ts";
 
 const baseGame: GameRecord = {
   type: "nim",
@@ -80,6 +81,27 @@ describe("updateRatingsForGame", () => {
 
     expect(bobRating.rating).toBeGreaterThan(DEFAULT_RATING);
     expect(aliceRating.rating).toBeLessThan(DEFAULT_RATING);
+  });
+
+  it("invalidates the cached leaderboard so the board can't contradict new ratings", async () => {
+    const redis = createRedisConnection();
+    try {
+      await redis.set("leaderboard:nim:all", "stale");
+      await redis.set("leaderboard:nim:human", "stale");
+      await redis.set("leaderboard:nim:ai", "stale");
+      const game: GameRecord = {
+        ...baseGame,
+        state: { remaining: 0, nextPlayer: 1 },
+      };
+
+      await updateRatingsForGame(game, "game-cache");
+
+      expect(await redis.get("leaderboard:nim:all")).toBeNull();
+      expect(await redis.get("leaderboard:nim:human")).toBeNull();
+      expect(await redis.get("leaderboard:nim:ai")).toBeNull();
+    } finally {
+      await redis.quit();
+    }
   });
 
   it("rewards the closer guesser in a guess game", async () => {

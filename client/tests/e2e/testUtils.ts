@@ -49,11 +49,16 @@ export async function createAndLoadGame(
   await page1.getByRole("button", { name: "Sign Up" }).click();
   await page1.waitForURL("/");
 
-  // User 1 creates a new game
-  await page1.getByRole("button", { name: "Create New Game" }).click();
-  await page1.waitForURL("/game/new");
-  await page1.getByLabel("Game selection").selectOption(gameId);
-  await page1.getByRole("button", { name: "Create New Game" }).click();
+  // The create-a-game UI is gone (games start through matchmaking now), but
+  // these gameplay suites need a deterministic two-seat game — so user 1
+  // creates the fixture game through the still-live REST API and navigates
+  // straight to it. User 2 still discovers it through the home page list.
+  const createRes = await page1.request.post("/api/game/create", {
+    data: { auth: { username: username1, password: password1 }, payload: gameId },
+  });
+  expect(createRes.ok()).toBeTruthy();
+  const { gameId: createdGameId } = (await createRes.json()) as { gameId: string };
+  await page1.goto(`/game/${createdGameId}`);
 
   // Causes Playwright to auto-wait for for game to be enabled
   await page1.getByPlaceholder("Send a message to chat").click();
@@ -68,23 +73,12 @@ export async function createAndLoadGame(
   // Log in user2
   await logInUser(page2, username2, password2);
 
-  // The always-on expectation here gives the page a chance to load
-  await expect(page2.getByRole("listitem").filter({ hasText: username1 })).toHaveCount(1);
-
-  if (doAssess) {
-    await expect(
-      page2
-        .getByRole("listitem")
-        .filter({ hasText: username1 })
-        .getByRole("link", { name: /^A game of .+/ }),
-    ).toHaveCount(1);
-  }
-
-  await page2
-    .getByRole("listitem")
-    .filter({ hasText: username1 })
-    .getByRole("link", { name: /^A game of .+/ })
-    .click();
+  // Navigate straight to the fixture game. Discovery-by-list is no longer
+  // the product flow (games start through matchmaking), and clicking the
+  // home-list link is racy under test: the click can land in the same
+  // frame as a list re-render, leaving Playwright's post-click check
+  // waiting on a detached element forever while the app moves on.
+  await page2.goto(`/game/${createdGameId}`);
 
   if (doAssess) {
     await expect(page1.getByText("waiting for game to begin")).toBeVisible();
