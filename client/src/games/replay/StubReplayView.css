@@ -1,0 +1,22 @@
+.ga-stub-replay {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-8) var(--space-4);
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  border: 1px dashed var(--color-border-strong);
+  text-align: center;
+  align-items: center;
+}
+
+.ga-stub-replay__title {
+  font-size: var(--text-h2);
+  font-weight: var(--weight-semibold);
+}
+
+.ga-stub-replay__body {
+  font-size: var(--text-body);
+  color: var(--color-fg-muted);
+  max-width: 50ch;
+}

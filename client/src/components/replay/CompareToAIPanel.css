@@ -1,0 +1,74 @@
+.ga-compare {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ga-compare__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ga-compare__head h3 {
+  margin: 0;
+  font-size: var(--text-h3);
+  font-weight: var(--weight-semibold);
+}
+
+.ga-compare__close {
+  background: transparent;
+  border: none;
+  color: var(--color-fg-muted);
+  cursor: pointer;
+  font-size: var(--text-body);
+}
+
+.ga-compare__body {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.ga-compare__col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+}
+
+.ga-compare__label {
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-fg-muted);
+}
+
+.ga-compare__value {
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+}
+
+.ga-compare__sub {
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}
+
+.ga-compare__arrow {
+  align-self: center;
+  font-size: var(--text-h2);
+  color: var(--color-fg-subtle);
+}
+
+.ga-compare__notes {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}

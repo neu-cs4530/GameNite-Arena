@@ -1,12 +1,22 @@
 .main {
   display: grid;
-  grid-template-rows: 3rem 1fr;
-  grid-template-columns: 200px 1fr;
+  grid-template-rows: var(--layout-topbar-height, 3rem) 1fr;
+  grid-template-columns: var(--layout-sidebar-width, 220px) 1fr;
   grid-template-areas: "header header" "sidebar main";
   min-height: 100vh;
-  --content-vh: calc(100vh - 3rem);
+  --content-vh: calc(100vh - var(--layout-topbar-height, 3rem));
 }
 
 .right_main {
   grid-area: main;
+  min-width: 0;
+}
+
+@media (max-width: 768px) {
+  .main {
+    grid-template-rows: auto auto 1fr;
+    grid-template-columns: 1fr;
+    grid-template-areas: "header" "sidebar" "main";
+    --content-vh: 100vh;
+  }
 }

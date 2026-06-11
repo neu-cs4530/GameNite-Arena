@@ -19,6 +19,15 @@ import { ErrorBoundary } from "react-error-boundary";
 import fallback from "./fallback.tsx";
 import NewThread from "./pages/NewThread.tsx";
 import TimeContextKeeper from "./components/UpdatingTimeContext.tsx";
+import ReplaysDiscovery from "./pages/ReplaysDiscovery.tsx";
+import ReplayViewer from "./pages/ReplayViewer.tsx";
+import StudyView from "./pages/StudyView.tsx";
+import TrainerDashboard from "./pages/TrainerDashboard.tsx";
+import NewTrainingRun from "./pages/NewTrainingRun.tsx";
+import TrainingJobLive from "./pages/TrainingJobLive.tsx";
+import ModelsBrowse from "./pages/ModelsBrowse.tsx";
+import ModelCardPage from "./pages/ModelCardPage.tsx";
+import ForkModelPage from "./pages/ForkModelPage.tsx";
 
 /** If `true`, all incoming socket messages will be logged */
 const DEBUG_SOCKETS = false;
@@ -38,18 +47,74 @@ if (typeof window !== "undefined") {
   }
 }
 
+const AUTH_STORAGE_KEY = "gnarena:auth";
+
+/**
+ * Read the persisted auth context from localStorage, if any. Returns null on
+ * any kind of parse / availability error so callers can fall back to the
+ * "not logged in" state without crashing.
+ */
+function readPersistedAuth(): AuthContext | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<AuthContext>;
+    if (!parsed || !parsed.user || typeof parsed.pass !== "string") return null;
+    // `reset` is a function and cannot be serialised; the App-level setter
+    // injects a real reset callback below.
+    return {
+      user: parsed.user,
+      pass: parsed.pass,
+      reset: () => {},
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Persist (or clear) the auth context in localStorage. We strip the `reset`
+ * callback because functions are not JSON-serialisable; it gets re-injected
+ * on rehydrate.
+ */
+function persistAuth(auth: AuthContext | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (auth === null) {
+      window.localStorage.removeItem(AUTH_STORAGE_KEY);
+    } else {
+      window.localStorage.setItem(
+        AUTH_STORAGE_KEY,
+        JSON.stringify({ user: auth.user, pass: auth.pass }),
+      );
+    }
+  } catch {
+    // localStorage can throw under e.g. quota / private browsing; ignore.
+  }
+}
+
 function NoSuchRoute() {
   const { pathname } = useLocation();
   return `No page found for route '${pathname}'`;
 }
 
 export default function App() {
-  const [auth, setAuth] = useState<AuthContext | null>(null);
+  const [auth, setAuthState] = useState<AuthContext | null>(() => readPersistedAuth());
+
+  /**
+   * Update auth state AND mirror to localStorage. We wrap setState so every
+   * call site automatically stays in sync with the persisted value.
+   */
+  const setAuth = (next: AuthContext | null) => {
+    persistAuth(next);
+    setAuthState(next);
+  };
   return (
     socket && (
       <BrowserRouter>
         <Routes>
-          <Route path="/login" element={<Login setAuth={(auth) => setAuth(auth)} />} />
+          <Route path="/login" element={<Login setAuth={setAuth} />} />
           <Route
             element={
               <LoggedInRoute auth={auth} socket={socket}>
@@ -69,6 +134,15 @@ export default function App() {
             <Route path="/game/new" element={<NewGame />} />
             <Route path="/game/:gameId" element={<Game />} />
             <Route path="/profile/:username" element={<Profile />} />
+            <Route path="/replays" element={<ReplaysDiscovery />} />
+            <Route path="/replays/:matchId" element={<ReplayViewer />} />
+            <Route path="/study/:shareToken" element={<StudyView />} />
+            <Route path="/trainer" element={<TrainerDashboard />} />
+            <Route path="/trainer/new" element={<NewTrainingRun />} />
+            <Route path="/trainer/jobs/:jobId" element={<TrainingJobLive />} />
+            <Route path="/models" element={<ModelsBrowse />} />
+            <Route path="/models/:modelId" element={<ModelCardPage />} />
+            <Route path="/models/:modelId/fork" element={<ForkModelPage />} />
             <Route path="/*" element={<NoSuchRoute />} />
           </Route>
         </Routes>

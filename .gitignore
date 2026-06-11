@@ -146,3 +146,10 @@ CLAUDE.md
 # Python virtual environments
 .venv/
 ai/.venv/
+
+# Redis persistence files from local runs
+dump.rdb
+
+# Trained-model artifact store (server/src/services/artifactStore.service.ts);
+# populated by real-API e2e runs and local training.
+server/models

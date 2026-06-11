@@ -138,6 +138,8 @@ export interface TrainingSessionInfo {
   error?: string;
   /** True once a trained .pth has been uploaded and bound to the model. */
   hasArtifact: boolean;
+  /** Integrity metadata recorded when the artifact was stored. */
+  artifactMeta?: { bytes: number; sha256: string; uploadedAt: string };
   createdAt: string;
   completedAt?: string;
 }

@@ -77,6 +77,9 @@ def main() -> int:
     parser.add_argument("--password", default=None)
     parser.add_argument("--token", default=os.environ.get("GAMENITE_TOKEN"))
     parser.add_argument("--name", default="nim-ppo-local")
+    parser.add_argument("--job-id", default=os.environ.get("GAMENITE_JOB_ID"),
+                        help="Attach to a session registered in the web UI "
+                             "instead of creating a new one")
     parser.add_argument("--chunks", type=int, default=15,
                         help="Progress reports / training chunks")
     parser.add_argument("--chunk-steps", type=int, default=2048,
@@ -96,10 +99,14 @@ def main() -> int:
                 n_steps=512, verbose=0)
     adapter._model = model
 
-    job_id = session.start("nim", episodes=total_steps,
-                           learning_rate=args.learning_rate,
-                           model_display_name=args.name)
-    print(f"[run] session {job_id} registered — watch /trainer/jobs/{job_id}")
+    if args.job_id:
+        job_id = session.attach(args.job_id)
+        print(f"[run] attached to session {job_id} — it goes live on the first report")
+    else:
+        job_id = session.start("nim", episodes=total_steps,
+                               learning_rate=args.learning_rate,
+                               model_display_name=args.name)
+        print(f"[run] session {job_id} registered — watch /trainer/jobs/{job_id}")
 
     win_rate, mean_reward = 0.0, 0.0
     canceled = False

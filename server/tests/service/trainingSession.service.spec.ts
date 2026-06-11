@@ -310,6 +310,8 @@ describe("artifacts", () => {
     const info = await bindSessionArtifact(user0, start.jobId, uploaded);
 
     expect(info.hasArtifact).toBe(true);
+    expect(info.artifactMeta?.sha256).toHaveLength(64);
+    expect(info.artifactMeta?.bytes).toBe(Buffer.byteLength("trained weights"));
     const model = await ModelRepo.get(start.modelId);
     expect(model.artifactRef).toBe(`${start.modelId}.pth`);
     expect(model.artifactMeta?.bytes).toBe(Buffer.byteLength("trained weights"));

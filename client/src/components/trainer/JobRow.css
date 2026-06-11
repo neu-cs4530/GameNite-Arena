@@ -1,0 +1,110 @@
+.ga-job-row__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.ga-job-row__name {
+  font-weight: var(--weight-semibold);
+  color: var(--color-fg);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ga-job-row__name:hover {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.ga-job-row__stat {
+  color: var(--color-fg-muted);
+  font-size: var(--text-small);
+  white-space: nowrap;
+}
+
+.ga-job-row__error-line {
+  color: var(--color-danger);
+  font-size: var(--text-small);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 28rem;
+}
+
+.ga-job-row__progress {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-fg-muted);
+  font-size: var(--text-small);
+  white-space: nowrap;
+}
+
+.ga-job-row__progress-track {
+  display: inline-block;
+  width: 90px;
+  height: 6px;
+  background: var(--color-surface);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.ga-job-row__progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: var(--radius-pill);
+  transition: width var(--duration-base) var(--ease-standard);
+}
+
+.ga-job-row__details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ga-job-row__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.ga-job-row__grid dt {
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-fg-subtle);
+  margin-bottom: var(--space-1);
+}
+
+.ga-job-row__grid dd {
+  margin: 0;
+  font-size: var(--text-small);
+}
+
+.ga-job-row__error-full {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-small);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ga-job-row__raw {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  overflow-x: auto;
+  max-height: 320px;
+}

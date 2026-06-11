@@ -8,6 +8,7 @@
     "prettier": "prettier --ignore-path ../.gitignore --check .",
     "prettier:fix": "prettier --ignore-path ../.gitignore --write .",
     "test": "playwright test",
+    "test:unit": "vitest run src",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "playwright": "playwright test --ui"
