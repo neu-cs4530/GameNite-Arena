@@ -1,0 +1,206 @@
+.ga-live-job {
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: var(--layout-max-content);
+  margin: 0 auto;
+}
+
+.ga-live-job__hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.ga-live-job__hero h1 {
+  margin: 0;
+  font-size: var(--text-h1);
+  font-weight: var(--weight-bold);
+  color: var(--color-fg);
+}
+
+.ga-live-job__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}
+
+.ga-live-job__id {
+  font-family: var(--font-mono, monospace);
+  color: var(--color-fg-subtle);
+}
+
+.ga-live-job__columns {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: var(--space-4);
+}
+
+@media (max-width: 880px) {
+  .ga-live-job__columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ga-live-job__col-left,
+.ga-live-job__col-right {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ga-live-job__event-count {
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+  padding-top: var(--space-2);
+}
+
+.ga-live-job__projection {
+  padding: var(--space-3);
+  background: var(--color-info-soft);
+  border: 1px solid var(--color-info);
+  border-radius: var(--radius-md);
+  font-size: var(--text-small);
+  color: var(--color-fg);
+}
+
+.ga-live-job__action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-elevated);
+  border-radius: var(--radius-md);
+  align-items: center;
+}
+
+.ga-live-job__compare-link {
+  margin-left: auto;
+  color: var(--color-primary);
+  text-decoration: underline;
+  font-size: var(--text-small);
+}
+
+.ga-live-job__cap-error {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-danger-soft);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-md);
+  color: var(--color-fg);
+}
+
+.ga-live-job__cap-error strong {
+  font-size: var(--text-body);
+}
+
+.ga-live-job__cap-error p {
+  margin: var(--space-1) 0 0;
+  color: var(--color-fg-muted);
+  font-size: var(--text-small);
+}
+
+.ga-live-job__cap-error a {
+  color: var(--color-primary);
+  text-decoration: underline;
+  font-size: var(--text-small);
+}
+
+/* --- Rework: lean metrics + disclosures ---------------------------------- */
+
+.ga-live-job__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.ga-live-job__meta h1 {
+  margin: 0;
+  font-size: var(--text-h2);
+}
+
+.ga-live-job__chart-note {
+  margin: var(--space-1) 0 0;
+  color: var(--color-fg-subtle);
+  font-size: var(--text-micro);
+}
+
+.ga-live-job__metrics {
+  display: flex;
+  gap: var(--space-6);
+  margin-top: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.ga-live-job__metric {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.ga-live-job__metric-label {
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-fg-subtle);
+}
+
+.ga-live-job__metric-value {
+  font-size: var(--text-h3);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.ga-live-job__count {
+  color: var(--color-fg-muted);
+  font-size: var(--text-small);
+}
+
+.ga-live-job__failure {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  border-radius: var(--radius-md);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ga-live-job__advanced {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ga-live-job__advanced pre {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  overflow-x: auto;
+  max-height: 360px;
+}
+
+.ga-live-job__deploy-error {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--text-small);
+}

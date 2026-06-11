@@ -1,11 +1,13 @@
 import { type GameInfo, type GameKey, type TaggedGameView } from "@gamenite/shared";
 import { createChat } from "./chat.service.ts";
 import { matchRecorder } from "./matchRecorder.service.ts";
+import { updateRatingsForGame } from "./rating.service.ts";
 import { populateSafeUserInfo } from "./user.service.ts";
 import { type GameServicer } from "../games/gameServiceManager.ts";
 import { nimGameService } from "../games/nim.ts";
 import { guessGameService } from "../games/guess.ts";
 import { type GameViewUpdates, type UserWithId } from "../types.ts";
+import { type MatchResult } from "../models.ts";
 import { GameRepo } from "../repository.ts";
 /**
  * The service interface for individual games
@@ -41,12 +43,14 @@ async function populateGameInfo(gameId: string): Promise<GameInfo> {
  * @param user - Initial player in the game's waiting room
  * @param type - Game key
  * @param createdAt - Creation time for this game
+ * @param rated - Whether this game's result should affect Glicko ratings
  * @returns the new game's info object
  */
 export async function createGame(
   user: UserWithId,
   type: GameKey,
   createdAt: Date,
+  rated = false,
 ): Promise<GameInfo> {
   const chat = await createChat(createdAt);
   const gameId = await GameRepo.add({
@@ -57,7 +61,7 @@ export async function createGame(
     createdBy: user.userId,
     players: [user.userId],
     aiPlayers: [],
-    rated: false,
+    rated,
   });
   return populateGameInfo(gameId);
 }
@@ -153,7 +157,8 @@ export async function getGames(): Promise<GameInfo[]> {
  * @param gameId - Ostensible game id
  * @param user - Authenticated user
  * @param move - Unsanitized game move
- * @returns the view updates to send to players and watchers
+ * @returns the view updates to send to players and watchers, plus the match
+ * result (winner, outcome, rating changes) if this move ended a rated game
  * @throws if the game id or move is not valid
  */
 export async function updateGame(gameId: string, user: UserWithId, move: unknown) {
@@ -208,7 +213,18 @@ export async function updateGame(gameId: string, user: UserWithId, move: unknown
     console.error(`match capture failed for game ${gameId}:`, err);
   }
 
-  return result.views;
+  // Glicko rating updates for rated games that just ended.
+  let gameResult: MatchResult | undefined;
+  if (result.done && game.rated) {
+    try {
+      gameResult = await updateRatingsForGame(game, gameId);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`rating update failed for game ${gameId}:`, err);
+    }
+  }
+
+  return { views: result.views, gameResult };
 }
 
 /**

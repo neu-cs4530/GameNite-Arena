@@ -101,6 +101,16 @@ class GameNiteSession:
         self.job_id = info["jobId"]
         return self.job_id
 
+    def attach(self, job_id: str) -> str:
+        """
+        Adopt a session registered elsewhere — typically the web UI's
+        "New training run" page, which registers a queued session and shows
+        the command to run locally. Subsequent report()/complete()/fail()/
+        upload_artifact() calls post to that job. Makes no requests itself.
+        """
+        self.job_id = job_id
+        return job_id
+
     def report(self, episodes: int, metrics: dict[str, float] | None = None,
                message: str | None = None) -> bool:
         """
