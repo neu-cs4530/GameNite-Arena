@@ -40,14 +40,30 @@ export interface GameServicer {
    * @param movePayload - The unsanitized move input from the user
    * @param playerIndex - The index of the player in the game
    * @param players - All game players' user IDs (needed to prepare updates)
-   * @returns updated views for all players, or null if the move was invalid
+   * @returns updated views for all players, or null if the move was invalid.
+   * When `done` is true, `winnerIndex` is the winning player's index, null
+   * for a draw, or undefined when the game logic has no winner hook.
    */
   update: (
     state: any,
     movePayload: unknown,
     playerIndex: number,
     players: string[],
-  ) => null | { state: unknown; views: GameViewUpdates; done: boolean };
+  ) => null | {
+    state: unknown;
+    views: GameViewUpdates;
+    done: boolean;
+    winnerIndex: number | null | undefined;
+  };
+
+  /**
+   * Canonicalize a raw move payload through the game's schema (if the game
+   * provides a `parseMove` hook).
+   * @param movePayload - The unsanitized move input from the user
+   * @returns the schema-normalized move, or null when the game has no parse
+   * hook or the payload does not parse
+   */
+  parseMove: (movePayload: unknown) => unknown;
 }
 
 export class GameService<State, View> implements GameServicer {
@@ -87,11 +103,19 @@ export class GameService<State, View> implements GameServicer {
   update(state: any, move: unknown, playerIndex: number, players: string[]) {
     const newState = this._logic.update(state, move, playerIndex);
     if (!newState) return null;
+    const done = this._logic.isDone(newState);
     return {
       state: newState,
       views: this._makePlayerViews(players, newState),
-      done: this._logic.isDone(newState),
+      done,
+      // Per the GameLogic contract, the winner hook is only consulted on a
+      // finished state; undefined means the game doesn't implement it.
+      winnerIndex: done ? this._logic.winnerIndex?.(newState) : undefined,
     };
+  }
+
+  parseMove(move: unknown) {
+    return this._logic.parseMove ? this._logic.parseMove(move) : null;
   }
 
   view(state: any, playerIndex: number) {

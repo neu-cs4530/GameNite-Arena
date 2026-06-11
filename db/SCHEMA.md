@@ -34,6 +34,7 @@ field.
 | **PuzzleAttemptRepo** | `puzzleAttempt`  | UUID                                                   | Sprint 1 (new)              |
 | **BroadcastRepo**     | `broadcast`      | UUID                                                   | Sprint 1 (new)              |
 | **ChannelBlockRepo**  | `channelBlock`   | composite `${channelId}:${blockerId}:${blockedUserId}` | Sprint 1 (new)              |
+| **TrainingTokenRepo** | `trainingToken`  | the token string itself (random 256-bit hex)           | Sprint 2 (local training)   |
 | **MigrationLogRepo**  | `migrationLog`   | migration id (e.g. `000_sprint1_arena_baseline`)       | Sprint 1 (new, framework)   |
 
 ---
@@ -127,17 +128,18 @@ A user-uploaded AI model. The Python source lives in object storage at
 `sourceRef`; the trained `.pth` lands at `artifactRef` after the first
 successful training job.
 
-| Field         | Type                    | Required | Story | Notes                                                |
-| ------------- | ----------------------- | -------- | ----- | ---------------------------------------------------- |
-| `userId`      | RecordId                | yes      | 2.4   | References `UserRecord` (owner)                      |
-| `gameKey`     | GameKey                 | yes      | 2.2   | Which game this model targets                        |
-| `displayName` | string                  | yes      |       | Shown on leaderboards / model cards                  |
-| `sourceRef`   | string                  | yes      | 2.1   | Object-storage key for the uploaded .py              |
-| `artifactRef` | string                  | no       | 2.4   | Object-storage key for the .pth (set after training) |
-| `forkedFrom`  | RecordId                | no       | 2.13  | Parent model id if this is a fork                    |
-| `visibility`  | `"private" \| "public"` | yes      | 2.13  | Default "private"                                    |
-| `createdAt`   | DateISO                 | yes      |       |                                                      |
-| `updatedAt`   | DateISO                 | yes      |       |                                                      |
+| Field          | Type                    | Required | Story | Notes                                                                                                                       |
+| -------------- | ----------------------- | -------- | ----- | --------------------------------------------------------------------------------------------------------------------------- |
+| `userId`       | RecordId                | yes      | 2.4   | References `UserRecord` (owner)                                                                                             |
+| `gameKey`      | GameKey                 | yes      | 2.2   | Which game this model targets                                                                                               |
+| `displayName`  | string                  | yes      |       | Shown on leaderboards / model cards                                                                                         |
+| `sourceRef`    | string                  | yes      | 2.1   | Object-storage key for the uploaded .py                                                                                     |
+| `artifactRef`  | string                  | no       | 2.4   | Store-relative artifact name `<modelId>.pth` (see artifactStore.service.ts; migration 001 normalized legacy absolute paths) |
+| `artifactMeta` | `ArtifactMeta`          | no       | 2.4   | `{ bytes, sha256, uploadedAt }` recorded when the artifact is stored                                                        |
+| `forkedFrom`   | RecordId                | no       | 2.13  | Parent model id if this is a fork                                                                                           |
+| `visibility`   | `"private" \| "public"` | yes      | 2.13  | Default "private"                                                                                                           |
+| `createdAt`    | DateISO                 | yes      |       |                                                                                                                             |
+| `updatedAt`    | DateISO                 | yes      |       |                                                                                                                             |
 
 ### TrainingJobRecord (`trainingJob`)
 
@@ -271,6 +273,20 @@ channel-wide scans. Use the `channelBlockKey()` helper in `models.ts`.
 | `blockerId`     | RecordId | yes      | 3.8   | References `UserRecord`                      |
 | `blockedUserId` | RecordId | yes      | 3.8   | References `UserRecord`                      |
 | `createdAt`     | DateISO  | yes      |       |                                              |
+
+### TrainingTokenRecord (`trainingToken`)
+
+Expiring API token for the local-training channel (the trainer exchanges its
+password once at `POST /api/training/token` and authenticates session calls
+with the token). Keyed by the token string for O(1) lookup; expired records
+are ignored at auth time.
+
+| Field       | Type     | Required | Notes                    |
+| ----------- | -------- | -------- | ------------------------ |
+| `userId`    | RecordId | yes      | References `UserRecord`  |
+| `username`  | string   | yes      | Snapshot for quick auth  |
+| `createdAt` | DateISO  | yes      |                          |
+| `expiresAt` | DateISO  | yes      | 24h TTL; checked at auth |
 
 ### MigrationLogRecord (`migrationLog`)
 

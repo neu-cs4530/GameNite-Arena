@@ -12,6 +12,8 @@ import { resetEverythingToDefaults } from "./initRepository.ts";
 import { createRepo, setDbInitializer } from "./keyv.ts";
 import { trainingProcessor } from "./services/trainingWorker.ts";
 import { registerTrainingWorker } from "./services/trainingQueue.service.ts";
+import { setTrainingSessionPublisher } from "./services/trainingSession.service.ts";
+import { createRedisConnection } from "./services/redis.ts";
 import { scheduleDailyPuzzleJob, registerPuzzleWorker } from "./services/puzzleQueue.service.ts";
 import { startMatchmakerLoop } from "./controllers/matchmaker.controller.ts";
 
@@ -71,6 +73,10 @@ startMatchmakerLoop(io);
 
 // start the training progress bridge (subscribes to Redis, registers socket handlers)
 await createTrainingProgressBridge(io);
+
+// local training sessions publish progress into the same Redis channel the
+// bridge fans out, so a run on the user's machine lights up the dashboard
+setTrainingSessionPublisher(createRedisConnection());
 
 // Actually start the server
 const PORT = parseInt(process.env.PORT || "8000");

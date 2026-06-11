@@ -1,13 +1,17 @@
 /**
- * /api/replay/... — REST handlers for the replay viewer + discovery.
- * Pair with `routes` from server/src/app.ts; the service lives in
+ * /api/replay/... — REST handlers for the replay viewer + discovery, plus
+ * the socket handlers for live watcher presence. Pair with the routes and
+ * socket registrations in server/src/app.ts; the service lives in
  * `../services/replay.service.ts`.
  */
 
 import { z } from "zod";
+import { withAuth } from "@gamenite/shared";
 import type { ReplayDetail, ReplayListPage, ReplayWatchCountResponse } from "@gamenite/shared";
+import { enforceAuth } from "../services/auth.service.ts";
 import { getReplay, listReplays, recordWatch } from "../services/replay.service.ts";
-import { type RestAPI } from "../types.ts";
+import { logSocketError } from "./socket.controller.ts";
+import { type GameServer, type RestAPI, type SocketAPI } from "../types.ts";
 
 const zGameKey = z.enum(["tictactoe", "connect4", "checkers", "nim", "guess"]);
 const zSort = z.enum([
@@ -90,3 +94,65 @@ export const postView: RestAPI<ReplayWatchCountResponse, { matchId: string }> = 
   }
   res.send(updated);
 };
+
+/* ----------------------------------------------------------------------------
+ * Live watcher presence
+ *
+ * Each open replay viewer joins a socket room; the room size IS the watcher
+ * count — real presence, not an estimate. Every join/leave/disconnect
+ * broadcasts the new count to the room.
+ * ------------------------------------------------------------------------- */
+
+/** The presence room for one replay. */
+export function replayRoom(matchId: string): string {
+  return `replay:${matchId}`;
+}
+
+const REPLAY_ROOM_PREFIX = "replay:";
+
+function roomSize(io: GameServer, room: string): number {
+  return io.sockets.adapter.rooms.get(room)?.size ?? 0;
+}
+
+function broadcastWatchers(io: GameServer, matchId: string, count: number): void {
+  io.to(replayRoom(matchId)).emit("replayWatchers", { matchId, count });
+}
+
+/** Socket request: this connection is now watching the replay. */
+export const socketReplayWatch: SocketAPI = (socket, io) => async (body) => {
+  try {
+    const { auth, payload: matchId } = withAuth(z.string()).parse(body);
+    await enforceAuth(auth);
+    await socket.join(replayRoom(matchId));
+    broadcastWatchers(io, matchId, roomSize(io, replayRoom(matchId)));
+  } catch (err) {
+    logSocketError(socket, err);
+  }
+};
+
+/** Socket request: this connection stopped watching the replay. */
+export const socketReplayLeave: SocketAPI = (socket, io) => async (body) => {
+  try {
+    const { auth, payload: matchId } = withAuth(z.string()).parse(body);
+    await enforceAuth(auth);
+    await socket.leave(replayRoom(matchId));
+    broadcastWatchers(io, matchId, roomSize(io, replayRoom(matchId)));
+  } catch (err) {
+    logSocketError(socket, err);
+  }
+};
+
+/**
+ * Disconnect cleanup: a closed tab never sends replayLeave, so on
+ * `disconnecting` (rooms still populated) broadcast the post-departure count
+ * to every replay room this socket was in. Registered in app.ts.
+ */
+export function handleReplayDisconnecting(socket: { rooms: Set<string> }, io: GameServer): void {
+  for (const room of socket.rooms) {
+    if (!room.startsWith(REPLAY_ROOM_PREFIX)) continue;
+    const matchId = room.slice(REPLAY_ROOM_PREFIX.length);
+    // This socket hasn't left yet, so the live count after disconnect is
+    // the current size minus this socket.
+    broadcastWatchers(io, matchId, Math.max(0, roomSize(io, room) - 1));
+  }
+}

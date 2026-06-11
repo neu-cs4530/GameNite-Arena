@@ -14,10 +14,17 @@
  * out the lifecycle (first move → start tracking, every move → buffer, done
  * → finalize and write) on its own — no per-game changes required.
  *
- * Note (intentional gap): we don't infer the winner. Outcome defaults to
- * `"win"` with `winnerId: undefined`. Adding a per-game `winnerId(state,
- * players)` hook to GameLogic is a follow-up — it touches every game and
- * was out of scope for the recorder rewrite.
+ * Winner inference: updateGame maps the GameLogic `winnerIndex` hook to a
+ * userId and passes it to captureMove. A known winner archives as
+ * `{ outcome: "win", winnerId }`, an explicit null archives as a draw, and
+ * games without the hook archive a winnerless `{ outcome: "win" }`.
+ *
+ * Abandoned games: there is no leave/forfeit/timeout flow on the server, so
+ * cleanup is lazy — every captureMove first sweeps tracked games that have
+ * been idle longer than DEFAULT_IDLE_TIMEOUT_MS and finalizes them as
+ * `{ outcome: "abandoned" }`. Activity triggers cleanup, so no timers are
+ * needed; a fully idle process keeps stale entries buffered until the next
+ * move on any game, which is acceptable for the in-memory profile.
  */
 
 import {
@@ -31,6 +38,12 @@ import { MatchRepo as matchRepoStore, UserRepo } from "../repository.ts";
 import { type MatchRepo } from "./matchRepo.service.ts";
 
 export type DisplayNameResolver = (userId: string) => Promise<string>;
+
+/**
+ * Tracked games idle for longer than this are finalized as abandoned by the
+ * lazy sweep at the top of captureMove.
+ */
+export const DEFAULT_IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes
 
 const defaultDisplayNameResolver: DisplayNameResolver = async (userId) => {
   const record = await UserRepo.find(userId);
@@ -53,6 +66,8 @@ interface InProgressMatch {
   moves: MatchMove[];
   initialState?: unknown;
   createdAt: string;
+  /** Epoch ms of the most recent captured move (via the injected clock). */
+  lastMoveAt: number;
 }
 
 export class MatchRecorder {
@@ -88,22 +103,23 @@ export class MatchRecorder {
 
   /**
    * Capture one validated move. Internally:
+   *   - sweeps idle (abandoned) games — see {@link sweepIdleMatches}
    *   - starts tracking if this is the first move for `gameId`
    *   - appends the move to the in-memory buffer
    *   - if `done`, finalizes the record and persists to MatchRepo
    *
-   * TODO: games abandoned mid-match stay in `_inProgress` forever — there is
-   * no leave/forfeit/timeout flow on the server yet to trigger an
-   * `outcome: "abandoned"` finalize. Revisit when that flow exists.
-   *
    * @param game     The GameRecord at the time the move was accepted.
    * @param gameId   The id under which `game` is stored in GameRepo.
    * @param actor    The userId / modelId who made the move.
-   * @param move     The raw move payload, stored as-is on `MatchMove.move`.
+   * @param move     The canonical (schema-parsed) move payload, stored as-is
+   *   on `MatchMove.move`. The caller falls back to the raw payload for games
+   *   without a `parseMove` hook.
    * @param done     Whether this move ended the game.
    * @param stateBeforeMove The per-game state before this move was applied.
    *   Captured on the first move as the record's `initialState` so replays
    *   can rebuild positions not derivable from moves (e.g. guess's secret).
+   * @param winnerId Only meaningful when `done`: the winner's userId, null
+   *   for a draw, or undefined when the game logic has no winner hook.
    */
   async captureMove(
     game: GameRecord,
@@ -112,9 +128,26 @@ export class MatchRecorder {
     move: unknown,
     done: boolean,
     stateBeforeMove?: unknown,
+    winnerId?: string | null,
   ): Promise<void> {
     if (this._finalized.has(gameId)) return;
-    const nowIso = new Date(this._getCurrentTime()).toISOString();
+
+    // Lazy abandoned-game cleanup: gameplay activity is the trigger, so the
+    // _inProgress map can't leak forever without needing a background timer.
+    // The game being captured is skipped — it's active by definition, and a
+    // long-idle game whose player finally returns should still archive
+    // normally rather than as abandoned. The sweep only awaits when an idle
+    // game actually exists, preserving the synchronous finalized-guard
+    // invariant (below) on the hot path.
+    if (this._collectIdleIds(DEFAULT_IDLE_TIMEOUT_MS, gameId).length > 0) {
+      await this.sweepIdleMatches(DEFAULT_IDLE_TIMEOUT_MS, gameId);
+      // Re-check: a concurrent duplicate may have finalized this game while
+      // the sweep was awaiting.
+      if (this._finalized.has(gameId)) return;
+    }
+
+    const now = this._getCurrentTime();
+    const nowIso = new Date(now).toISOString();
 
     let entry = this._inProgress.get(gameId);
     if (!entry) {
@@ -129,32 +162,79 @@ export class MatchRecorder {
         moves: [],
         initialState: stateBeforeMove,
         createdAt: nowIso,
+        lastMoveAt: now,
       };
       this._inProgress.set(gameId, entry);
     }
 
     entry.moves.push({ actor, move, timestamp: nowIso });
+    entry.lastMoveAt = now;
 
     if (done) {
-      // Mark finalized before the first await so a racing duplicate of the
-      // final move exits at the guard above instead of corrupting the buffer.
-      this._finalized.add(gameId);
-      const moves = [...entry.moves];
-      const participants = await this._buildParticipants(entry);
-      const record: MatchRecord = {
-        gameId,
-        gameKey: entry.gameKey,
-        rated: entry.rated,
-        participants,
-        moves,
-        result: this._defaultResult(),
-        initialState: entry.initialState,
-        createdAt: entry.createdAt,
-        completedAt: nowIso,
-      };
-      await this._database.saveMatch(record);
-      this._inProgress.delete(gameId);
+      // _finalize marks the game finalized before its first await so a racing
+      // duplicate of the final move exits at the guard above instead of
+      // corrupting the buffer.
+      await this._finalize(gameId, entry, this._buildResult(winnerId));
     }
+  }
+
+  /**
+   * Finalizes a tracked game as abandoned: persists the buffered moves with
+   * result `{ outcome: "abandoned" }` (no winner), clears the in-progress
+   * entry, and marks the game finalized. No-op for untracked or
+   * already-finalized games.
+   */
+  async finalizeAsAbandoned(gameId: string): Promise<void> {
+    const entry = this._inProgress.get(gameId);
+    if (!entry || this._finalized.has(gameId)) return;
+    await this._finalize(gameId, entry, { outcome: "abandoned" });
+  }
+
+  /**
+   * Finalizes every tracked game whose last move is older than `maxIdleMs`
+   * as abandoned. Called lazily from captureMove (with `skipGameId` set to
+   * the game being captured) so cleanup needs no timers; callers with a real
+   * forfeit/timeout flow can also invoke it directly.
+   */
+  async sweepIdleMatches(maxIdleMs: number, skipGameId?: string): Promise<void> {
+    for (const gameId of this._collectIdleIds(maxIdleMs, skipGameId)) {
+      await this.finalizeAsAbandoned(gameId);
+    }
+  }
+
+  /** Ids of tracked games whose last move is older than `maxIdleMs`. */
+  private _collectIdleIds(maxIdleMs: number, skipGameId?: string): string[] {
+    const now = this._getCurrentTime();
+    return [...this._inProgress.entries()]
+      .filter(([gameId, entry]) => gameId !== skipGameId && now - entry.lastMoveAt > maxIdleMs)
+      .map(([gameId]) => gameId);
+  }
+
+  /** Persists the final record and clears tracking state for `gameId`. */
+  private async _finalize(
+    gameId: string,
+    entry: InProgressMatch,
+    result: MatchResult,
+  ): Promise<void> {
+    // Mark finalized before the first await so concurrent captures for this
+    // game exit at the guard at the top of captureMove.
+    this._finalized.add(gameId);
+    const nowIso = new Date(this._getCurrentTime()).toISOString();
+    const moves = [...entry.moves];
+    const participants = await this._buildParticipants(entry);
+    const record: MatchRecord = {
+      gameId,
+      gameKey: entry.gameKey,
+      rated: entry.rated,
+      participants,
+      moves,
+      result,
+      initialState: entry.initialState,
+      createdAt: entry.createdAt,
+      completedAt: nowIso,
+    };
+    await this._database.saveMatch(record);
+    this._inProgress.delete(gameId);
   }
 
   private async _buildParticipants(entry: InProgressMatch): Promise<MatchParticipant[]> {
@@ -176,10 +256,16 @@ export class MatchRecorder {
   }
 
   /**
-   * TODO: derive properly once GameLogic exposes a per-game winner hook.
-   * For now record that the game ended cleanly without claiming a winner.
+   * Maps the winner inference (already resolved to a userId by updateGame)
+   * to the archival MatchResult shape.
    */
-  private _defaultResult(): MatchResult {
+  private _buildResult(winnerId: string | null | undefined): MatchResult {
+    // Explicit null from the game's winnerIndex hook means a draw.
+    if (winnerId === null) return { outcome: "draw" };
+    if (winnerId !== undefined) return { outcome: "win", winnerId };
+    // TODO: the game logic has no winnerIndex hook — record that the game
+    // ended cleanly without claiming a winner. Remove once every game
+    // implements the hook.
     return { outcome: "win" };
   }
 }
