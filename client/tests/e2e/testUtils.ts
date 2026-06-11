@@ -49,11 +49,16 @@ export async function createAndLoadGame(
   await page1.getByRole("button", { name: "Sign Up" }).click();
   await page1.waitForURL("/");
 
-  // User 1 creates a new game
-  await page1.getByRole("button", { name: "Create New Game" }).click();
-  await page1.waitForURL("/game/new");
-  await page1.getByLabel("Game selection").selectOption(gameId);
-  await page1.getByRole("button", { name: "Create New Game" }).click();
+  // The create-a-game UI is gone (games start through matchmaking now), but
+  // these gameplay suites need a deterministic two-seat game — so user 1
+  // creates the fixture game through the still-live REST API and navigates
+  // straight to it. User 2 still discovers it through the home page list.
+  const createRes = await page1.request.post("/api/game/create", {
+    data: { auth: { username: username1, password: password1 }, payload: gameId },
+  });
+  expect(createRes.ok()).toBeTruthy();
+  const { gameId: createdGameId } = (await createRes.json()) as { gameId: string };
+  await page1.goto(`/game/${createdGameId}`);
 
   // Causes Playwright to auto-wait for for game to be enabled
   await page1.getByPlaceholder("Send a message to chat").click();

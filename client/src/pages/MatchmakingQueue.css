@@ -1,0 +1,100 @@
+.ga-queue {
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-6);
+  max-width: var(--layout-max-content);
+  margin: 0 auto;
+}
+
+.ga-queue__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.ga-queue__header h1 {
+  margin: 0;
+  font-size: var(--text-h1);
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.02em;
+  color: var(--color-fg);
+}
+
+.ga-queue__searching {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-8) var(--space-6);
+}
+
+/* Pulsing beacon. Durations are token-derived; the spread ring is sized on
+ * the spacing scale so the animation carries no hardcoded dimensions. */
+.ga-queue__pulse {
+  width: var(--space-10);
+  height: var(--space-10);
+  border-radius: var(--radius-pill);
+  background: var(--color-primary);
+  animation: ga-queue-pulse calc(var(--duration-slow) * 5) var(--ease-standard) infinite;
+}
+
+@keyframes ga-queue-pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--color-primary-soft);
+    opacity: 1;
+  }
+  70% {
+    box-shadow: 0 0 0 var(--space-4) transparent;
+    opacity: 0.65;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    opacity: 1;
+  }
+}
+
+.ga-queue__status {
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--color-fg-muted);
+}
+
+.ga-queue__timer {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-h1);
+  font-weight: var(--weight-semibold);
+  color: var(--color-fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.ga-queue__stats {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.ga-queue__timeout-actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .ga-queue {
+    padding: var(--space-4);
+    gap: var(--space-4);
+  }
+  .ga-queue__header h1 {
+    font-size: var(--text-h2);
+  }
+  .ga-queue__stats {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+}
