@@ -52,11 +52,11 @@
 
 /* --- "You" strip ------------------------------------------------------- */
 
+/* The Card is already a flex column; pin its children to the left and keep
+   the label-to-stats gap tight so the strip reads as one compact unit. */
 .ga-leaderboards__self {
-  display: flex;
-  align-items: center;
-  gap: var(--space-6);
-  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-2);
 }
 
 .ga-leaderboards__self-label {
@@ -69,6 +69,7 @@
 
 .ga-leaderboards__self-tiles {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-8);
 }
 

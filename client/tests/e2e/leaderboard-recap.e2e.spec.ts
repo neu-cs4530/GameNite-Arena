@@ -145,6 +145,24 @@ test.describe("Leaderboards and post-match recap", () => {
     const ratingText = await winner.getByTestId("lb-self-rating").textContent();
     expect(Number(ratingText!.replace(/\D/g, ""))).toBeGreaterThan(1500);
 
+    // Standing card layout: label pinned top-left (not centered) with the
+    // stat run beneath it in a left-aligned row gapped by the --space-8
+    // token (nominally 32px; resolved here because rem tokens scale with
+    // the root font-size, design-tokens.e2e style).
+    const selfStrip = winner.getByTestId("lb-self-strip");
+    await expect(selfStrip).toHaveCSS("flex-direction", "column");
+    await expect(selfStrip).toHaveCSS("align-items", "flex-start");
+    const space8 = await winner.evaluate(() => {
+      const probe = document.createElement("div");
+      probe.style.position = "absolute";
+      probe.style.width = "var(--space-8)";
+      document.body.appendChild(probe);
+      const width = getComputedStyle(probe).width;
+      probe.remove();
+      return width;
+    });
+    await expect(selfStrip.locator(".ga-leaderboards__self-tiles")).toHaveCSS("gap", space8);
+
     // Both fresh users appear on the board (search to be page-proof).
     await winner.getByTestId("filter-toggle").click();
     await winner.getByTestId("lb-search").fill(winnerUser.username);
