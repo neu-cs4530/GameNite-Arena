@@ -1,6 +1,5 @@
 /**
- * server/src/controllers/model.controller.ts
- * ============================================
+ *
  * REST endpoints for AI model upload, retrieval, and deployment management.
  *
  * Routes (register in app.ts under /api/model):
@@ -9,11 +8,15 @@
  *   GET    /api/model/user/:username      — get all models for a user
  *   POST   /api/model/:id/deploy          — deploy a model (create deployment slot)
  *   PATCH  /api/model/deployment/:id      — update deployment status (pause/retire)
+ *
+ * Sprint 2 change: removed trainingConfig / submitTrainingJob block.
+ * Server-side training is deferred post-demo. Users train locally with
+ * base_adapter and upload the resulting .pth directly.
  */
 
 import multer, { type FileFilterCallback } from "multer";
-import * as path from "node:path";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import { type Request, type Response } from "express";
 import { z } from "zod";
 import { withAuth } from "@gamenite/shared";
@@ -29,22 +32,14 @@ import {
   type DeploymentInfo,
 } from "../services/model.service.ts";
 import { UserRepo } from "../repository.ts";
-import { submitTrainingJob } from "../services/trainingQueue.service.ts";
-import { randomUUID } from "node:crypto";
 
-// Multer configuration
-
-const MODEL_STORE = path.resolve("models");
-if (!fs.existsSync(MODEL_STORE)) {
-  fs.mkdirSync(MODEL_STORE, { recursive: true });
-}
-
+// Multer — write to OS temp dir; model.service.ts uploads to R2 and cleans up.
 const storage = multer.diskStorage({
   destination: (
     _req: Request,
     _file: Express.Multer.File,
     cb: (error: Error | null, destination: string) => void,
-  ) => cb(null, MODEL_STORE),
+  ) => cb(null, os.tmpdir()),
   filename: (
     _req: Request,
     file: Express.Multer.File,
@@ -79,13 +74,6 @@ const zUploadBody = withAuth(
   z.object({
     displayName: z.string().optional().default(""),
     metadata: z.string(),
-    // optional: if provided, kick off a training job immediately after upload
-    trainingConfig: z
-      .object({
-        epochs: z.number().int().min(1),
-        hyperparameters: z.record(z.string(), z.number()).optional(),
-      })
-      .optional(),
   }),
 );
 
@@ -139,21 +127,6 @@ export const postUpload: RestAPI<ModelInfo> = async (
 
   try {
     const model = await uploadModel(user, file.path, body.data.payload.displayName, metadata);
-
-    // If trainingConfig is provided, submit a training job immediately (CoS 2.2)
-    if (body.data.payload.trainingConfig) {
-      await submitTrainingJob({
-        jobId: randomUUID(),
-        modelId: model.modelId,
-        userId: user.userId,
-        modelStorageKey: file.path,
-        config: {
-          epochs: body.data.payload.trainingConfig.epochs,
-          hyperparameters: body.data.payload.trainingConfig.hyperparameters,
-        },
-      });
-    }
-
     res.status(201).send(model);
   } catch (err) {
     res.status(422).send({ error: err instanceof Error ? err.message : "Upload failed" });
@@ -195,7 +168,7 @@ export const getByUsername: RestAPI<ModelInfo[], { username: string }> = async (
 
 /**
  * POST /api/model/:id/deploy
- * Creates a DeploymentRecord for the model (CoS 2.5, 2.7)
+ * Creates a DeploymentRecord and loads the model into the inference service.
  */
 export const postDeploy: RestAPI<DeploymentInfo, { id: string }> = async (req, res) => {
   const body = zDeployBody.safeParse(req.body);
