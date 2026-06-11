@@ -13,8 +13,8 @@ import {
   type MatchmakingJoinPayload,
   type TaggedGameView,
 } from "./game.types.ts";
-import { type MatchResultView, type ReplayWatchersPayload } from "./replay.types.ts";
 import { type SafeUserInfo } from "./user.types.ts";
+import { type MatchResultView, type ReplayWatchersPayload } from "./replay.types.ts";
 
 /**
  * The Socket.io interface for client to server communication
@@ -27,10 +27,10 @@ export interface ClientToServerEvents {
   gameMakeMove: (payload: WithAuth<GameMakeMovePayload>) => void;
   gameStart: (payload: WithAuth<string>) => void;
   gameWatch: (payload: WithAuth<string>) => void;
-  replayWatch: (payload: WithAuth<string>) => void;
-  replayLeave: (payload: WithAuth<string>) => void;
   matchmakingJoin: (payload: WithAuth<MatchmakingJoinPayload>) => void;
   matchmakingLeave: (payload: WithAuth<GameKey>) => void;
+  replayWatch: (payload: WithAuth<string>) => void;
+  replayLeave: (payload: WithAuth<string>) => void;
 }
 
 /**
@@ -45,8 +45,8 @@ export interface ServerToClientEvents {
   gameResult: (payload: { gameId: string } & MatchResultView) => void;
   gameStateUpdated: (payload: TaggedGameView & { forPlayer: boolean }) => void;
   gameWatched: (payload: GamePlayInfo) => void;
-  replayWatchers: (payload: ReplayWatchersPayload) => void;
   matchFound: (payload: { gameId: string; gameKey: GameKey }) => void;
   matchmakingTimeout: (payload: { gameKey: GameKey }) => void;
   matchmakingWindowUpdate: (payload: { gameKey: GameKey; window: number }) => void;
+  replayWatchers: (payload: ReplayWatchersPayload) => void;
 }

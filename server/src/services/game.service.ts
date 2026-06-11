@@ -7,7 +7,7 @@ import { type GameServicer } from "../games/gameServiceManager.ts";
 import { nimGameService } from "../games/nim.ts";
 import { guessGameService } from "../games/guess.ts";
 import { type GameViewUpdates, type UserWithId } from "../types.ts";
-import { type GameRecord, type MatchResult } from "../models.ts";
+import { type MatchResult } from "../models.ts";
 import { GameRepo } from "../repository.ts";
 /**
  * The service interface for individual games
@@ -195,84 +195,36 @@ export async function updateGame(gameId: string, user: UserWithId, move: unknown
   // back to the raw payload (parseMove returns null for those).
   const canonicalMove = service.parseMove(move) ?? move;
 
-  let gameResult: MatchResult | undefined;
-  if (result.done) {
-    gameResult = await postGameUpdates(
+  // Move is validated and persisted — archive it for the replay viewer.
+  // Archival is a side-channel: a failed write must not fail the move or
+  // swallow the view broadcast, so log and continue.
+  try {
+    await matchRecorder.captureMove(
       game,
       gameId,
       user.userId,
       canonicalMove,
+      result.done,
       stateBeforeMove,
       winnerId,
     );
-  } else {
-    // Move is validated and persisted — archive it for the replay viewer.
-    // Archival is a side-channel: a failed write must not fail the move or
-    // swallow the view broadcast, so log and continue.
-    try {
-      await matchRecorder.captureMove(
-        game,
-        gameId,
-        user.userId,
-        canonicalMove,
-        false,
-        stateBeforeMove,
-      );
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error(`match capture failed for game ${gameId}:`, err);
-    }
-  }
-
-  return { views: result.views, gameResult };
-}
-
-/**
- * Everything that runs once a move ends a game, gathered in one place so
- * end-of-game side effects stay together as they grow:
- *
- *   1. finalize the match archive so the game shows up in the replay viewer
- *   2. Glicko rating updates for rated games
- *
- * The final move is already validated and persisted by the time this runs,
- * so failures here are logged rather than propagated: a broken side effect
- * must not fail the move or swallow the final view broadcast.
- *
- * @param game - The finished GameRecord (state and done already updated)
- * @param gameId - The id `game` is stored under in GameRepo
- * @param userId - The user who made the game-ending move
- * @param move - The canonical (schema-parsed) game-ending move payload
- * @param stateBeforeMove - Game state before the final move was applied
- * @param winnerId - Winner's userId, null for a draw, undefined when unknown
- * @returns the match result (winner, outcome, rating changes) for rated
- * games, or undefined for unrated games or if the rating update failed
- */
-export async function postGameUpdates(
-  game: GameRecord,
-  gameId: string,
-  userId: string,
-  move: unknown,
-  stateBeforeMove: unknown,
-  winnerId?: string | null,
-): Promise<MatchResult | undefined> {
-  // 1. Archive the final move; the recorder finalizes and persists the
-  //    complete MatchRecord for the replay viewer.
-  try {
-    await matchRecorder.captureMove(game, gameId, userId, move, true, stateBeforeMove, winnerId);
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error(`match capture failed for game ${gameId}:`, err);
   }
 
-  // 2. Update Glicko ratings for rated games.
-  if (!game.rated) return undefined;
-  try {
-    return await updateRatingsForGame(game, gameId);
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error(`rating update failed for game ${gameId}:`, err);
-    return undefined;
+  // Glicko rating updates for rated games that just ended.
+  let gameResult: MatchResult | undefined;
+  if (result.done && game.rated) {
+    try {
+      gameResult = await updateRatingsForGame(game, gameId);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`rating update failed for game ${gameId}:`, err);
+    }
   }
+
+  return { views: result.views, gameResult };
 }
 
 /**
