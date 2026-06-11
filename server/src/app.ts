@@ -13,6 +13,7 @@ import * as model from "./controllers/model.controller.ts";
 import * as thread from "./controllers/thread.controller.ts";
 import * as puzzle from "./controllers/puzzle.controller.ts";
 import * as replay from "./controllers/replay.controller.ts";
+import * as annotation from "./controllers/annotation.controller.ts";
 import * as training from "./controllers/training.controller.ts";
 import { type GameServer } from "./types.ts";
 
@@ -76,6 +77,10 @@ app.use(
         .get("/list", replay.getList)
         .get("/:matchId", replay.getById)
         .post("/:matchId/view", replay.postView),
+    )
+    .use(
+      "/annotation",
+      express.Router().post("/create", annotation.postCreate).get("/:id", annotation.getById),
     )
     .use("/training", training.trainingRouter()),
 );
