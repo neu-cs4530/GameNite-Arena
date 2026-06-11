@@ -18,7 +18,9 @@ function NimPuzzleBoard({ view }: { view: NimView }): JSX.Element {
   );
   return (
     <div className="ga-puzzle-board" data-testid="puzzle-board-nim">
-      <NimReplayView view={view} participants={participants} />
+      {/* The puzzle is a fresh position, not a scrubbed replay — size the
+          pile to what's actually left so no ghost tokens render. */}
+      <NimReplayView view={view} participants={participants} startingPile={view.remaining} />
       <p className="ga-puzzle-board__framing">
         Your move — take 1, 2 or 3 tokens. Whoever takes the last token loses.
       </p>

@@ -31,7 +31,11 @@ export default function Puzzles(): JSX.Element {
     <div className="ga-puzzles" data-testid="puzzles-page">
       <header className="ga-puzzles__hero">
         <h1 className="ga-puzzles__title">Daily puzzles</h1>
-        <p className="ga-puzzles__date">{dayjs().format("dddd, MMMM D, YYYY")}</p>
+        {/* The daily cycle flips at UTC midnight — show the puzzle day, which
+            can differ from the local calendar day in the evening. */}
+        <p className="ga-puzzles__date">
+          {dayjs(dayjs().toISOString().slice(0, 10)).format("dddd, MMMM D, YYYY")}
+        </p>
         <p className="ga-puzzles__lede">
           One position per game, mined from real archived matches. Pick a game to play today&apos;s
           puzzle — solves build your streak and your Puzzle Glicko.

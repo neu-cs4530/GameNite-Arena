@@ -1,4 +1,5 @@
 import "./DailyPuzzleCard.css";
+import dayjs from "dayjs";
 import { useCallback, useEffect, useReducer, useState, type JSX } from "react";
 import type { GameKey } from "@gamenite/shared";
 import Button from "../ui/Button.tsx";
@@ -117,7 +118,7 @@ export default function DailyPuzzleCard({ gameKey, onSolved }: DailyPuzzleCardPr
     <Card testId="puzzle-card" className="ga-puzzle-card">
       <header className="ga-puzzle-card__header">
         <h3 className="ga-puzzle-card__title">{gameNames[gameKey]} — daily puzzle</h3>
-        <span className="ga-puzzle-card__date">{puzzle.date}</span>
+        <span className="ga-puzzle-card__date">{dayjs(puzzle.date).format("MMMM D, YYYY")}</span>
       </header>
 
       <PuzzleBoard position={puzzle.position} />
