@@ -1,0 +1,32 @@
+.ga-stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.ga-stat-tile__label {
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-fg-subtle);
+}
+
+.ga-stat-tile__value {
+  font-size: var(--text-h3);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.ga-stat-tile--success .ga-stat-tile__value {
+  color: var(--color-success);
+}
+
+.ga-stat-tile--danger .ga-stat-tile__value {
+  color: var(--color-danger);
+}
+
+.ga-stat-tile__sub {
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}

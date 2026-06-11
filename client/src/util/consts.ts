@@ -38,3 +38,11 @@ export const lsKeys = {
   helpDismissed: "gnarena:helpDismissed",
   annotationReactions: "gnarena:annotationReactions",
 } as const;
+
+/**
+ * The games a user can actually queue and play today, derived from the one
+ * canonical map above — every "pick a game" surface (matchmaking,
+ * leaderboards, puzzles) renders from this list, so adding a game here adds
+ * it everywhere at once.
+ */
+export const PLAYABLE_GAME_KEYS = Object.keys(gameNames) as GameKey[];

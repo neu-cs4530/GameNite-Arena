@@ -13,6 +13,7 @@ import * as user from "./controllers/user.controller.ts";
 import * as model from "./controllers/model.controller.ts";
 import * as thread from "./controllers/thread.controller.ts";
 import * as puzzle from "./controllers/puzzle.controller.ts";
+import * as rating from "./controllers/rating.controller.ts";
 import * as replay from "./controllers/replay.controller.ts";
 import * as annotation from "./controllers/annotation.controller.ts";
 import * as training from "./controllers/training.controller.ts";
@@ -73,6 +74,7 @@ app.use(
         .get("/:gameKey", puzzle.getToday)
         .post("/:gameKey/attempt", puzzle.postAttempt),
     )
+    .use("/rating", rating.ratingRouter())
     .use(
       "/replay",
       express

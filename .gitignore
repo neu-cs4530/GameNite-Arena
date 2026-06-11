@@ -142,6 +142,9 @@ __pycache__/
 .pytest_cache/
 
 CLAUDE.md
+.env
+ai/inference-service/.env
+ai/test_model.pth
 
 # Python virtual environments
 .venv/
