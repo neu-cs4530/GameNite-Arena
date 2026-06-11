@@ -6,16 +6,20 @@ import type { GameKey } from "@gamenite/shared";
 import Badge from "../components/ui/Badge.tsx";
 import GameSelectGrid from "../components/ui/GameSelectGrid.tsx";
 import { DailyPuzzleCard } from "../components/puzzles/index.ts";
-import { gameNames, PLAYABLE_GAME_KEYS } from "../util/consts.ts";
+import { gameNames, PUZZLE_GAME_KEYS } from "../util/consts.ts";
 
 /**
  * The daily puzzles tab, progressive-disclosure style:
  *
- *   at rest    — hero + one tile per playable game, nothing else.
+ *   at rest    — hero + one tile per puzzle game, nothing else.
  *   on select  — that game's daily puzzle card loads below; the choice
  *                lives in `?game=` so puzzle links are shareable.
  *   on attempt — verdict, rating + streak tiles, and only then the
  *                engine's solution.
+ *
+ * Tiles render from PUZZLE_GAME_KEYS (deducible games only), not the full
+ * playable list — deep-linking `?game=` to a non-puzzle game like guess
+ * falls back to the pick-a-game state instead of an unsolvable board.
  *
  * "Solved ✓" tile markers are session-only: there is no endpoint for past
  * attempts, so we only know about solves the user made on this visit.
@@ -25,7 +29,7 @@ export default function Puzzles(): JSX.Element {
   const [solvedToday, setSolvedToday] = useState<Partial<Record<GameKey, boolean>>>({});
 
   const rawGame = searchParams.get("game");
-  const selected = PLAYABLE_GAME_KEYS.find((key) => key === rawGame) ?? null;
+  const selected = PUZZLE_GAME_KEYS.find((key) => key === rawGame) ?? null;
 
   return (
     <div className="ga-puzzles" data-testid="puzzles-page">
@@ -43,7 +47,7 @@ export default function Puzzles(): JSX.Element {
       </header>
 
       <GameSelectGrid
-        games={PLAYABLE_GAME_KEYS.map((key) => ({ key, label: gameNames[key] }))}
+        games={PUZZLE_GAME_KEYS.map((key) => ({ key, label: gameNames[key] }))}
         selectedKey={selected}
         onSelect={(key) => setSearchParams({ game: key })}
         renderTileExtra={(key) =>
