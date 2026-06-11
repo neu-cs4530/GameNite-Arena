@@ -1,3 +1,4 @@
+import { invalidateLeaderboardCache } from "./leaderboard.service.ts";
 import { type GameKey, type GuessState, type NimState } from "@gamenite/shared";
 import { ratingKey, type GameRecord, type MatchResult } from "../models.ts";
 import { MatchRepo, RatingRepo } from "../repository.ts";
@@ -133,6 +134,10 @@ export async function updateRatingsForGame(
 
   await saveRating(playerA, game.type, newRatingA);
   await saveRating(playerB, game.type, newRatingB);
+
+  // The cached leaderboard now disagrees with the stored ratings — drop it
+  // so the next board read (e.g. the recap's) rebuilds from fresh data.
+  await invalidateLeaderboardCache(game.type);
 
   const matchResult: MatchResult = {
     winnerId,

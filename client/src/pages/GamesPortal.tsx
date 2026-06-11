@@ -8,6 +8,7 @@ import Disclosure from "../components/ui/Disclosure.tsx";
 import EmptyState from "../components/ui/EmptyState.tsx";
 import GameSelectGrid from "../components/ui/GameSelectGrid.tsx";
 import RatingEmblem from "../components/ui/RatingEmblem.tsx";
+import PageHero from "../components/ui/PageHero.tsx";
 import Skeleton from "../components/ui/Skeleton.tsx";
 import TimeAgo from "../components/ui/TimeAgo.tsx";
 import { MultiToggle } from "../components/filters/index.ts";
@@ -62,10 +63,7 @@ export default function GamesPortal(): JSX.Element {
 
   return (
     <div className="ga-portal" data-testid="games-portal">
-      <header className="ga-portal__hero">
-        <h1>Arena</h1>
-        <p>Pick a game, pick a mode — we find your opponent.</p>
-      </header>
+      <PageHero title="Arena" lede="Pick a game, pick a mode — we find your opponent." />
 
       <GameSelectGrid
         games={PLAYABLE_GAME_KEYS.map((key) => ({ key, label: gameNames[key] }))}
@@ -100,6 +98,10 @@ export default function GamesPortal(): JSX.Element {
                   gamesPlayed={ratingResult.data.gamesPlayed}
                   testId="portal-rating-emblem"
                 />
+              ) : ratingResult.error ? (
+                <span className="ga-portal__rating-unavailable" data-testid="portal-rating-error">
+                  Rating unavailable right now — you can still play.
+                </span>
               ) : (
                 <Skeleton variant="text" width="10rem" />
               )}

@@ -72,7 +72,7 @@
 
 .ga-queue__stats {
   display: flex;
-  gap: var(--space-3);
+  gap: var(--space-8);
   flex-wrap: wrap;
   justify-content: center;
 }

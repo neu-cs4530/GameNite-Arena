@@ -7,30 +7,6 @@
   margin: 0 auto;
 }
 
-.ga-portal__hero {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-6);
-  background: linear-gradient(135deg, var(--color-primary-soft) 0%, var(--color-accent-soft) 100%);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-}
-
-.ga-portal__hero h1 {
-  font-size: var(--text-h1);
-  font-weight: var(--weight-bold);
-  margin: 0;
-  letter-spacing: -0.02em;
-  color: var(--color-fg);
-}
-
-.ga-portal__hero p {
-  margin: 0;
-  font-size: var(--text-body);
-  color: var(--color-fg-muted);
-}
-
 /* The reveal area under the grid: mode → rating → Play, one column. */
 .ga-portal__launch {
   display: flex;
@@ -47,6 +23,11 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
+}
+
+.ga-portal__rating-unavailable {
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
 }
 
 .ga-portal__rating-label {
@@ -96,11 +77,5 @@
   .ga-portal {
     padding: var(--space-4);
     gap: var(--space-4);
-  }
-  .ga-portal__hero {
-    padding: var(--space-4);
-  }
-  .ga-portal__hero h1 {
-    font-size: var(--text-h2);
   }
 }

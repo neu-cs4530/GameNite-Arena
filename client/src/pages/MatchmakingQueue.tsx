@@ -164,6 +164,8 @@ function QueueScreen({ gameKey }: { gameKey: GameKey }): JSX.Element {
                       gamesPlayed={ratingResult.data.gamesPlayed}
                       testId="queue-rating-emblem"
                     />
+                  ) : ratingResult.error ? (
+                    "—"
                   ) : (
                     <Skeleton variant="text" width="8rem" />
                   )
