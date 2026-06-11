@@ -24,9 +24,10 @@ export default function RatingEmblem({
   testId = "rating-emblem",
 }: RatingEmblemProps): JSX.Element {
   const provisional = (rd !== undefined && rd > 150) || gamesPlayed === 0;
+  // Glicko math produces long floats; a rating always displays whole.
   return (
     <span className="ga-rating-emblem" data-testid={testId}>
-      <TierBadge rating={rating} withRating />
+      <TierBadge rating={Math.round(rating)} withRating />
       {provisional && (
         <Badge variant="default" title="Rating still settling — play more rated games">
           provisional
