@@ -1,0 +1,72 @@
+.ga-hp-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ga-hp-form__row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-3);
+}
+
+.ga-hp-form__textarea {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-elevated);
+  color: var(--color-fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-small);
+  min-height: var(--space-12);
+}
+
+.ga-hp-form__textarea:focus-visible {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-focus);
+}
+
+.ga-hp-form__textarea--error {
+  border-color: var(--color-danger);
+}
+
+.ga-hp-form__error {
+  font-size: var(--text-micro);
+  color: var(--color-danger);
+}
+
+.ga-hp-form__presets {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.ga-hp-form__preset {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: var(--text-small);
+  color: var(--color-fg);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+
+.ga-hp-form__preset:hover,
+.ga-hp-form__preset--active {
+  border-color: var(--color-primary);
+}
+
+.ga-hp-form__preset-name {
+  font-weight: var(--weight-semibold);
+}
+
+.ga-hp-form__preset-desc {
+  font-size: var(--text-micro);
+  color: var(--color-fg-muted);
+}

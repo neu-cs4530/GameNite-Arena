@@ -1,0 +1,43 @@
+.ga-hscroll {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ga-hscroll__track {
+  display: flex;
+  flex-direction: row;
+  gap: var(--space-4);
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  /* Vertical padding so child box-shadows aren't clipped; horizontal padding
+     keeps the first/last card from sitting flush against the chevron buttons.
+     scroll-padding aligns snap points with the inner edge. */
+  padding: var(--space-2) var(--space-3);
+  scroll-padding-inline: var(--space-3);
+  scrollbar-width: thin;
+}
+
+.ga-hscroll__track > * {
+  scroll-snap-align: start;
+  flex-shrink: 0;
+  min-width: 280px;
+  max-width: 320px;
+  width: 300px;
+}
+
+.ga-hscroll__nav {
+  background: var(--color-bg-elevated);
+}
+
+@media (max-width: 600px) {
+  .ga-hscroll {
+    grid-template-columns: 1fr;
+  }
+
+  .ga-hscroll__nav {
+    display: none;
+  }
+}

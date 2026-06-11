@@ -1,0 +1,78 @@
+.ga-job-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  height: 100%;
+}
+
+.ga-job-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.ga-job-card__title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.ga-job-card__title {
+  font-size: var(--text-h3);
+  font-weight: var(--weight-semibold);
+  color: var(--color-fg);
+  line-height: var(--leading-tight);
+}
+
+.ga-job-card__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}
+
+.ga-job-card__progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.ga-job-card__progress-bar {
+  height: var(--space-2);
+  background: var(--color-surface-strong);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.ga-job-card__progress-fill {
+  height: 100%;
+  background: var(--color-primary);
+  transition: width var(--duration-base) var(--ease-out);
+}
+
+.ga-job-card__sparkline {
+  width: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.ga-job-card__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--color-border);
+}
+
+.ga-job-card__footer-info {
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+  margin-left: auto;
+}

@@ -1,0 +1,43 @@
+.ga-skeleton {
+  display: inline-block;
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-strong) 0%,
+    var(--color-surface) 50%,
+    var(--color-surface-strong) 100%
+  );
+  background-size: 200% 100%;
+  animation: ga-skeleton-shimmer 1.4s linear infinite;
+  border-radius: var(--radius-sm);
+  vertical-align: middle;
+}
+
+.ga-skeleton--rect {
+  width: 100%;
+  height: var(--space-4);
+  border-radius: var(--radius-sm);
+}
+
+.ga-skeleton--circle {
+  border-radius: var(--radius-pill);
+  width: var(--space-8);
+  height: var(--space-8);
+}
+
+.ga-skeleton--text {
+  display: block;
+  width: 100%;
+  height: var(--text-body);
+  border-radius: var(--radius-xs);
+}
+
+.ga-skeleton-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.ga-skeleton-text .ga-skeleton--text:last-child {
+  width: 70%;
+}

@@ -1,0 +1,66 @@
+.ga-guess-replay {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+}
+
+.ga-guess-replay__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.ga-guess-replay__title {
+  font-size: var(--text-h2);
+  font-weight: var(--weight-bold);
+  color: var(--color-fg);
+}
+
+.ga-guess-replay__sub {
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}
+
+.ga-guess-replay__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ga-guess-replay__row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--color-bg-elevated);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.ga-guess-replay__row--win {
+  border-color: var(--color-success);
+  background: var(--color-success-soft);
+}
+
+.ga-guess-replay__name {
+  font-weight: var(--weight-medium);
+}
+
+.ga-guess-replay__guess {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-bold);
+  color: var(--color-primary);
+}
+
+.ga-guess-replay__distance {
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}

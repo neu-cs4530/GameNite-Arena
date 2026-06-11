@@ -1,0 +1,227 @@
+/* ============================================================================
+ * FilterBar
+ * Compact header always visible (sort + active chips + Filters toggle + Clear);
+ * panel collapses behind the toggle so the page doesn't feel like an info dump.
+ * ============================================================================ */
+
+.ga-filter-bar {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.ga-filter-bar--open {
+  box-shadow: var(--shadow-md);
+}
+
+/* -- Preset pill row (always visible, above the compact header) -- */
+.ga-filter-bar__presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+/* -- Compact header (always visible) -- */
+.ga-filter-bar__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  min-height: 56px;
+}
+
+.ga-filter-bar__compact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ga-filter-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.ga-filter-bar__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform: rotate(180deg);
+  transition: transform var(--duration-base) var(--ease-standard);
+  font-weight: var(--weight-bold);
+  margin-right: var(--space-1);
+}
+
+.ga-filter-bar--closed .ga-filter-bar__icon {
+  transform: rotate(0deg);
+}
+
+.ga-filter-bar__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 var(--space-1);
+  margin-left: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-primary);
+  color: var(--color-bg);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-bold);
+  line-height: 1;
+}
+
+/* -- Expanded panel -- */
+.ga-filter-bar__panel {
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  background: var(--color-bg);
+  animation: ga-filter-bar-slide-in var(--duration-base) var(--ease-emphasis);
+}
+
+@keyframes ga-filter-bar-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Two columns on desktop, single column on narrow screens. Each cell gets
+ * the same min-height so labels line up across rows. */
+.ga-filter-bar__controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-4) var(--space-6);
+  align-items: start;
+}
+
+.ga-filter-bar__footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px dashed var(--color-border);
+}
+
+.ga-filter-bar__footer-hint {
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+  margin-right: auto;
+}
+
+/* -- Active filter chips (rendered into compactSummary by consumers) -- */
+.ga-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.ga-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: var(--text-small);
+  font-weight: var(--weight-medium);
+  border: 1px solid transparent;
+  max-width: 240px;
+}
+
+.ga-filter-chip__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ga-filter-chip__remove {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  font-weight: var(--weight-bold);
+  font-size: var(--text-body);
+  line-height: 1;
+  opacity: 0.7;
+  transition: opacity var(--duration-fast);
+}
+
+.ga-filter-chip__remove:hover {
+  opacity: 1;
+}
+
+.ga-filter-chip__remove:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+  opacity: 1;
+}
+
+/* -- Each individual control inside the panel -- */
+.ga-filter-control {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: 64px;
+}
+
+.ga-filter-control__label {
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  color: var(--color-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* -- Compact sort: shrink the sort control inside the header -- */
+.ga-filter-bar__compact .ga-filter-control {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 0;
+  margin: 0;
+}
+
+.ga-filter-bar__compact .ga-filter-control__label {
+  margin: 0;
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .ga-filter-bar__header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+  }
+
+  .ga-filter-bar__actions {
+    justify-content: space-between;
+  }
+
+  .ga-filter-bar__controls {
+    grid-template-columns: 1fr;
+    gap: var(--space-4);
+  }
+}

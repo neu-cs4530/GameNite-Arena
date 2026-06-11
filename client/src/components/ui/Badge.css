@@ -1,0 +1,141 @@
+.ga-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.ga-badge__icon {
+  display: inline-flex;
+  font-size: var(--text-small);
+  line-height: 1;
+}
+
+.ga-badge__label {
+  display: inline-flex;
+  align-items: center;
+}
+
+.ga-badge--default {
+  background: var(--color-surface);
+  color: var(--color-fg-muted);
+  border-color: var(--color-border);
+}
+
+.ga-badge--info {
+  background: var(--color-info-soft);
+  color: var(--color-info);
+}
+
+.ga-badge--success {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.ga-badge--warning {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.ga-badge--danger {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.ga-badge--human {
+  background: var(--color-human-soft);
+  color: var(--color-human);
+}
+
+.ga-badge--ai {
+  background: var(--color-ai-soft);
+  color: var(--color-ai);
+}
+
+.ga-badge--win {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.ga-badge--loss {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.ga-badge--draw {
+  background: var(--color-surface-strong);
+  color: var(--color-fg-muted);
+}
+
+.ga-badge--live {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  position: relative;
+}
+
+.ga-badge--live::before {
+  content: "";
+  width: var(--space-1);
+  height: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--color-danger);
+  animation: ga-pulse 1.4s ease-in-out infinite;
+}
+
+.ga-badge--tier-bronze {
+  background: var(--color-tier-bronze-soft);
+  color: var(--color-tier-bronze);
+}
+
+.ga-badge--tier-silver {
+  background: var(--color-tier-silver-soft);
+  color: var(--color-tier-silver);
+}
+
+.ga-badge--tier-gold {
+  background: var(--color-tier-gold-soft);
+  color: var(--color-tier-gold);
+}
+
+.ga-badge--tier-platinum {
+  background: var(--color-tier-platinum-soft);
+  color: var(--color-tier-platinum);
+}
+
+.ga-badge--tier-diamond {
+  background: var(--color-tier-diamond-soft);
+  color: var(--color-tier-diamond);
+}
+
+.ga-badge--marker-good {
+  background: oklch(from var(--color-marker-good) calc(l + 0.3) c h / 25%);
+  color: var(--color-marker-good);
+}
+
+.ga-badge--marker-interesting {
+  background: oklch(from var(--color-marker-interesting) calc(l + 0.3) c h / 25%);
+  color: var(--color-marker-interesting);
+}
+
+.ga-badge--marker-questionable {
+  background: oklch(from var(--color-marker-questionable) calc(l + 0.2) c h / 25%);
+  color: var(--color-marker-questionable);
+}
+
+.ga-badge--marker-bad {
+  background: oklch(from var(--color-marker-bad) calc(l + 0.3) c h / 25%);
+  color: var(--color-marker-bad);
+}
+
+.ga-badge--marker-winning {
+  background: oklch(from var(--color-marker-winning) calc(l + 0.3) c h / 25%);
+  color: var(--color-marker-winning);
+}

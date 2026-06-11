@@ -103,6 +103,7 @@ async function populateSessionInfo(jobId: string): Promise<TrainingSessionInfo> 
     progress: job.progress,
     error: job.error,
     hasArtifact: Boolean(model?.artifactRef),
+    artifactMeta: model?.artifactMeta,
     createdAt: job.createdAt,
     completedAt: job.completedAt,
   };

@@ -265,3 +265,18 @@ def test_upload_artifact_sends_multipart_with_json_token_auth_field(fake_server,
     assert b'"token": "token-1"' in request["raw"] or b'"token":"token-1"' in request["raw"]
     assert b'filename="trained.pth"' in request["raw"]
     assert b"fake torch weights" in request["raw"]
+
+
+def test_attach_adopts_a_web_registered_session(fake_server):
+    server, base_url = fake_server
+    server.script.append((200, {"jobId": "web-job-7", "status": "running"}))
+
+    session = make_session(base_url)
+    assert session.attach("web-job-7") == "web-job-7"
+    assert session.job_id == "web-job-7"
+
+    assert session.report(5, metrics={"winRate": 0.4}) is True
+    [progress] = requests_to(server, "/api/training/web-job-7/progress")
+    assert progress["json"]["auth"] == {"token": "token-1"}
+    # attach itself makes no requests; the token exchange happens lazily.
+    assert len(requests_to(server, "/api/training/token")) == 1
