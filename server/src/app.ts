@@ -15,6 +15,8 @@ import * as thread from "./controllers/thread.controller.ts";
 import * as puzzle from "./controllers/puzzle.controller.ts";
 import * as rating from "./controllers/rating.controller.ts";
 import * as replay from "./controllers/replay.controller.ts";
+import * as annotation from "./controllers/annotation.controller.ts";
+import * as broadcast from "./controllers/broadcast.controller.ts";
 import * as training from "./controllers/training.controller.ts";
 import * as deployment from "./controllers/deployment.controller.ts";
 import { type GameServer } from "./types.ts";
@@ -83,6 +85,19 @@ app.use(
         .get("/:matchId", replay.getById)
         .post("/:matchId/view", replay.postView),
     )
+    .use(
+      "/annotation",
+      express.Router().post("/create", annotation.postCreate).get("/:id", annotation.getById),
+    )
+    .use(
+      "/broadcast",
+      express
+        .Router()
+        .post("/create", broadcast.postCreate)
+        .get("/list", broadcast.getList)
+        .get("/:id", broadcast.getById)
+        .post("/:id/end", broadcast.postEnd),
+    )
     .use("/training", training.trainingRouter())
     .use("/deployment", deployment.deploymentRouter()),
 );
@@ -112,6 +127,9 @@ io.on("connection", (socket) => {
   // Closed tabs never send replayLeave; broadcast corrected watcher counts
   // while the departing socket's rooms are still known.
   socket.on("disconnecting", () => replay.handleReplayDisconnecting(socket, io));
+
+  socket.on("broadcastWatch", broadcast.socketBroadcastWatch(socket, io));
+  socket.on("broadcastLeave", broadcast.socketBroadcastLeave(socket, io));
 
   socket.onAny((name, payload) => {
     // The training progress bridge's events carry a bare { jobId } payload by

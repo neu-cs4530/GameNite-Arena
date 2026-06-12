@@ -13,6 +13,7 @@ import {
 import { z } from "zod";
 import { logSocketError } from "./socket.controller.ts";
 import { checkAuth, enforceAuth } from "../services/auth.service.ts";
+import { relayGameViewToBroadcasts } from "../services/broadcast.service.ts";
 
 /**
  * Handle POST requests to `/api/game/create` by creating a game. The game
@@ -97,6 +98,10 @@ function sendViewUpdates(io: GameServer, gameId: string, updates: GameViewUpdate
   for (const { userId, view } of updates.players) {
     io.to(userRoom(gameId, userId)).emit("gameStateUpdated", { ...view, forPlayer: true });
   }
+  // Relay the watcher view to any live broadcasts of this game, each after its
+  // broadcaster-set delay (Story 3.7). Best-effort and fire-and-forget so it
+  // never blocks or breaks the live gameplay update above.
+  void relayGameViewToBroadcasts(io, gameId, updates.watchers);
 }
 
 /**

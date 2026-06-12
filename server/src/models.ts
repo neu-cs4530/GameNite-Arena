@@ -427,6 +427,12 @@ export interface AnnotationRecord {
 export type AnnotationMarker = "good" | "interesting" | "questionable" | "bad" | "winning";
 
 /**
+ * A stored annotation expanded with its repository id, as returned by the
+ * annotation API. (`AnnotationRecord` itself does not carry its own key.)
+ */
+export type AnnotationInfo = AnnotationRecord & { annotationId: RecordId };
+
+/**
  * A daily puzzle for a specific game. (Story 1.6, 1.7)
  *
  * Stored under a deterministic key `${gameKey}:${dateYYYYMMDD}` so the daily
