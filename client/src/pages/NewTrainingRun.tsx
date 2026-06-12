@@ -9,6 +9,7 @@ import { HyperparamForm } from "../components/trainer/index.ts";
 import { hyperparamPresets, trainerGameNames } from "../components/trainer/trainerConsts.ts";
 import { MultiToggle } from "../components/filters/index.ts";
 import useAuth from "../hooks/useAuth.ts";
+import { getModel } from "../services/modelService.ts";
 import { getJob, submitJob } from "../services/trainingService.ts";
 import {
   buildHeuristicsExtra,
@@ -39,6 +40,7 @@ export default function NewTrainingRun(): JSX.Element {
   const auth = useAuth();
   const [searchParams] = useSearchParams();
   const fromJob = searchParams.get("fromJob");
+  const fromModel = searchParams.get("fromModel");
   const presetParam = searchParams.get("preset");
 
   const [game, setGame] = useState<TrainerGameKey>("nim");
@@ -53,6 +55,9 @@ export default function NewTrainingRun(): JSX.Element {
   const [heuristics, setHeuristics] = useState<Record<string, string> | null>(() =>
     defaultHeuristicSelections("nim"),
   );
+  // Set when this run continues an existing model (?fromModel= after a
+  // fork): the session registers against that model instead of a new one.
+  const [continueModelId, setContinueModelId] = useState<string | undefined>(undefined);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<Error | null>(null);
   // Bumped when an async prefill lands: HyperparamForm's inputs keep local
@@ -86,6 +91,28 @@ export default function NewTrainingRun(): JSX.Element {
     };
   }, [fromJob]);
 
+  /* "Continue training": prefill from a real model (the fork flow lands
+   * here). The session registers against that model id. */
+  useEffect(() => {
+    if (!fromModel) return;
+    let cancelled = false;
+    getModel(fromModel)
+      .then((model) => {
+        if (cancelled) return;
+        setGame(model.gameKey);
+        setName(`Continue training ${model.displayName}`);
+        setContinueModelId(model.id);
+        setHeuristics(defaultHeuristicSelections(model.gameKey));
+        setPrefillVersion((v) => v + 1);
+      })
+      .catch(() => {
+        // Model gone — the form simply starts blank.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [fromModel]);
+
   const episodesError =
     hp.episodes < 1
       ? "Episode count must be at least 1."
@@ -109,6 +136,7 @@ export default function NewTrainingRun(): JSX.Element {
     try {
       const { jobId } = await submitJob(
         {
+          modelId: continueModelId,
           gameKey: game,
           modelDisplayName: name.trim(),
           hyperparameters: {
