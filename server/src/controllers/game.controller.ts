@@ -93,7 +93,13 @@ export const socketWatch: SocketAPI = (socket) => async (body) => {
 /**
  * Broadcast view updates to appropriate users
  */
-function sendViewUpdates(io: GameServer, gameId: string, updates: GameViewUpdates) {
+/**
+ * Delivers a move's view updates: watcher view to the game room, each
+ * player's view to their private room. Exported because server-originated
+ * moves (a queued model opening the game) must broadcast the same way
+ * socket-originated moves do.
+ */
+export function sendViewUpdates(io: GameServer, gameId: string, updates: GameViewUpdates) {
   io.to(gameId).emit("gameStateUpdated", { ...updates.watchers, forPlayer: false });
   for (const { userId, view } of updates.players) {
     io.to(userRoom(gameId, userId)).emit("gameStateUpdated", { ...view, forPlayer: true });

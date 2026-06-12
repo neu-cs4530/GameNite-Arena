@@ -383,6 +383,16 @@ describe("startMatchedGame", () => {
       deploymentId,
       state: { remaining: 21 },
     });
+
+    // The opening move must be DELIVERED, not just persisted: connected
+    // clients hold the pre-move view and have no other way to learn the
+    // board changed (the live stuck-at-21 bug).
+    const watcherUpdates = findEmit(emits, "gameStateUpdated", gameId);
+    expect(watcherUpdates).toHaveLength(1);
+    expect(watcherUpdates[0].payload["forPlayer"]).toBe(false);
+    const humanUpdates = findEmit(emits, "gameStateUpdated", `${gameId}-${b.userId}`);
+    expect(humanUpdates).toHaveLength(1);
+    expect(humanUpdates[0].payload["forPlayer"]).toBe(true);
   });
 
   it("seats a model entry on seat 1 without firing an opening move", async () => {

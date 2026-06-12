@@ -1,3 +1,4 @@
+import { sendViewUpdates } from "./game.controller.ts";
 import { withAuth, zGameKey, zMatchmakingJoinPayload } from "@gamenite/shared";
 import { type GameServer, type RestAPI, type SocketAPI, type UserWithId } from "../types.ts";
 import { enforceAuth } from "../services/auth.service.ts";
@@ -114,6 +115,12 @@ export async function startMatchedGame(
   // leaves a normal, playable game behind.
   try {
     const aiOutcome = await maybeFireAiMove(game.gameId);
+    if (aiOutcome) {
+      // Clients already hold the pre-move view from gameWatch; without this
+      // broadcast the opening move exists only in the repo and every screen
+      // shows a frozen board.
+      sendViewUpdates(io, game.gameId, aiOutcome.views);
+    }
     if (aiOutcome?.gameResult) {
       io.to(game.gameId).emit("gameResult", { gameId: game.gameId, ...aiOutcome.gameResult });
     }
