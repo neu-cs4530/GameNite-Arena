@@ -13,7 +13,9 @@ import {
   maybeFireAiMove,
   startGame,
   updateGame,
+  viewGame,
 } from "../../src/services/game.service.ts";
+import { matchRecorder } from "../../src/services/matchRecorder.service.ts";
 import {
   InferenceError,
   resetInferenceClientForTests,
@@ -587,5 +589,203 @@ describe("AI forfeit on persistent invalid moves (CoS 2.8)", () => {
     const stored = await GameRepo.get(gameId);
     expect(stored.invalidMoveStreaks).toBeUndefined();
     expect(stored.done).toBe(false);
+  });
+});
+
+/* ---------------------------------------------------------------------------
+ * Lifecycle guards and failure tolerance around the AI changes — pinned here
+ * so the whole changed file stays covered.
+ * ------------------------------------------------------------------------- */
+
+describe("game lifecycle guards", () => {
+  it("getGameById reports a finished game as done", async () => {
+    const gameId = randomUUID().toString();
+    await GameRepo.set(gameId, {
+      type: "nim",
+      state: { remaining: 0, nextPlayer: 1 },
+      done: true,
+      chat: "chat-x",
+      players: [user0.userId],
+      aiPlayers: [],
+      rated: false,
+      createdAt: new Date().toISOString(),
+      createdBy: user0.userId,
+    });
+    expect((await getGameById(gameId))!.status).toBe("done");
+  });
+
+  it("joinGame guards: unknown game, started game, duplicate join, full game", async () => {
+    const user1 = (await getUserByUsername("user1"))!;
+    const user2 = (await getUserByUsername("user2"))!;
+    await expect(joinGame(randomUUID().toString(), user0)).rejects.toThrow(/invalid game/);
+
+    const game = await createGame(user0, "nim", new Date());
+    await expect(joinGame(game.gameId, user0)).rejects.toThrow(/already/);
+    await joinGame(game.gameId, user1);
+    await expect(joinGame(game.gameId, user2)).rejects.toThrow(/full/);
+
+    await startGame(game.gameId, user0);
+    await expect(joinGame(game.gameId, user2)).rejects.toThrow(/started/);
+  });
+
+  it("startGame guards: unknown game, started game, underpopulated, non-member", async () => {
+    const user1 = (await getUserByUsername("user1"))!;
+    const user2 = (await getUserByUsername("user2"))!;
+    await expect(startGame(randomUUID().toString(), user0)).rejects.toThrow(/invalid game/);
+
+    const game = await createGame(user0, "nim", new Date());
+    await expect(startGame(game.gameId, user0)).rejects.toThrow(/underpopulated/);
+    await joinGame(game.gameId, user1);
+    await expect(startGame(game.gameId, user2)).rejects.toThrow(/not in/);
+    await startGame(game.gameId, user0);
+    await expect(startGame(game.gameId, user0)).rejects.toThrow(/started/);
+  });
+
+  it("updateGame guards: unknown game, unstarted game, non-player", async () => {
+    const user1 = (await getUserByUsername("user1"))!;
+    const user2 = (await getUserByUsername("user2"))!;
+    await expect(updateGame(randomUUID().toString(), user0, 3)).rejects.toThrow(/invalid game/);
+
+    const game = await createGame(user0, "nim", new Date());
+    await expect(updateGame(game.gameId, user0, 3)).rejects.toThrow(/hadn't started/);
+    await joinGame(game.gameId, user1);
+    await startGame(game.gameId, user0);
+    await expect(updateGame(game.gameId, user2, 3)).rejects.toThrow(/weren't playing/);
+  });
+
+  it("viewGame guards and views for members, outsiders, and unstarted games", async () => {
+    const user1 = (await getUserByUsername("user1"))!;
+    const user2 = (await getUserByUsername("user2"))!;
+    await expect(viewGame(randomUUID().toString(), user0)).rejects.toThrow(/invalid game/);
+
+    const game = await createGame(user0, "nim", new Date());
+    // Unstarted: no view yet, regardless of membership.
+    expect(await viewGame(game.gameId, user0)).toMatchObject({ isPlayer: true, view: null });
+
+    await joinGame(game.gameId, user1);
+    await startGame(game.gameId, user0);
+    const member = await viewGame(game.gameId, user0);
+    expect(member.isPlayer).toBe(true);
+    expect(member.view).not.toBeNull();
+    const outsider = await viewGame(game.gameId, user2);
+    expect(outsider.isPlayer).toBe(false);
+  });
+});
+
+describe("AI loop edge cases", () => {
+  it("returns null for a record without an aiPlayers list", async () => {
+    const gameId = randomUUID().toString();
+    const legacyRecord = {
+      type: "nim",
+      state: { remaining: 21, nextPlayer: 0 },
+      done: false,
+      chat: "chat-x",
+      players: [user0.userId],
+      rated: false,
+      createdAt: new Date().toISOString(),
+      createdBy: user0.userId,
+    } as GameRecord; // legacy pre-migration shape: aiPlayers absent
+    await GameRepo.set(gameId, legacyRecord);
+    expect(await maybeFireAiMove(gameId)).toBeNull();
+  });
+
+  it("logs and stands down on a non-inference error from the client", async () => {
+    setInferenceClientForTests({ requestMove: vi.fn().mockRejectedValue(new Error("boom")) });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const gameId = await seedNimGame({
+      players: [botSeat.deploymentId, user0.userId],
+      aiPlayers: [botSeat, null],
+      state: { remaining: 21, nextPlayer: 0 },
+    });
+
+    expect(await maybeFireAiMove(gameId)).toBeNull();
+    expect(consoleError).toHaveBeenCalled();
+    const stored = await GameRepo.get(gameId);
+    expect(stored.invalidMoveStreaks).toBeUndefined();
+  });
+
+  it("falls back to the deployment id when the seat has no players entry", async () => {
+    scriptAiMoves(3);
+    const gameId = await seedNimGame({
+      players: [user0.userId], // seat 1 missing from players entirely
+      aiPlayers: [null, botSeat],
+      state: { remaining: 21, nextPlayer: 1 },
+    });
+
+    // The fallback identity isn't seated, so updateGame rejects the move —
+    // the defensive ?? keeps the failure loud instead of a TypeError.
+    await expect(maybeFireAiMove(gameId)).rejects.toThrow(/weren't playing/);
+  });
+
+  it("encodes the guess observation window for a non-nim game with a turn marker", async () => {
+    const requestMove = vi.fn().mockResolvedValue({ move: 50 });
+    setInferenceClientForTests({ requestMove });
+    const gameId = randomUUID().toString();
+    await GameRepo.set(gameId, {
+      type: "guess",
+      state: { secret: 42, guesses: [null, null], nextPlayer: 1 },
+      done: false,
+      chat: "chat-x",
+      players: [user0.userId, botSeat.deploymentId],
+      aiPlayers: [null, botSeat],
+      rated: false,
+      createdAt: new Date().toISOString(),
+      createdBy: user0.userId,
+    });
+
+    const outcome = await maybeFireAiMove(gameId);
+
+    expect(requestMove).toHaveBeenCalledExactlyOnceWith({
+      deploymentId: botSeat.deploymentId,
+      state: { low: 1, high: 100 },
+    });
+    expect(outcome).not.toBeNull();
+    expect(outcome!.views.watchers.type).toBe("guess");
+  });
+});
+
+describe("failure tolerance around archival", () => {
+  it("keeps the accepted move when captureMove fails", async () => {
+    const user1 = (await getUserByUsername("user1"))!;
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(matchRecorder, "captureMove").mockRejectedValueOnce(new Error("archive down"));
+    const game = await createGame(user0, "nim", new Date());
+    await joinGame(game.gameId, user1);
+    await startGame(game.gameId, user0);
+
+    const { views } = await updateGame(game.gameId, user0, 3);
+
+    expect(nimView(views)).toEqual({ remaining: 18, nextPlayer: 1 });
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining("match capture failed"),
+      expect.any(Error),
+    );
+  });
+
+  it("still forfeits when the forfeit archive write fails", async () => {
+    setInferenceClientForTests({
+      requestMove: vi
+        .fn()
+        .mockRejectedValue(
+          new InferenceError("no legal action", 422, { consecutiveInvalid: 3, forfeit: true }),
+        ),
+    });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(matchRecorder, "finalizeAsForfeit").mockRejectedValueOnce(new Error("archive down"));
+    const gameId = await seedNimGame({
+      players: [user0.userId, botSeat.deploymentId],
+      aiPlayers: [null, botSeat],
+      state: { remaining: 10, nextPlayer: 0 },
+      rated: false,
+    });
+
+    const { gameResult } = await updateGame(gameId, user0, 3);
+
+    expect(gameResult).toEqual({ winnerId: user0.userId, outcome: "forfeit" });
+    expect((await GameRepo.get(gameId)).done).toBe(true);
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining("match capture failed"),
+      expect.any(Error),
+    );
   });
 });

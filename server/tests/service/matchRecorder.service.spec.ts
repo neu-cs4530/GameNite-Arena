@@ -238,6 +238,55 @@ describe("MatchRecorder", () => {
     expect(database.matches.get("game-001")!.moves.map((m) => m.move)).toEqual([2]);
   });
 
+  it("the default resolver reads UserRepo and falls back to the raw id", async () => {
+    const { getUserByUsername } = await import("../../src/services/auth.service.ts");
+    const user0 = (await getUserByUsername("user0"))!;
+    const defaultRecorder = new MatchRecorder({ database, getCurrentTime });
+    const game: GameRecord = { ...baseGame, players: [user0.userId, "ghost-user"] };
+
+    await defaultRecorder.captureMove(game, "game-default", user0.userId, 1, true);
+
+    const stored = database.matches.get("game-default")!;
+    expect(stored.participants).toEqual([
+      { id: user0.userId, type: "human", displayName: "The Knight Of Games" },
+      { id: "ghost-user", type: "human", displayName: "ghost-user" },
+    ]);
+  });
+
+  it("a game finalized during the idle sweep is not captured again", async () => {
+    let releaseSweep!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseSweep = resolve;
+    });
+    const gatedDatabase = {
+      saveMatch: async (record: Parameters<typeof database.saveMatch>[0]) => {
+        // Block ONLY the stale game's abandoned write so the sweep stays
+        // in-flight while the race happens.
+        if (record.gameId === "game-stale") await gate;
+        database.matches.set(record.gameId, record);
+      },
+    };
+    recorder = new MatchRecorder({ database: gatedDatabase, resolveDisplayName, getCurrentTime });
+
+    await recorder.captureMove(baseGame, "game-stale", "u-alice", 1, false);
+    await recorder.captureMove(baseGame, "game-racy", "u-alice", 1, false);
+    fakeTime += DEFAULT_IDLE_TIMEOUT_MS + 60_000;
+
+    // This capture first sweeps game-stale, which parks on the gate...
+    const pendingCapture = recorder.captureMove(baseGame, "game-racy", "u-bob", 2, true);
+    // ...and while it's parked, a forfeit finalizes game-racy.
+    await recorder.finalizeAsForfeit(baseGame, "game-racy", "u-alice");
+    releaseSweep();
+    await pendingCapture;
+
+    // The post-sweep re-check dropped the late capture: the forfeit archive
+    // stands, with only the first move.
+    const stored = database.matches.get("game-racy")!;
+    expect(stored.result).toEqual({ outcome: "forfeit", winnerId: "u-alice" });
+    expect(stored.moves.map((m) => m.move)).toEqual([1]);
+    expect(database.matches.get("game-stale")!.result).toEqual({ outcome: "abandoned" });
+  });
+
   describe("forfeit finalization (CoS 2.8)", () => {
     const seatedGame: GameRecord = {
       ...baseGame,

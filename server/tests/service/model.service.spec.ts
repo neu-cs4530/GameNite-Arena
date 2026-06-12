@@ -202,3 +202,180 @@ describe("updateDeploymentStatus", () => {
     ).rejects.toThrow("not own");
   });
 });
+
+// getModelById / getModelsByUser
+
+describe("model lookups", () => {
+  it("getModelById returns null for an unknown id and the info for a known one", async () => {
+    expect(await modelService.getModelById("no-such-model")).toBeNull();
+
+    const created = await modelService.uploadModel(
+      testUser,
+      "/tmp/test.pth",
+      "Lookup",
+      validMetadata,
+    );
+    const found = await modelService.getModelById(created.modelId);
+    expect(found).not.toBeNull();
+    expect(found!.displayName).toBe("Lookup");
+  });
+
+  it("getModelsByUser returns only the user's models, newest first", async () => {
+    const other: UserWithId = { userId: "someone-else", username: "other" };
+    const mine1 = await modelService.uploadModel(testUser, "/tmp/a.pth", "Old", {
+      ...validMetadata,
+    });
+    const mine2 = await modelService.uploadModel(testUser, "/tmp/b.pth", "New", {
+      ...validMetadata,
+    });
+    // A model the caller does NOT own must be filtered out.
+    await ModelRepo.add({
+      userId: other.userId,
+      gameKey: "nim",
+      displayName: "NotMine",
+      sourceRef: "",
+      visibility: "private",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    const models = await modelService.getModelsByUser(testUser.userId);
+    expect(models.map((m) => m.modelId).sort()).toEqual([mine1.modelId, mine2.modelId].sort());
+    expect(models[0].createdAt.getTime()).toBeGreaterThanOrEqual(models[1].createdAt.getTime());
+  });
+});
+
+// forkModel
+
+describe("forkModel", () => {
+  it("rejects a missing source model", async () => {
+    await expect(modelService.forkModel(testUser, "no-such-model")).rejects.toThrow("not found");
+  });
+});
+
+// deployModel edges
+
+describe("deployModel edges", () => {
+  async function uploadAndGetId(): Promise<string> {
+    const model = await modelService.uploadModel(testUser, "/tmp/t.pth", "nim", validMetadata);
+    return model.modelId;
+  }
+
+  it("rejects deploying a model that does not exist", async () => {
+    await expect(modelService.deployModel(testUser, "no-such-model")).rejects.toThrow("not found");
+  });
+
+  it("skips the inference load when no INFERENCE_SERVICE_URL is configured", async () => {
+    delete process.env["INFERENCE_SERVICE_URL"];
+    const modelId = await uploadAndGetId();
+
+    const dep = await modelService.deployModel(testUser, modelId);
+
+    expect(dep.status).toBe("active");
+    expect(inferenceClient.loadModel).not.toHaveBeenCalled();
+  });
+
+  it("proceeds with a warning when the inference service is down (5xx / no status)", async () => {
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(inferenceClient.loadModel).mockRejectedValueOnce(
+      Object.assign(new Error("service melted"), { status: 503 }),
+    );
+    const modelId = await uploadAndGetId();
+
+    const dep = await modelService.deployModel(testUser, modelId);
+
+    expect(dep.status).toBe("active");
+    expect(consoleWarn).toHaveBeenCalledWith(expect.stringContaining("unreachable"));
+    consoleWarn.mockRestore();
+  });
+
+  it("tolerates the deployment record vanishing during a failed-load rollback", async () => {
+    const clientError = Object.assign(new Error("bad artifact"), { status: 404 });
+    vi.mocked(inferenceClient.loadModel).mockRejectedValueOnce(clientError);
+    const modelId = await uploadAndGetId();
+    const findSpy = vi.spyOn(DeploymentRepo, "find").mockResolvedValueOnce(null);
+
+    await expect(modelService.deployModel(testUser, modelId)).rejects.toThrow(
+      "Inference load failed",
+    );
+    findSpy.mockRestore();
+  });
+});
+
+// updateDeploymentStatus edges
+
+describe("updateDeploymentStatus edges", () => {
+  async function uploadAndDeploy() {
+    const model = await modelService.uploadModel(testUser, "/tmp/t.pth", "nim", validMetadata);
+    return modelService.deployModel(testUser, model.modelId);
+  }
+
+  it("rejects an unknown deployment id", async () => {
+    await expect(
+      modelService.updateDeploymentStatus("no-such-dep", testUser, "paused"),
+    ).rejects.toThrow("not found");
+  });
+
+  it("retires through a 404 from unload (already unloaded)", async () => {
+    const dep = await uploadAndDeploy();
+    vi.mocked(inferenceClient.unloadModel).mockRejectedValueOnce(
+      Object.assign(new Error("gone"), { status: 404 }),
+    );
+    const updated = await modelService.updateDeploymentStatus(
+      dep.deploymentId,
+      testUser,
+      "retired",
+    );
+    expect(updated.status).toBe("retired");
+  });
+
+  it("retires through a 5xx from unload (service down)", async () => {
+    const dep = await uploadAndDeploy();
+    vi.mocked(inferenceClient.unloadModel).mockRejectedValueOnce(
+      Object.assign(new Error("down"), { status: 502 }),
+    );
+    const updated = await modelService.updateDeploymentStatus(
+      dep.deploymentId,
+      testUser,
+      "retired",
+    );
+    expect(updated.status).toBe("retired");
+  });
+
+  it("retires through an error carrying no status at all", async () => {
+    const dep = await uploadAndDeploy();
+    vi.mocked(inferenceClient.unloadModel).mockRejectedValueOnce(new Error("plain failure"));
+    const updated = await modelService.updateDeploymentStatus(
+      dep.deploymentId,
+      testUser,
+      "retired",
+    );
+    expect(updated.status).toBe("retired");
+  });
+
+  it("retires through a sub-400 status from unload", async () => {
+    const dep = await uploadAndDeploy();
+    vi.mocked(inferenceClient.unloadModel).mockRejectedValueOnce(
+      Object.assign(new Error("odd redirect"), { status: 302 }),
+    );
+    const updated = await modelService.updateDeploymentStatus(
+      dep.deploymentId,
+      testUser,
+      "retired",
+    );
+    expect(updated.status).toBe("retired");
+  });
+
+  it("rethrows a real client error from unload", async () => {
+    const dep = await uploadAndDeploy();
+    vi.mocked(inferenceClient.unloadModel).mockRejectedValueOnce(
+      Object.assign(new Error("forbidden"), { status: 403 }),
+    );
+    await expect(
+      modelService.updateDeploymentStatus(dep.deploymentId, testUser, "retired"),
+    ).rejects.toThrow("forbidden");
+    // The record keeps its previous status when the unload is rejected.
+    const record = await DeploymentRepo.get(dep.deploymentId);
+    expect(record.status).toBe("active");
+  });
+});

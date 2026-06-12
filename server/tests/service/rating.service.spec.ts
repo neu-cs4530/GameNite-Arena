@@ -9,6 +9,7 @@ import {
 import {
   getRating,
   getRatingForEntity,
+  getRatingSummary,
   updateRatingsForGame,
 } from "../../src/services/rating.service.ts";
 import { createRedisConnection } from "../../src/services/redis.ts";
@@ -385,5 +386,63 @@ describe("updateRatingsForGame with a forced forfeit result", () => {
     expect(match.result.outcome).toBe("forfeit");
     expect(match.result.winnerId).toBe("alice");
     expect(match.result.ratingChanges).toHaveLength(2);
+  });
+});
+
+describe("getRatingSummary", () => {
+  it("defaults to a provisional 1500 for a player with no record", async () => {
+    const summary = await getRatingSummary("nobody", "nim");
+    expect(summary).toEqual({
+      rating: DEFAULT_RATING,
+      rd: DEFAULT_RD,
+      gamesPlayed: 0,
+      provisional: true,
+    });
+  });
+
+  it("reports a settled record as non-provisional", async () => {
+    await RatingRepo.set(ratingKey({ entityType: "human", entityId: "vet", gameKey: "nim" }), {
+      entityId: "vet",
+      entityType: "human",
+      gameKey: "nim",
+      rating: 1700,
+      rd: 80,
+      vol: 0.05,
+      gamesPlayed: 12,
+      lastUpdatedAt: "2026-06-01T00:00:00.000Z",
+    });
+
+    const summary = await getRatingSummary("vet", "nim");
+    expect(summary).toEqual({ rating: 1700, rd: 80, gamesPlayed: 12, provisional: false });
+  });
+
+  it("stays provisional with a low rd but zero games played", async () => {
+    await RatingRepo.set(ratingKey({ entityType: "human", entityId: "fresh", gameKey: "nim" }), {
+      entityId: "fresh",
+      entityType: "human",
+      gameKey: "nim",
+      rating: 1500,
+      rd: 80,
+      vol: 0.05,
+      gamesPlayed: 0,
+      lastUpdatedAt: "2026-06-01T00:00:00.000Z",
+    });
+
+    const summary = await getRatingSummary("fresh", "nim");
+    expect(summary.provisional).toBe(true);
+  });
+});
+
+describe("updateRatingsForGame guess edge", () => {
+  it("treats a missing guess as zero when picking the winner", async () => {
+    const game: GameRecord = {
+      ...baseGame,
+      type: "guess",
+      state: { secret: 50, guesses: [null, 30] }, // alice never guessed: |0-50| vs |30-50|
+    };
+
+    const result = await updateRatingsForGame(game, "game-null-guess");
+
+    expect(result!.winnerId).toBe("bob");
   });
 });
