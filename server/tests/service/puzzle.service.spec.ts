@@ -255,11 +255,11 @@ describe("submitAttempt: daily rated-attempt economy", () => {
     expect(outcome!.rated).toBe(true);
     expect(outcome!.success).toBe(true);
     expect(outcome!.eloDelta).toBeGreaterThan(0);
-    expect(outcome!.newRating.rating).toBeGreaterThan(before.puzzleRating.rating);
+    expect(outcome!.newRating.rating).toBeGreaterThan(before.puzzleRatings.nim!.rating);
     expect(outcome!.streak).toStrictEqual({ current: 1, best: 1, lastSolvedAt: todayIso });
 
     const after = await UserRepo.get(userId);
-    expect(after.puzzleRating).toStrictEqual(outcome!.newRating);
+    expect(after.puzzleRatings.nim).toStrictEqual(outcome!.newRating);
     expect(after.puzzleStreak).toStrictEqual(outcome!.streak);
   });
 
@@ -278,11 +278,11 @@ describe("submitAttempt: daily rated-attempt economy", () => {
     expect(second!.rated).toBe(false);
     expect(second!.success).toBe(true); // still graded honestly
     expect(second!.eloDelta).toBe(0);
-    expect(second!.newRating).toStrictEqual(afterFirst.puzzleRating);
+    expect(second!.newRating).toStrictEqual(afterFirst.puzzleRatings.nim);
     expect(second!.streak).toStrictEqual(afterFirst.puzzleStreak);
 
     const afterSecond = await UserRepo.get(userId);
-    expect(afterSecond.puzzleRating).toStrictEqual(afterFirst.puzzleRating);
+    expect(afterSecond.puzzleRatings.nim).toStrictEqual(afterFirst.puzzleRatings.nim);
     expect(afterSecond.puzzleStreak).toStrictEqual(afterFirst.puzzleStreak);
   });
 
@@ -296,10 +296,10 @@ describe("submitAttempt: daily rated-attempt economy", () => {
     expect(outcome!.success).toBe(true);
     expect(outcome!.rated).toBe(false);
     expect(outcome!.eloDelta).toBe(0);
-    expect(outcome!.newRating).toStrictEqual(before.puzzleRating);
+    expect(outcome!.newRating).toStrictEqual(before.puzzleRatings.nim);
 
     const after = await UserRepo.get(userId);
-    expect(after.puzzleRating).toStrictEqual(before.puzzleRating);
+    expect(after.puzzleRatings.nim).toStrictEqual(before.puzzleRatings.nim);
     expect(after.puzzleStreak).toStrictEqual(before.puzzleStreak);
   });
 

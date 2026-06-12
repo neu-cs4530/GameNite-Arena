@@ -18,7 +18,10 @@ describe("000_sprint1_arena_baseline", () => {
     await migration.up();
 
     const updated = await UserRepo.get(legacyKey);
-    expect(updated.puzzleRating).toEqual({ rating: 1500, rd: 350, vol: 0.06 });
+    // Per-game ratings start EMPTY — a rating exists only once the user's
+    // first rated attempt lands (an untouched default would be
+    // indistinguishable from "never played" on the puzzle leaderboard).
+    expect(updated.puzzleRatings).toEqual({});
     expect(updated.puzzleStreak).toEqual({ current: 0, best: 0 });
     expect(updated.following).toEqual([]);
     expect(updated.username).toBe("legacy_user");
@@ -30,7 +33,7 @@ describe("000_sprint1_arena_baseline", () => {
       username: "preset",
       display: "Preset",
       createdAt: new Date("2025-01-01").toISOString(),
-      puzzleRating: { rating: 1700, rd: 200, vol: 0.05 },
+      puzzleRatings: { nim: { rating: 1700, rd: 200, vol: 0.05 } },
       puzzleStreak: { current: 4, best: 9 },
       following: ["someone"],
     });
@@ -38,7 +41,7 @@ describe("000_sprint1_arena_baseline", () => {
     await migration.up();
 
     const after = await UserRepo.get(presetKey);
-    expect(after.puzzleRating).toEqual({ rating: 1700, rd: 200, vol: 0.05 });
+    expect(after.puzzleRatings.nim).toEqual({ rating: 1700, rd: 200, vol: 0.05 });
     expect(after.puzzleStreak).toEqual({ current: 4, best: 9 });
     expect(after.following).toEqual(["someone"]);
   });

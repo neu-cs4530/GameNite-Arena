@@ -1,3 +1,4 @@
+import { type Request, type Response } from "express";
 import { withAuth, zGameKey } from "@gamenite/shared";
 import { z } from "zod";
 import { checkAuth } from "../services/auth.service.ts";
@@ -76,3 +77,13 @@ export const postAttempt: RestAPI<AttemptResult, { gameKey: string }> = async (r
 
   res.send(result);
 };
+
+/** GET /api/puzzle/leaderboard?scope=&page=&limit= — ranked puzzle standings. */
+export async function getLeaderboard(_req: Request, res: Response): Promise<void> {
+  res.status(501).send({ error: "puzzle leaderboard not implemented yet" });
+}
+
+/** POST /api/puzzle/:gameKey/hint — authed hint grant (spends the rated slot). */
+export async function postHint(_req: Request, res: Response): Promise<void> {
+  res.status(501).send({ error: "puzzle hint not implemented yet" });
+}

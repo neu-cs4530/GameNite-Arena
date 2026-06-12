@@ -121,13 +121,13 @@ describe("POST /api/puzzle/:gameKey/attempt", () => {
     expect(response.body.success).toBe(true);
     expect(response.body.rated).toBe(true);
     expect(response.body.eloDelta).toBeGreaterThan(0);
-    expect(response.body.newRating.rating).toBeGreaterThan(before.puzzleRating.rating);
-    expect(response.body.newRating.rd).toBeLessThan(before.puzzleRating.rd);
+    expect(response.body.newRating.rating).toBeGreaterThan(before.puzzleRatings.nim!.rating);
+    expect(response.body.newRating.rd).toBeLessThan(before.puzzleRatings.nim!.rd);
     expect(response.body.streak).toStrictEqual({ current: 1, best: 1, lastSolvedAt: today() });
 
     // make sure the new rating and streak actually got saved on the user too
     const after = await UserRepo.get(user.userId);
-    expect(after.puzzleRating).toStrictEqual(response.body.newRating);
+    expect(after.puzzleRatings.nim).toStrictEqual(response.body.newRating);
     expect(after.puzzleStreak).toStrictEqual(response.body.streak);
   });
 
@@ -143,7 +143,7 @@ describe("POST /api/puzzle/:gameKey/attempt", () => {
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(false);
     expect(response.body.eloDelta).toBeLessThan(0);
-    expect(response.body.newRating.rating).toBeLessThan(before.puzzleRating.rating);
+    expect(response.body.newRating.rating).toBeLessThan(before.puzzleRatings.nim!.rating);
     expect(response.body.streak).toStrictEqual(before.puzzleStreak);
   });
 

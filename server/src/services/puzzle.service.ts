@@ -264,7 +264,8 @@ export async function submitAttempt(
   const today = new Date().toISOString().slice(0, 10);
   const rated = attempt.hintsUsed === 0 && userRecord.puzzleLastRatedAt?.[gameKey] !== today;
 
-  let newRating = userRecord.puzzleRating;
+  const currentRating = userRecord.puzzleRatings[gameKey] ?? { rating: 1500, rd: 350, vol: 0.06 };
+  let newRating = currentRating;
   let newStreak = userRecord.puzzleStreak;
   let eloDelta = 0;
 
@@ -272,14 +273,14 @@ export async function submitAttempt(
     const result: Glicko2GameResult = { ...puzzleOpponent, score: success ? 1.0 : 0.0 };
     const updated = updateRating(
       {
-        rating: userRecord.puzzleRating.rating,
-        rd: userRecord.puzzleRating.rd,
-        volatility: userRecord.puzzleRating.vol,
+        rating: currentRating.rating,
+        rd: currentRating.rd,
+        volatility: currentRating.vol,
       },
       [result],
     );
     newRating = { rating: updated.rating, rd: updated.rd, vol: updated.volatility };
-    eloDelta = Math.round(newRating.rating - userRecord.puzzleRating.rating);
+    eloDelta = Math.round(newRating.rating - currentRating.rating);
 
     // streak only updates on the first successful solve of each day
     const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
@@ -297,7 +298,7 @@ export async function submitAttempt(
 
     await UserRepo.set(userId, {
       ...userRecord,
-      puzzleRating: newRating,
+      puzzleRatings: { ...userRecord.puzzleRatings, [gameKey]: newRating },
       puzzleStreak: newStreak,
       puzzleLastRatedAt: { ...userRecord.puzzleLastRatedAt, [gameKey]: today },
     });
