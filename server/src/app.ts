@@ -15,6 +15,7 @@ import * as thread from "./controllers/thread.controller.ts";
 import * as puzzle from "./controllers/puzzle.controller.ts";
 import * as rating from "./controllers/rating.controller.ts";
 import * as replay from "./controllers/replay.controller.ts";
+import * as annotation from "./controllers/annotation.controller.ts";
 import * as training from "./controllers/training.controller.ts";
 import * as deployment from "./controllers/deployment.controller.ts";
 import { type GameServer } from "./types.ts";
@@ -82,6 +83,10 @@ app.use(
         .get("/:matchId/download", replay.getDownload)
         .get("/:matchId", replay.getById)
         .post("/:matchId/view", replay.postView),
+    )
+    .use(
+      "/annotation",
+      express.Router().post("/create", annotation.postCreate).get("/:id", annotation.getById),
     )
     .use("/training", training.trainingRouter())
     .use("/deployment", deployment.deploymentRouter()),
