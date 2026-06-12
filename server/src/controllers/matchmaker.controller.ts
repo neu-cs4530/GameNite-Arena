@@ -3,11 +3,12 @@ import { type GameServer, type RestAPI, type SocketAPI } from "../types.ts";
 import { enforceAuth } from "../services/auth.service.ts";
 import { createGame, joinGame, startGame } from "../services/game.service.ts";
 import {
-  getPlayerRating,
+  getEntityRating,
   getQueueCounts,
   getQueueSnapshot,
   joinQueue,
   leaveQueue,
+  resolveAiSeatForQueue,
   runMatchmakingTick,
   TICK_INTERVAL_MS,
   type QueueCounts,
@@ -16,16 +17,27 @@ import {
 import { logSocketError } from "./socket.controller.ts";
 
 /**
- * Handle a request to join the matchmaking queue for a game.
+ * Handle a request to join the matchmaking queue for a game. With a
+ * deploymentId in the payload, the user's deployed model is queued in their
+ * place (CoS 2.6): the deployment is validated (owned, active, right game,
+ * AI-playable game) and the entry competes with the MODEL's rating.
  */
 export const socketJoinQueue: SocketAPI = (socket) => async (body) => {
   try {
     const {
       auth,
-      payload: { gameKey, rated },
+      payload: { gameKey, rated, deploymentId },
     } = withAuth(zMatchmakingJoinPayload).parse(body);
     const user = await enforceAuth(auth);
-    const rating = await getPlayerRating(user.userId, gameKey);
+
+    const aiSeat =
+      deploymentId === undefined
+        ? undefined
+        : await resolveAiSeatForQueue(user, deploymentId, gameKey);
+    const rating = await getEntityRating(
+      aiSeat ? { type: "ai", id: aiSeat.modelId } : { type: "human", id: user.userId },
+      gameKey,
+    );
 
     joinQueue({
       userId: user.userId,
@@ -35,6 +47,7 @@ export const socketJoinQueue: SocketAPI = (socket) => async (body) => {
       rated,
       joinedAt: new Date(),
       socketId: socket.id,
+      aiSeat,
     });
   } catch (err) {
     logSocketError(socket, err);
