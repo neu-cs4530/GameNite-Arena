@@ -267,6 +267,55 @@ def test_upload_artifact_sends_multipart_with_json_token_auth_field(fake_server,
     assert b"fake torch weights" in request["raw"]
 
 
+def test_get_job_is_a_plain_unauthenticated_get(fake_server):
+    server, base_url = fake_server
+    server.script.append((200, {
+        "jobId": "web-job-7", "gameKey": "nim", "status": "queued",
+        "config": {"episodes": 30720, "learningRate": 0.0003,
+                   "extra": {"heuristics": {"opponentStyle": "uniform-random"}}},
+    }))
+
+    session = GameNiteSession(base_url, token="t" * 32)
+    info = session.get_job("web-job-7")
+
+    assert info["gameKey"] == "nim"
+    assert info["config"]["episodes"] == 30720
+    assert info["config"]["extra"]["heuristics"]["opponentStyle"] == "uniform-random"
+
+    [request] = server.records
+    assert request["method"] == "GET"
+    assert request["path"] == "/api/training/web-job-7"
+    assert request["raw"] == b""               # no body at all
+    # Public endpoint: no token exchange, no auth payload anywhere.
+    assert server.tokens_issued == 0
+
+
+def test_get_job_defaults_to_attached_job(fake_server):
+    server, base_url = fake_server
+    server.script.append((200, {"jobId": "j9", "gameKey": "nim", "status": "queued"}))
+
+    session = GameNiteSession(base_url, token="t" * 32)
+    session.attach("j9")
+    assert session.get_job()["jobId"] == "j9"
+    assert server.records[0]["path"] == "/api/training/j9"
+
+
+def test_get_job_without_id_raises(fake_server):
+    _, base_url = fake_server
+    session = GameNiteSession(base_url, token="t" * 32)
+    with pytest.raises(RuntimeError, match="job"):
+        session.get_job()
+
+
+def test_get_job_404_raises_with_server_message(fake_server):
+    server, base_url = fake_server
+    server.script.append((404, {"error": "Training session nope not found"}))
+
+    session = GameNiteSession(base_url, token="t" * 32)
+    with pytest.raises(GameNiteSessionError, match="not found"):
+        session.get_job("nope")
+
+
 def test_attach_adopts_a_web_registered_session(fake_server):
     server, base_url = fake_server
     server.script.append((200, {"jobId": "web-job-7", "status": "running"}))

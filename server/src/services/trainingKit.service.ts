@@ -37,14 +37,10 @@ const KIT_FILES: KitFile[] = [
     description: "GameNiteAdapter base class (SB3 PPO loop, .pth serialization)",
   },
   {
-    name: "example_local_training_nim.py",
-    relPath: "example_local_training_nim.py",
-    description: "REAL end-to-end run: SB3 training + live reporting + artifact upload",
-  },
-  {
-    name: "demo_local_session.py",
-    relPath: "demo_local_session.py",
-    description: "Fake run with synthetic metrics — verify your setup end to end",
+    name: "train.py",
+    relPath: "train.py",
+    description:
+      "The trainer CLI (kit entrypoint): real chunked PPO, live reporting, artifact upload",
   },
   {
     name: "requirements.txt",
@@ -101,9 +97,13 @@ export function getKitFilePath(name: string): string | null {
 }
 
 /**
- * One-shot bootstrap script: fetches every kit file into a fresh directory
- * and prints the next steps. Served at GET /api/training/kit/install.sh so
- * onboarding is a single copy-pasteable line.
+ * One-shot bootstrap script: fetches every kit file into a fresh directory,
+ * builds a venv with the pinned requirements, and either hands off straight
+ * into an attached training run or prints the next steps. Served at
+ * GET /api/training/kit/install.sh so onboarding is a single line:
+ *
+ *   curl -fsSL <base>/api/training/kit/install.sh | sh
+ *   curl -fsSL <base>/api/training/kit/install.sh | sh -s -- --job-id <id> --token <tkn>
  */
 export function buildInstallScript(baseUrl: string): string {
   const fetches = getKitManifest()
@@ -113,26 +113,50 @@ export function buildInstallScript(baseUrl: string): string {
   return `#!/bin/sh
 # GameNite Arena - local training kit bootstrap
 # Usage: curl -fsSL ${baseUrl}/api/training/kit/install.sh | sh
+#        curl -fsSL ${baseUrl}/api/training/kit/install.sh | sh -s -- --job-id <id> --token <tkn>
 set -e
 
 BASE="\${GAMENITE_URL:-${baseUrl}}"
 KIT_DIR="gamenite-training-kit"
+JOB_ID=""
+TOKEN=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --job-id)
+      [ $# -ge 2 ] || { echo "Missing value for --job-id" >&2; exit 1; }
+      JOB_ID="$2"; shift 2 ;;
+    --token)
+      [ $# -ge 2 ] || { echo "Missing value for --token" >&2; exit 1; }
+      TOKEN="$2"; shift 2 ;;
+    *)
+      echo "Unknown option: $1 (supported: --job-id <id>, --token <tkn>)" >&2
+      exit 1 ;;
+  esac
+done
 
 mkdir -p "$KIT_DIR"
 cd "$KIT_DIR"
 
 ${fetches}
 
+python3 -m venv .venv
+.venv/bin/pip install -q -r requirements.txt
+
+if [ -n "$JOB_ID" ]; then
+  echo ""
+  echo "Kit ready - attaching to training run $JOB_ID"
+  GAMENITE_TOKEN="$TOKEN" exec .venv/bin/python train.py --base-url "$BASE" --job-id "$JOB_ID"
+fi
+
 echo ""
 echo "GameNite training kit ready in ./$KIT_DIR"
 echo ""
-echo "Next steps (all from inside ./$KIT_DIR — the kit is flat, no subfolders):"
-echo "  1. cd $KIT_DIR && python3 -m pip install -r requirements.txt"
-echo "  2. Real training run (SB3 PPO on Nim, streams live to the dashboard):"
-echo "     python3 example_local_training_nim.py --base-url $BASE --username <you> --password <pwd>"
-echo "     (append --job-id <id> to attach to a run registered on the web)"
-echo "  3. Optional smoke test with synthetic metrics, no learning:"
-echo "     python3 demo_local_session.py --base-url $BASE --username <you> --password <pwd>"
-echo "  4. Wire session_reporter.py into your own adapter loop (see its docstring)."
+echo "Next steps (all from inside ./$KIT_DIR - the kit is flat, no subfolders):"
+echo "  1. Attach to a run registered on the web (the job page shows your --job-id):"
+echo "     .venv/bin/python train.py --base-url $BASE --job-id <id> --token <tkn>"
+echo "  2. Or self-register a run from the CLI:"
+echo "     .venv/bin/python train.py --base-url $BASE --game nim --username <you> --password <pwd>"
+echo "  3. Wire session_reporter.py into your own adapter loop (see its docstring)."
 `;
 }

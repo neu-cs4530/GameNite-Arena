@@ -1,0 +1,291 @@
+"""
+GameNite Arena — Local Trainer CLI (the kit entrypoint)
+=======================================================
+Trains a REAL SB3 PPO policy on your machine and streams the run to
+GameNite Arena: chunked training, real rollout evaluation after every
+chunk, live progress reports, artifact upload, done. Nothing is faked.
+
+Two ways to run it:
+
+  Attach to a run registered on the web form (the page shows this exact
+  command — the job carries the game, episodes, learning rate, and the
+  training heuristics you picked):
+
+      python3 train.py --job-id <id> --token <token>
+
+  Or self-register from the CLI (game defaults are used for heuristics):
+
+      python3 train.py --game nim --username <you> --password <pwd>
+
+Auth: --token (or env GAMENITE_TOKEN), or --username/--password — the
+password is exchanged exactly once for an expiring token. --job-id also
+reads env GAMENITE_JOB_ID, so the one-line kit bootstrap can hand off
+directly into an attached run.
+
+Heuristics (chosen on the web form, mirrored from
+shared/src/trainingHeuristics.ts — missing/invalid values fall back to
+the game's defaults):
+
+  nim:  opponentStyle  misere-blunder-25 | misere-blunder-15 | uniform-random
+        startingPile   random-8-21 | fixed-21
+        rewardShaping  none | potential-mod4   (potential-based; the win-rate
+                       eval always runs against the UNSHAPED env)
+
+Cancel works mid-run: hit Cancel on the job page and the next report
+stops the loop. Watch live at <client>/trainer/jobs/<job id>.
+
+Only nim has a local trainer today; the other adapters in this kit are
+reference implementations to build yours on.
+"""
+
+from __future__ import annotations
+
+import argparse
+import math
+import os
+import sys
+import tempfile
+from pathlib import Path
+from typing import Any
+
+# The kit is FLAT (everything in one directory); in the repo the adapters
+# live under ai/adapter/. Support both layouts.
+AI_DIR = Path(__file__).resolve().parent
+for _p in (str(AI_DIR), str(AI_DIR / "adapter")):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+from session_reporter import GameNiteSession, GameNiteSessionError  # noqa: E402
+
+PPO_N_STEPS = 512          # rollout length per env
+N_ENVS = 4                 # vectorized envs -> one PPO rollout = 2048 steps
+DEFAULT_CHUNK_STEPS = PPO_N_STEPS * N_ENVS
+EVAL_EPISODES = 200
+
+
+# heuristics -> env params (pure; unit-tested)
+
+_NIM_OPPONENTS = {
+    "misere-blunder-25": {"opponent_style": "misere", "opponent_mistake_rate": 0.25},
+    "misere-blunder-15": {"opponent_style": "misere", "opponent_mistake_rate": 0.15},
+    "uniform-random": {"opponent_style": "uniform-random"},
+}
+_NIM_STARTS = {
+    "random-8-21": {"random_start": True, "start_low": 8},
+    "fixed-21": {"random_start": False},
+}
+_NIM_SHAPING = {
+    "none": {"reward_shaping": False},
+    "potential-mod4": {"reward_shaping": True},
+}
+_NIM_TABLES = (
+    ("opponentStyle", _NIM_OPPONENTS, "misere-blunder-25"),
+    ("startingPile", _NIM_STARTS, "random-8-21"),
+    ("rewardShaping", _NIM_SHAPING, "none"),
+)
+
+
+def nim_env_params(heuristics: Any) -> dict:
+    """
+    Map the job's nim heuristics (config.extra.heuristics) onto NimEnv
+    constructor params. Defaults mirror shared/src/trainingHeuristics.ts;
+    any missing/invalid value falls back PER KEY.
+    """
+    chosen = heuristics if isinstance(heuristics, dict) else {}
+    params: dict = {"starting_pile": 21}
+    for key, table, default in _NIM_TABLES:
+        params.update(table.get(chosen.get(key), table[default]))
+    return params
+
+
+def plan_chunks(total_steps: int, chunk_steps: int = DEFAULT_CHUNK_STEPS) -> int:
+    """How many train-report chunks a run of total_steps needs."""
+    if total_steps <= 0:
+        raise ValueError(f"total_steps must be positive, got {total_steps}")
+    if chunk_steps <= 0:
+        raise ValueError(f"chunk_steps must be positive, got {chunk_steps}")
+    return max(1, math.ceil(total_steps / chunk_steps))
+
+
+# the nim trainer
+
+def evaluate_nim(model, env_params: dict) -> tuple[float, float]:
+    """Real rollouts vs the UNSHAPED env: (winRate, meanReward)."""
+    from example_nim_adapter import NimEnv
+
+    env = NimEnv(**{**env_params, "reward_shaping": False})
+    wins = 0
+    total_reward = 0.0
+    for episode in range(EVAL_EPISODES):
+        obs, _ = env.reset(seed=episode if episode == 0 else None)
+        done = False
+        episode_reward = 0.0
+        while not done:
+            action, _ = model.predict(obs, deterministic=True)
+            obs, reward, done, _, _ = env.step(int(action))
+            episode_reward += float(reward)
+        total_reward += episode_reward
+        if episode_reward > 0:
+            wins += 1
+    return wins / EVAL_EPISODES, total_reward / EVAL_EPISODES
+
+
+def run_nim(session: GameNiteSession, *, user_id: str, episodes: int,
+            learning_rate: float, heuristics: Any, chunk_steps: int,
+            display_name: str) -> int:
+    """Chunked PPO on NimEnv with live reporting and artifact upload."""
+    from stable_baselines3 import PPO
+
+    from example_nim_adapter import NimAdapter
+
+    env_params = nim_env_params(heuristics)
+    print(f"[train] nim env params: {env_params}")
+
+    adapter = NimAdapter(user_id=user_id, env_kwargs=env_params)
+    env = adapter.build_env()
+    model = PPO("MlpPolicy", env, learning_rate=learning_rate,
+                n_steps=PPO_N_STEPS, verbose=0)
+    adapter._model = model
+
+    n_chunks = plan_chunks(episodes, chunk_steps)
+    win_rate, mean_reward = 0.0, 0.0
+    for chunk in range(1, n_chunks + 1):
+        model.learn(total_timesteps=chunk_steps, reset_num_timesteps=False)
+        win_rate, mean_reward = evaluate_nim(model, env_params)
+        keep_going = session.report(
+            model.num_timesteps,
+            metrics={"winRate": round(win_rate, 4),
+                     "meanReward": round(mean_reward, 4)},
+            message=f"chunk {chunk}/{n_chunks} - winRate {win_rate:.2f}",
+        )
+        print(f"[train] {model.num_timesteps} steps  "
+              f"winRate={win_rate:.2f}  meanReward={mean_reward:+.2f}")
+        if not keep_going:
+            print("[train] canceled from the web UI - stopping")
+            return 0
+
+    session.complete(final_metrics={"winRate": round(win_rate, 4),
+                                    "meanReward": round(mean_reward, 4)})
+
+    # Serialize through the adapter's own format and hand it to the platform,
+    # which validates and stores the artifact (bytes + sha256 on the job page).
+    with tempfile.TemporaryDirectory() as tmp:
+        pth = Path(tmp) / f"{display_name}.pth"
+        adapter.save(str(pth))
+        info = session.upload_artifact(str(pth))
+    print(f"[train] artifact uploaded and verified by the platform "
+          f"(hasArtifact={info.get('hasArtifact')}) - done")
+    print(f"[train] final winRate {win_rate:.2f} over {model.num_timesteps} steps")
+    return 0
+
+
+# Games with a real local trainer. The other adapters in the kit are
+# reference implementations — wire one up and register it here.
+TRAINERS = {
+    "nim": run_nim,
+}
+
+
+# CLI
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="train.py",
+        description="GameNite Arena local trainer: real PPO on your machine, "
+                    "streamed live to the platform.",
+    )
+    parser.add_argument("--base-url", default="http://localhost:8000",
+                        help="GameNite server (default: %(default)s)")
+    parser.add_argument("--token", default=os.environ.get("GAMENITE_TOKEN") or None,
+                        help="Trainer token (or env GAMENITE_TOKEN)")
+    parser.add_argument("--username", default=None)
+    parser.add_argument("--password", default=None)
+    parser.add_argument("--job-id", default=os.environ.get("GAMENITE_JOB_ID") or None,
+                        help="Attach to a run registered on the web form; the "
+                             "job's game/config/heuristics are fetched "
+                             "automatically (or env GAMENITE_JOB_ID)")
+    parser.add_argument("--game", default=None,
+                        help="Game key when self-registering (no --job-id). "
+                             f"Local trainers exist for: {', '.join(TRAINERS)}")
+    parser.add_argument("--name", default=None,
+                        help="Model display name when self-registering")
+    parser.add_argument("--episodes", type=int, default=30_720,
+                        help="Total env timesteps when self-registering "
+                             "(default: %(default)s)")
+    parser.add_argument("--learning-rate", type=float, default=3e-4,
+                        help="PPO learning rate when self-registering")
+    parser.add_argument("--chunk-steps", type=int, default=DEFAULT_CHUNK_STEPS,
+                        help="Timesteps per train-report chunk "
+                             "(default: %(default)s = one PPO rollout)")
+    return parser
+
+
+def validate_args(args: argparse.Namespace) -> str | None:
+    """Pure argument validation; returns an error message or None."""
+    if args.token is None and (args.username is None or args.password is None):
+        return ("auth required: --token (or env GAMENITE_TOKEN), "
+                "or both --username and --password")
+    if args.job_id is None and args.game is None:
+        return "--game is required when not attaching with --job-id"
+    return None
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    error = validate_args(args)
+    if error:
+        print(f"[train] {error}", file=sys.stderr)
+        return 2
+
+    session = GameNiteSession(args.base_url, args.username, args.password,
+                              token=args.token)
+
+    heuristics = None
+    if args.job_id:
+        # The web form registered the job; it carries everything we need.
+        info = session.get_job(args.job_id)
+        game = info["gameKey"]
+        config = info.get("config") or {}
+        episodes = int(config.get("episodes", args.episodes))
+        learning_rate = float(config.get("learningRate", args.learning_rate))
+        heuristics = (config.get("extra") or {}).get("heuristics")
+    else:
+        game = args.game
+        episodes = args.episodes
+        learning_rate = args.learning_rate
+
+    runner = TRAINERS.get(game)
+    if runner is None:
+        print(f"[train] no local trainer for '{game}' yet — adapters exist "
+              f"for: {', '.join(TRAINERS)}", file=sys.stderr)
+        return 2
+
+    if args.job_id:
+        job_id = session.attach(args.job_id)
+        print(f"[train] attached to session {job_id} — it goes live on the "
+              f"first report")
+    else:
+        display_name = args.name or f"{game}-ppo-local"
+        job_id = session.start(game, episodes=episodes,
+                               learning_rate=learning_rate,
+                               model_display_name=display_name)
+        print(f"[train] session {job_id} registered — watch /trainer/jobs/{job_id}")
+
+    return runner(
+        session,
+        user_id=args.username or "token-user",
+        episodes=episodes,
+        learning_rate=learning_rate,
+        heuristics=heuristics,
+        chunk_steps=args.chunk_steps,
+        display_name=args.name or f"{game}-ppo-local",
+    )
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except GameNiteSessionError as exc:
+        print(f"[train] platform error: {exc}", file=sys.stderr)
+        sys.exit(1)

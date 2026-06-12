@@ -106,10 +106,23 @@ class GameNiteSession:
         Adopt a session registered elsewhere — typically the web UI's
         "New training run" page, which registers a queued session and shows
         the command to run locally. Subsequent report()/complete()/fail()/
-        upload_artifact() calls post to that job. Makes no requests itself.
+        upload_artifact() calls post to that job. Makes no requests itself;
+        use get_job() to discover the job's game and config.
         """
         self.job_id = job_id
         return job_id
+
+    def get_job(self, job_id: str | None = None) -> dict[str, Any]:
+        """
+        Fetch a session's public info — plain GET /api/training/:jobId, no
+        auth needed. This is how an attached trainer discovers gameKey and
+        config (episodes, learningRate, extra.heuristics) for a run that
+        was registered on the web form. Defaults to the attached job.
+        """
+        target = job_id if job_id is not None else self.job_id
+        if target is None:
+            raise RuntimeError("get_job() needs a job id (pass one or attach() first)")
+        return self._request(f"/api/training/{target}", method="GET")
 
     def report(self, episodes: int, metrics: dict[str, float] | None = None,
                message: str | None = None) -> bool:
@@ -208,12 +221,14 @@ class GameNiteSession:
                 return self._request(path, body=body, content_type="application/json")
             raise
 
-    def _request(self, path: str, *, body: bytes, content_type: str) -> dict[str, Any]:
+    def _request(self, path: str, *, body: bytes | None = None,
+                 content_type: str | None = None,
+                 method: str | None = None) -> dict[str, Any]:
         request = urllib.request.Request(
             f"{self.base_url}{path}",
             data=body,
-            method="POST",
-            headers={"Content-Type": content_type},
+            method=method or "POST",
+            headers={"Content-Type": content_type} if content_type else {},
         )
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
