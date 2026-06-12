@@ -3,6 +3,13 @@ import express from "express";
 import supertest from "supertest";
 import { SEED_REPLAYS } from "../../src/__fixtures__/replays.fixture.ts";
 import * as replay from "../../src/controllers/replay.controller.ts";
+import type { MatchRecord } from "../../src/models.ts";
+import { DeploymentRepo, MatchRepo } from "../../src/repository.ts";
+import {
+  mockInferenceClient,
+  resetInferenceClient,
+  setInferenceClient,
+} from "../../src/services/inferenceClient.ts";
 import {
   InMemoryReplayStore,
   makeDefaultStore,
@@ -24,7 +31,8 @@ function makeApp(): express.Express {
       .get("/list", replay.getList)
       .get("/:matchId/download", replay.getDownload)
       .get("/:matchId", replay.getById)
-      .post("/:matchId/view", replay.postView),
+      .post("/:matchId/view", replay.postView)
+      .post("/:matchId/analysis", replay.postAnalysis),
   );
   return app;
 }
@@ -242,6 +250,107 @@ describe("POST /api/replay/:matchId/view", () => {
   it("returns 404 for an unknown match id", async () => {
     const res = await supertest(makeApp()).post("/api/replay/ghost/view");
     expect(res.status).toBe(404);
+    expect(res.body).toMatchObject({ error: expect.any(String) });
+  });
+});
+
+describe("POST /api/replay/:matchId/analysis", () => {
+  it("returns per-move engine flags for an archived nim match", async () => {
+    const record: MatchRecord = {
+      gameId: "game-nim-1",
+      gameKey: "nim",
+      rated: true,
+      participants: [
+        { id: "u-a", type: "human", displayName: "Alice" },
+        { id: "u-b", type: "human", displayName: "Bob" },
+      ],
+      // remaining=21 is already a forced loss, so move 0 is neutral no matter what.
+      moves: [{ actor: "u-a", move: 3, timestamp: "2026-06-09T00:00:00.000Z" }],
+      result: { outcome: "win", winnerId: "u-b" },
+      initialState: { remaining: 21, nextPlayer: 0 },
+      createdAt: "2026-06-09T00:10:00.000Z",
+      completedAt: "2026-06-09T00:10:00.000Z",
+    };
+    await MatchRepo.set("ctrl-nim", record);
+
+    const res = await supertest(makeApp()).post("/api/replay/ctrl-nim/analysis");
+
+    expect(res.status).toBe(200);
+    expect(res.body.matchId).toBe("ctrl-nim");
+    expect(res.body.perMove).toHaveLength(1);
+    expect(res.body.perMove[0]).toMatchObject({ moveIndex: 0, flag: "neutral" });
+  });
+
+  it("returns 404 for an unknown match id", async () => {
+    const res = await supertest(makeApp()).post("/api/replay/ghost/analysis");
+    expect(res.status).toBe(404);
+    expect(res.body).toMatchObject({ error: expect.any(String) });
+  });
+
+  it("attaches engineMove when a deploymentId is given", async () => {
+    const record: MatchRecord = {
+      gameId: "game-nim-1",
+      gameKey: "nim",
+      rated: true,
+      participants: [
+        { id: "u-a", type: "human", displayName: "Alice" },
+        { id: "u-b", type: "human", displayName: "Bob" },
+      ],
+      moves: [{ actor: "u-a", move: 3, timestamp: "2026-06-09T00:00:00.000Z" }],
+      result: { outcome: "win", winnerId: "u-b" },
+      initialState: { remaining: 21, nextPlayer: 0 },
+      createdAt: "2026-06-09T00:10:00.000Z",
+      completedAt: "2026-06-09T00:10:00.000Z",
+    };
+    await MatchRepo.set("ctrl-nim-engine", record);
+    await DeploymentRepo.set("dep-1", {
+      modelId: "model-1",
+      userId: "u-owner",
+      gameKey: "nim",
+      displayName: "Test Model",
+      status: "active",
+      createdAt: "2026-06-09T00:00:00.000Z",
+      updatedAt: "2026-06-09T00:00:00.000Z",
+    });
+
+    setInferenceClient(mockInferenceClient);
+    try {
+      const res = await supertest(makeApp()).post(
+        "/api/replay/ctrl-nim-engine/analysis?deploymentId=dep-1&userId=u-owner",
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.body.perMove[0]).toMatchObject({ engineMove: 1 });
+    } finally {
+      resetInferenceClient();
+    }
+  });
+
+  it("returns 404 when deploymentId doesn't reference a real deployment", async () => {
+    const res = await supertest(makeApp()).post(
+      "/api/replay/ghost/analysis?deploymentId=no-such-deployment&userId=u-owner",
+    );
+
+    expect(res.status).toBe(404);
+    expect(res.body).toMatchObject({ error: expect.any(String) });
+  });
+
+  it("returns 403 when userId doesn't own the deployment", async () => {
+    await DeploymentRepo.set("dep-2", {
+      modelId: "model-2",
+      userId: "u-owner",
+      gameKey: "nim",
+      displayName: "Test Model",
+      status: "active",
+      createdAt: "2026-06-09T00:00:00.000Z",
+      updatedAt: "2026-06-09T00:00:00.000Z",
+    });
+
+    const res = await supertest(makeApp()).post(
+      "/api/replay/ghost/analysis?deploymentId=dep-2&userId=u-someone-else",
+    );
+
+    expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ error: expect.any(String) });
   });
 });

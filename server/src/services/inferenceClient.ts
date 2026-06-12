@@ -41,46 +41,86 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return (await res.json()) as T;
 }
 
-/** Load a model into a runtime slot. (storage->inference handoff, #27) */
+export interface InferenceClient {
+  loadModel(input: { deploymentId: string; game: string; modelId: string }): Promise<unknown>;
+  unloadModel(deploymentId: string): Promise<unknown>;
+  requestMove(input: {
+    deploymentId: string;
+    state: unknown;
+    legalMoves?: unknown[];
+  }): Promise<unknown>;
+  health(): Promise<{ status: string; loaded: string[] }>;
+}
+
+/* eslint-disable @typescript-eslint/naming-convention */
+const httpClient: InferenceClient = {
+  // Load a model into a runtime slot. (storage->inference handoff, #27)
+  loadModel: (input) =>
+    post("/inference/load", {
+      deployment_id: input.deploymentId,
+      game: input.game,
+      model_id: input.modelId,
+    }),
+
+  // Free a runtime slot (pause/retire).
+  unloadModel: (deploymentId) => post("/inference/unload", { deployment_id: deploymentId }),
+
+  // Ask a deployed model for its move.
+  requestMove: (input) =>
+    post("/inference/move", {
+      deployment_id: input.deploymentId,
+      state: input.state,
+      legal_moves: input.legalMoves ?? null,
+    }),
+
+  // Liveness check.
+  async health() {
+    const res = await fetch(`${BASE_URL}/inference/health`);
+    if (!res.ok) throw new InferenceError("Inference health failed", res.status);
+    return (await res.json()) as { status: string; loaded: string[] };
+  },
+};
+
+// stand-in for the real service, so the analysis "engine move" flow can be
+// built/tested before a model is actually loaded into inference.
+export const mockInferenceClient: InferenceClient = {
+  loadModel: () => Promise.resolve({ status: "loaded" }),
+  unloadModel: () => Promise.resolve({ status: "unloaded" }),
+  requestMove: () => Promise.resolve({ move: 1 }),
+  health: () => Promise.resolve({ status: "ok", loaded: [] }),
+};
+
+let activeClient: InferenceClient = httpClient;
+
+/** Swap the client every export below delegates to (e.g. mockInferenceClient). */
+export function setInferenceClient(client: InferenceClient): void {
+  activeClient = client;
+}
+
+export function resetInferenceClient(): void {
+  activeClient = httpClient;
+}
+
 export function loadModel(input: {
   deploymentId: string;
   game: string;
   modelId: string;
 }): Promise<unknown> {
-  /* eslint-disable @typescript-eslint/naming-convention */
-  return post("/inference/load", {
-    deployment_id: input.deploymentId,
-    game: input.game,
-    model_id: input.modelId,
-  });
-  /* eslint-enable @typescript-eslint/naming-convention */
+  return activeClient.loadModel(input);
 }
 
-/** Free a runtime slot (pause/retire). */
 export function unloadModel(deploymentId: string): Promise<unknown> {
-  /* eslint-disable @typescript-eslint/naming-convention */
-  return post("/inference/unload", { deployment_id: deploymentId });
-  /* eslint-enable @typescript-eslint/naming-convention */
+  return activeClient.unloadModel(deploymentId);
 }
 
-/** Ask a deployed model for its move. */
 export function requestMove(input: {
   deploymentId: string;
   state: unknown;
   legalMoves?: unknown[];
 }): Promise<unknown> {
-  /* eslint-disable @typescript-eslint/naming-convention */
-  return post("/inference/move", {
-    deployment_id: input.deploymentId,
-    state: input.state,
-    legal_moves: input.legalMoves ?? null,
-  });
-  /* eslint-enable @typescript-eslint/naming-convention */
+  return activeClient.requestMove(input);
 }
 
-/** Liveness check. */
-export async function health(): Promise<{ status: string; loaded: string[] }> {
-  const res = await fetch(`${BASE_URL}/inference/health`);
-  if (!res.ok) throw new InferenceError("Inference health failed", res.status);
-  return (await res.json()) as { status: string; loaded: string[] };
+export function health(): Promise<{ status: string; loaded: string[] }> {
+  return activeClient.health();
 }
