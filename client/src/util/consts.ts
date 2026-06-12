@@ -42,7 +42,20 @@ export const lsKeys = {
 /**
  * The games a user can actually queue and play today, derived from the one
  * canonical map above — every "pick a game" surface (matchmaking,
- * leaderboards, puzzles) renders from this list, so adding a game here adds
- * it everywhere at once.
+ * leaderboards) renders from this list, so adding a game here adds it
+ * everywhere at once.
  */
 export const PLAYABLE_GAME_KEYS = Object.keys(gameNames) as GameKey[];
+
+/**
+ * Games with a daily puzzle — deliberately a subset of PLAYABLE_GAME_KEYS.
+ * A game qualifies only when its daily position is DEDUCIBLE: the position
+ * shown on the board must contain everything needed to find the winning
+ * move. Nim qualifies (the whole pile and whose turn it is are the entire
+ * state). Guess does NOT — watchers only ever see WHO guessed, never the
+ * values, so a guess "puzzle" could only be solved via the leaked answer.
+ *
+ * Mirrors PUZZLE_GAME_KEYS in server/src/services/puzzle.service.ts; update
+ * both together.
+ */
+export const PUZZLE_GAME_KEYS: GameKey[] = ["nim"];

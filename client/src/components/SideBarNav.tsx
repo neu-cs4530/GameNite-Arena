@@ -21,6 +21,11 @@ export default function SideBarNav() {
       <NavLink to="/games" className={navClass}>
         Games
       </NavLink>
+      <NavLink to="/puzzles" className={navClass}>
+        Puzzles
+      <NavLink to="/leaderboards" className={navClass}>
+        Leaderboards
+      </NavLink>
       <NavLink to="/forum" className={navClass}>
         Forum
       </NavLink>

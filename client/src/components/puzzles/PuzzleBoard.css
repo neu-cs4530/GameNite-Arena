@@ -1,0 +1,38 @@
+.ga-puzzle-board {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ga-puzzle-board__framing {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}
+
+/* Guess: a compact "table state" panel mirroring the nim board's rhythm. */
+.ga-puzzle-board__guess-context {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  line-height: 1;
+}
+
+.ga-puzzle-board__guess-count {
+  font-size: var(--text-display);
+  font-weight: var(--weight-bold);
+  color: var(--color-secondary);
+  letter-spacing: -0.02em;
+}
+
+.ga-puzzle-board__guess-count-label {
+  margin-top: var(--space-1);
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}

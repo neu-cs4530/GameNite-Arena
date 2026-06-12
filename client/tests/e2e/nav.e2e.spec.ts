@@ -40,9 +40,26 @@ test.describe("The sidebar navigation", () => {
     const labels = await sidebar.getByRole("link").allInnerTexts();
     const cleaned = labels.map((s) => s.trim());
 
-    // Original spec order plus the trainer-platform surfaces that were
-    // added later (Trainer, Models) ahead of Profile.
-    expect(cleaned).toEqual(["Home", "Games", "Forum", "Replays", "Trainer", "Models", "Profile"]);
+    // Original spec order plus the surfaces added later: Puzzles (after
+    // Games, its gameplay sibling) and the trainer-platform pages (Trainer,
+    // Models) ahead of Profile.
+    expect(cleaned).toEqual([
+      "Home",
+      "Games",
+      "Puzzles",
+    // Original spec order plus the surfaces added later: Leaderboards
+    // (after Games — rankings sit beside the arena) and the
+    // trainer-platform pages (Trainer, Models) ahead of Profile.
+    expect(cleaned).toEqual([
+      "Home",
+      "Games",
+      "Leaderboards",
+      "Forum",
+      "Replays",
+      "Trainer",
+      "Models",
+      "Profile",
+    ]);
   });
 
   test("the 'Replays' link is highlighted when on the /replays route", async ({ page }) => {

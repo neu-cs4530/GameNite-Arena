@@ -131,6 +131,10 @@ export interface ThreadRecord {
  * - `createdAt`: when this user registered.
  * - `puzzleRating`: Glicko 2 puzzle rating, distinct from per-game match ratings (Story 1.8)
  * - `puzzleStreak`: current and best historical daily puzzle solve streak (Story 1.8)
+ * - `puzzleLastRatedAt`: per-game UTC date (YYYY-MM-DD) of the last RATED daily-puzzle
+ *               attempt. Gates the rated-attempt economy: only the first unhinted
+ *               attempt of the day per game moves rating/streak; practice attempts
+ *               never touch this map. Optional — records predating the economy lack it.
  * - `following`: user ids this user follows (Story 3.9). Lives here rather than in a
  *               separate FollowRepo because reads are always per-user.
  * - `emailPrefs`: optional email subscription preferences (Story 1.13 extension)
@@ -141,6 +145,7 @@ export interface UserRecord {
   createdAt: DateISO;
   puzzleRating: GlickoRating; // Story 1.8
   puzzleStreak: PuzzleStreak; // Story 1.8
+  puzzleLastRatedAt?: Partial<Record<GameKey, DateISO>>; // Story 1.7/1.12 rated economy
   following: RecordId[]; // References User records (Story 3.9)
   emailPrefs?: EmailPrefs; // Story 1.13 (Extension)
 }
@@ -472,8 +477,9 @@ export function dailyPuzzleKey(args: { gameKey: GameKey; date: Date }): string {
  * - `attemptedBy`: who solved it (with human/AI discriminator)
  * - `success`: pass/fail
  * - `timeMs`: how long the attempt took (used for the daily fastest-solvers list)
- * - `hintsUsed`: count of hints revealed (each one applies a small puzzle Elo penalty, Story 1.12)
- * - `eloDelta`: change applied to the entity's puzzle rating
+ * - `hintsUsed`: count of hints revealed; any hint makes the attempt practice —
+ *                the hint shows the winning move, so it can never gain rating (Story 1.12)
+ * - `eloDelta`: change applied to the entity's puzzle rating (always 0 for practice attempts)
  * - `createdAt`: when the attempt was submitted
  */
 export interface PuzzleAttemptRecord {

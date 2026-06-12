@@ -36,6 +36,9 @@ export default function GameSelectGrid({
     <div className="ga-game-grid" role="group" aria-label="Choose a game">
       {games.map((game) => {
         const selected = selectedKey === game.key;
+        // Skip the wrapper entirely when there's no extra content — an empty
+        // span would still take up the slot's margin as a dead spacer.
+        const extra = renderTileExtra?.(game.key);
         return (
           <button
             key={game.key}
@@ -47,8 +50,8 @@ export default function GameSelectGrid({
           >
             <span className="ga-game-grid__name">{game.label}</span>
             {game.tagline && <span className="ga-game-grid__tagline">{game.tagline}</span>}
-            {renderTileExtra && (
-              <span className="ga-game-grid__extra">{renderTileExtra(game.key)}</span>
+            {extra !== null && extra !== undefined && (
+              <span className="ga-game-grid__extra">{extra}</span>
             )}
           </button>
         );

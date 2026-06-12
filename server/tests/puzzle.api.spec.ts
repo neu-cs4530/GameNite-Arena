@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import supertest, { type Response } from "supertest";
 import { app } from "../src/app.ts";
-import { dailyPuzzleKey } from "../src/models.ts";
-import { PuzzleAttemptRepo, PuzzleRepo, UserRepo } from "../src/repository.ts";
+import { dailyPuzzleKey, type MatchRecord } from "../src/models.ts";
+import { MatchRepo, PuzzleAttemptRepo, PuzzleRepo, UserRepo } from "../src/repository.ts";
 import { getUserByUsername } from "../src/services/auth.service.ts";
 
 let response: Response;
@@ -55,6 +55,33 @@ describe("GET /api/puzzle/:gameKey", () => {
       solution: { moves: [3] },
     });
   });
+
+  it("should return 404 for guess — not a daily-puzzle game (position isn't deducible)", async () => {
+    // even with a finished guess match in the archive to mine from
+    const guessMatch: MatchRecord = {
+      gameId: "game-guess-404",
+      gameKey: "guess",
+      rated: false,
+      participants: ["u-g0", "u-g1", "u-g2", "u-g3"].map((id, i) => ({
+        id,
+        type: "human",
+        displayName: `Guesser ${i}`,
+      })),
+      moves: [10, 55, 80, 41].map((guess, i) => ({
+        actor: `u-g${i}`,
+        move: guess,
+        timestamp: `2026-06-09T01:0${i}:00.000Z`,
+      })),
+      result: { outcome: "win", winnerId: "u-g3" },
+      initialState: { secret: 40, guesses: [null, null, null, null] },
+      createdAt: "2026-06-09T01:10:00.000Z",
+      completedAt: "2026-06-09T01:10:00.000Z",
+    };
+    await MatchRepo.set("match-guess-404", guessMatch);
+
+    response = await supertest(app).get("/api/puzzle/guess");
+    expect(response.status).toBe(404);
+  });
 });
 
 describe("POST /api/puzzle/:gameKey/attempt", () => {
@@ -92,6 +119,7 @@ describe("POST /api/puzzle/:gameKey/attempt", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);
+    expect(response.body.rated).toBe(true);
     expect(response.body.eloDelta).toBeGreaterThan(0);
     expect(response.body.newRating.rating).toBeGreaterThan(before.puzzleRating.rating);
     expect(response.body.newRating.rd).toBeLessThan(before.puzzleRating.rd);
@@ -126,8 +154,10 @@ describe("POST /api/puzzle/:gameKey/attempt", () => {
     response = await supertest(app).post("/api/puzzle/nim/attempt").send(attempt);
     expect(response.body.streak).toStrictEqual({ current: 1, best: 1, lastSolvedAt: today() });
 
-    // solving it again the same day shouldn't bump the streak further
+    // solving it again the same day is practice: no streak bump, no rating move
     response = await supertest(app).post("/api/puzzle/nim/attempt").send(attempt);
+    expect(response.body.rated).toBe(false);
+    expect(response.body.eloDelta).toBe(0);
     expect(response.body.streak).toStrictEqual({ current: 1, best: 1, lastSolvedAt: today() });
   });
 
@@ -168,5 +198,68 @@ describe("POST /api/puzzle/:gameKey/attempt", () => {
         hintsUsed: 1,
       }),
     );
+  });
+});
+
+describe("GET /api/puzzle/:gameKey lazy generation", () => {
+  /** A finished 7-move misère nim match (everyone takes 3; P2 wins). */
+  const archivedNimWin: MatchRecord = {
+    gameId: "game-lazy-1",
+    gameKey: "nim",
+    rated: true,
+    participants: [
+      { id: "u-a", type: "human", displayName: "Alice" },
+      { id: "u-b", type: "human", displayName: "Bob" },
+    ],
+    moves: Array.from({ length: 7 }).map((_, i) => ({
+      actor: i % 2 === 0 ? "u-a" : "u-b",
+      move: 3,
+      timestamp: `2026-06-09T00:0${i}:00.000Z`,
+    })),
+    result: { outcome: "win", winnerId: "u-b" },
+    initialState: { remaining: 21, nextPlayer: 0 },
+    createdAt: "2026-06-09T00:10:00.000Z",
+    completedAt: "2026-06-09T00:10:00.000Z",
+  };
+
+  beforeEach(async () => {
+    // earlier describes in this file seed today's puzzle under the same
+    // deterministic key; clear it so the lazy path actually has to generate
+    await PuzzleRepo.clear();
+  });
+
+  it("generates today's puzzle from the archive when the cron has not run", async () => {
+    await MatchRepo.set("match-lazy-1", archivedNimWin);
+
+    response = await supertest(app).get("/api/puzzle/nim");
+
+    expect(response.status).toBe(200);
+    expect(response.body.gameKey).toBe("nim");
+    // hydrated per-game position, not a {matchId, upToMoveIndex} reference
+    expect(response.body.position).toStrictEqual({ remaining: 6, nextPlayer: 1 });
+    // solution moves are raw payloads — the exact shape the attempt endpoint
+    // compares a submitted move against
+    expect(response.body.solution.moves).toStrictEqual([3, 3]);
+
+    // the generated record is stored: a second GET serves the same puzzle
+    const again = await supertest(app).get("/api/puzzle/nim");
+    expect(again.body).toStrictEqual(response.body);
+  });
+
+  it("lets a raw move solve the lazily generated puzzle end to end", async () => {
+    await MatchRepo.set("match-lazy-1", archivedNimWin);
+    await supertest(app).get("/api/puzzle/nim");
+
+    response = await supertest(app)
+      .post("/api/puzzle/nim/attempt")
+      .send({ auth: auth1, payload: { move: 3, timeMs: 900 } });
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+  });
+
+  it("still returns 404 when the archive has no suitable match", async () => {
+    response = await supertest(app).get("/api/puzzle/nim");
+    expect(response.status).toBe(404);
   });
 });
