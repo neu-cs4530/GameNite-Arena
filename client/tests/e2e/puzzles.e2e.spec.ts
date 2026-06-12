@@ -18,18 +18,22 @@ let api: APIRequestContext;
 let solver: TrainerUser;
 
 test.beforeAll(async ({ browser, playwright }) => {
-  // Archive one finished nim match (misère: 7 × Take three — player 2 wins)
-  // so today's puzzle can be lazily generated from a real win.
+  // Archive one finished nim match whose penultimate move is SOUND, so the
+  // mining gate accepts it: 21 → 3,3,3,3,3,2,2 leaves 2 tokens; the winner
+  // then takes 1 (leaving 1 ≡ 1 mod 4 — the theory-winning move) and the
+  // loser is forced to take the last token. The old 7×Take-three line is
+  // deliberately rejected now — its split move was a blunder.
   const context1 = await browser.newContext();
   const context2 = await browser.newContext();
   const page1 = await context1.newPage();
   const page2 = await context2.newPage();
   await createAndLoadGame(page1, page2, "nim", true, false);
   const pages = [page1, page2];
-  for (let move = 0; move < 7; move++) {
-    const takeThree = pages[move % 2].getByRole("button", { name: "Take three" });
-    await expect(takeThree).toBeEnabled();
-    await takeThree.click();
+  const line = ["three", "three", "three", "three", "three", "two", "two", "one", "one"];
+  for (let move = 0; move < line.length; move++) {
+    const btn = pages[move % 2].getByRole("button", { name: `Take ${line[move]}` });
+    await expect(btn).toBeEnabled();
+    await btn.click();
   }
   await expect(page1.getByText(/The game is over/)).toBeVisible();
   await context1.close();
@@ -89,12 +93,12 @@ test.describe("Daily puzzles tab", () => {
     // Linkable: the nim puzzle loads without any tile click.
     await expect(page.getByTestId("puzzle-board-nim")).toBeVisible();
 
-    // The hint shows exactly one move and never the solution disclosure.
-    await page.getByTestId("puzzle-hint-toggle").click();
-    await expect(page.getByTestId("puzzle-hint-body")).toContainText(
-      "First move of the winning line:",
-    );
-    await expect(page.getByTestId("puzzle-hint-body")).toContainText(/Take [123]/);
+    // The hint is a server-side grant now: one move, revealed in place, and
+    // it forfeits the rated slot (the practice note appears). The full
+    // solution disclosure still never renders before an attempt.
+    await page.getByTestId("puzzle-hint").click();
+    await expect(page.getByTestId("puzzle-hint-reveal")).toContainText(/Take [123]/);
+    await expect(page.getByTestId("puzzle-practice-note")).toBeVisible();
     await expect(page.getByTestId("puzzle-solution")).toHaveCount(0);
   });
 });

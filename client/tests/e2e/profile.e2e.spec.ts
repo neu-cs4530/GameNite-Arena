@@ -70,11 +70,11 @@ test.describe("The redesigned profile page", () => {
     // After data load, the skeleton must be gone.
     await expect(page.getByTestId("profile-header-skeleton")).toHaveCount(0);
 
-    // Per-game Elo chips render (Nim, Number Guesser at minimum).
-    await expect(page.getByTestId("elo-chip")).not.toHaveCount(0);
-
-    // Overall average Elo prominently rendered.
+    // The header is honest about real ratings: a freshly-seeded user has no
+    // RatingRecords, so no per-game chips render and the overall slot says
+    // "Unrated". (Chips appear once rated games exist — unit-tested.)
     await expect(page.getByTestId("overall-elo")).toBeVisible();
+    await expect(page.getByTestId("overall-elo")).toContainText(/Unrated|\d{3,4}/);
   });
 
   test("recent-matches section shows skeleton cards, then real cards", async ({ page }) => {
@@ -290,7 +290,10 @@ test.describe("The redesigned profile page", () => {
     // Aggressively-narrow Elo window. The fixture should have no matches with
     // both participants between 2300-2400.
     await page.goto(`/profile/${DEFAULT_USER}?minElo=2300&maxElo=2400`);
-    await expect(page.getByTestId("empty-state")).toBeVisible();
+    // Scoped: the best-AI card legitimately shows its own empty state too.
+    await expect(
+      page.getByTestId("profile-recent-matches").getByTestId("empty-state"),
+    ).toBeVisible();
     await expect(page.getByRole("button", { name: "Clear filters" })).toBeVisible();
   });
 
