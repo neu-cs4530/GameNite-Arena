@@ -15,6 +15,7 @@ import {
 } from "./game.types.ts";
 import { type SafeUserInfo } from "./user.types.ts";
 import { type MatchResultView, type ReplayWatchersPayload } from "./replay.types.ts";
+import { type BroadcastEndedPayload, type BroadcastStateUpdatePayload } from "./broadcast.types.ts";
 
 /**
  * The Socket.io interface for client to server communication
@@ -31,6 +32,8 @@ export interface ClientToServerEvents {
   matchmakingLeave: (payload: WithAuth<GameKey>) => void;
   replayWatch: (payload: WithAuth<string>) => void;
   replayLeave: (payload: WithAuth<string>) => void;
+  broadcastWatch: (payload: WithAuth<string>) => void;
+  broadcastLeave: (payload: WithAuth<string>) => void;
 }
 
 /**
@@ -49,4 +52,6 @@ export interface ServerToClientEvents {
   matchmakingTimeout: (payload: { gameKey: GameKey }) => void;
   matchmakingWindowUpdate: (payload: { gameKey: GameKey; window: number }) => void;
   replayWatchers: (payload: ReplayWatchersPayload) => void;
+  broadcastStateUpdated: (payload: BroadcastStateUpdatePayload) => void;
+  broadcastEnded: (payload: BroadcastEndedPayload) => void;
 }
