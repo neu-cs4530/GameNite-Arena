@@ -54,14 +54,23 @@ function encodeStateForInference(gameKey: GameKey, state: unknown): Record<strin
   return state as Record<string, unknown>;
 }
 
+/** What updateGame resolves to: view updates plus the result of a finished rated game. */
+export interface GameUpdateOutcome {
+  views: GameViewUpdates;
+  gameResult: MatchResult | undefined;
+}
+
 /**
  * If the next player to move is an AI deployment, fire its move automatically.
- * Returns updated views if an AI move was made, null otherwise.
+ * Returns the full update outcome of the AI's move (which itself chains into
+ * the next AI move for model-vs-model games), or null if no AI move was made.
+ * A game-ending AI move carries its MatchResult in the outcome so callers can
+ * emit gameResult.
  *
  * CoS 2.6: deployed model plays ranked matches automatically.
  * CoS 2.8: forfeit after 3 consecutive invalid moves (tracked in inference service).
  */
-async function maybeFireAiMove(gameId: string): Promise<GameViewUpdates | null> {
+export async function maybeFireAiMove(gameId: string): Promise<GameUpdateOutcome | null> {
   const game = await GameRepo.find(gameId);
   if (!game?.state || game.done) return null;
 
@@ -91,7 +100,7 @@ async function maybeFireAiMove(gameId: string): Promise<GameViewUpdates | null> 
     username: `ai:${aiDeploymentId}`,
   };
 
-  return updateGame(gameId, aiUser, move).then((r) => r.views);
+  return updateGame(gameId, aiUser, move);
 }
 
 export async function createGame(
@@ -183,7 +192,7 @@ export async function updateGame(
   gameId: string,
   user: UserWithId,
   move: unknown,
-): Promise<{ views: GameViewUpdates; gameResult: MatchResult | undefined }> {
+): Promise<GameUpdateOutcome> {
   const game = await GameRepo.find(gameId);
   if (!game) throw new Error(`user ${user.username} acted on an invalid game`);
   if (!game.state) {
@@ -234,12 +243,14 @@ export async function updateGame(
     }
   }
 
-  // After a human move, check if the next player is an AI and fire its move.
-  // Best-effort: an AI failure must not roll back the human move.
+  // After a move, check if the next player is an AI and fire its move.
+  // Best-effort: an AI failure must not roll back the move that was just
+  // accepted. When the AI's move finishes the game, its MatchResult is
+  // returned from THIS call so the controller still emits gameResult.
   if (!result.done) {
     try {
-      const aiViews = await maybeFireAiMove(gameId);
-      if (aiViews) return { views: aiViews, gameResult: undefined };
+      const aiOutcome = await maybeFireAiMove(gameId);
+      if (aiOutcome) return aiOutcome;
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error(`AI follow-up move failed for game ${gameId}:`, err);
