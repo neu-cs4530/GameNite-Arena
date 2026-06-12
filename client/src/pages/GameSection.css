@@ -1,0 +1,159 @@
+.ga-game-section {
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: var(--layout-max-content);
+  margin: 0 auto;
+}
+
+/* --- The Play block: the page's one big decision ------------------------ */
+
+.ga-game-section__play {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+.ga-game-section__cta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-8) var(--space-6);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.ga-game-section__cta:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.ga-game-section__cta:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ga-game-section__cta--ranked {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+.ga-game-section__cta-title {
+  font-size: var(--text-h1);
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.02em;
+  color: var(--color-fg);
+}
+
+.ga-game-section__cta-sub {
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--space-6);
+}
+
+.ga-game-section__cta-reason {
+  margin: calc(-1 * var(--space-4)) 0 0;
+  font-size: var(--text-small);
+  color: var(--color-danger);
+}
+
+/* --- Panels -------------------------------------------------------------- */
+
+.ga-game-section__panel-title {
+  margin: 0;
+  font-size: var(--text-h3);
+  font-weight: var(--weight-semibold);
+  color: var(--color-fg);
+}
+
+.ga-game-section__seat {
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+.ga-game-section__seat-hint,
+.ga-game-section__seat-note,
+.ga-game-section__stats-empty {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}
+
+.ga-game-section__settings-meta {
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+  white-space: nowrap;
+}
+
+.ga-game-section__settings {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+}
+
+.ga-game-section__limit {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}
+
+.ga-game-section__limit select {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-elevated);
+  color: var(--color-fg);
+  font-size: var(--text-small);
+}
+
+.ga-game-section__limit select:disabled {
+  opacity: 0.55;
+}
+
+/* --- Stats strip ---------------------------------------------------------- */
+
+.ga-game-section__stats,
+.ga-game-section__board {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ga-game-section__tiles {
+  display: flex;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+}
+
+/* --- Narrow ---------------------------------------------------------------- */
+
+@media (max-width: 768px) {
+  .ga-game-section {
+    padding: var(--space-4);
+    gap: var(--space-4);
+  }
+
+  .ga-game-section__play {
+    grid-template-columns: 1fr;
+  }
+
+  .ga-game-section__cta {
+    padding: var(--space-6) var(--space-5);
+  }
+}

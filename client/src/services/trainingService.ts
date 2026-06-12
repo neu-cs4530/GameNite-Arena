@@ -1,16 +1,10 @@
 /**
- * Trainer training-job service functions — REAL by default.
+ * Trainer training-job service functions — REAL only.
  *
- * The trainer workflow surfaces (dashboard, new run, live page) read and
- * write the live session API (`/api/training/...`) and the socket.io
+ * Every surface (dashboard, new run, live page, model card) reads and
+ * writes the live session API (`/api/training/...`) and the socket.io
  * progress bridge; what they show is what a real run produced. There is no
- * mock mode and no flag.
- *
- * Two narrow fixture shims remain for the still-mock model-discovery pages
- * (browse / card / fork — next de-mock block): ids with the `mock-` prefix
- * exist only in the client fixture, so `getJob` resolves them from it and
- * `submitJob` simulates registration when handed a fixture model id (the
- * fork flow). Real ids never touch the fixture.
+ * mock mode, no flag, and no fixture-id shim.
  */
 
 import { io as connectSocket, type Socket } from "socket.io-client";
@@ -18,12 +12,12 @@ import {
   SocketEvents,
   type TrainingSessionInfo,
   type TrainingSessionListPage,
+  type TrainingTokenInfo,
   type UserAuth,
 } from "@gamenite/shared";
 import type { SubmitJobPayload, TrainingJobDetail, TrainingStreamEvent } from "../util/types.ts";
 import { api } from "./api.ts";
 import { mapSessionToJobDetail } from "./trainingMapper.ts";
-import { findMockJob, MOCK_JOBS, trainerHoursAgo } from "../__mocks__/training.ts";
 
 /** Lazy socket dedicated to training progress (the app socket lives in App.tsx). */
 let trainingSocket: Socket | null = null;
@@ -49,13 +43,8 @@ export async function listSessionsFor(username: string): Promise<TrainingJobDeta
   return data.jobs.map(mapSessionToJobDetail);
 }
 
-/** One session. Fixture ids (`mock-`) resolve from the client fixture. */
+/** One session by id. Unknown ids are real errors. */
 export async function getJob(jobId: string): Promise<TrainingJobDetail> {
-  if (jobId.startsWith("mock-")) {
-    const job = findMockJob(jobId);
-    if (!job) return Promise.reject(new Error(`Job not found: ${jobId}`));
-    return { ...job };
-  }
   const { data } = await api.get<TrainingSessionInfo>(`/api/training/${jobId}`);
   return mapSessionToJobDetail(data);
 }
@@ -63,39 +52,11 @@ export async function getJob(jobId: string): Promise<TrainingJobDetail> {
 /**
  * Register a training session. The run starts queued; a local trainer
  * attaches with `--job-id <returned id>` and the live page takes over.
- * Fixture model ids (fork flow on the still-mock model pages) simulate
- * registration client-side.
  */
 export async function submitJob(
   payload: SubmitJobPayload,
   auth: UserAuth,
 ): Promise<{ jobId: string }> {
-  if (payload.modelId?.startsWith("mock-")) {
-    const id = `mock-job-${MOCK_JOBS.length + 1}`;
-    MOCK_JOBS.push({
-      id,
-      modelId: payload.modelId,
-      modelDisplayName: payload.modelDisplayName,
-      owner: { username: auth.username, displayName: auth.username },
-      gameKey: payload.gameKey,
-      status: "queued",
-      hyperparameters: payload.hyperparameters,
-      progressEpisodes: 0,
-      targetEpisodes: payload.hyperparameters.episodes,
-      currentMeanReward: 0,
-      currentWinRate: 0,
-      createdAt: trainerHoursAgo(0),
-      hasArtifact: false,
-      hasCheckpoint: false,
-      checkpoints: [],
-      episodesSeries: [],
-      meanRewardSeries: [],
-      winRateSeries: [],
-      views: 0,
-    });
-    return { jobId: id };
-  }
-
   try {
     const { data } = await api.post<TrainingSessionInfo>("/api/training/submit", {
       auth,
@@ -113,6 +74,23 @@ export async function submitJob(
     return { jobId: data.jobId };
   } catch (err) {
     throw new Error(extractApiError(err, "Could not register the training session"));
+  }
+}
+
+/**
+ * Mint an expiring training token (POST /api/training/token). The connect
+ * card embeds it in the copyable bootstrap command so the user's password
+ * never appears on the page or in their shell history.
+ */
+export async function mintTrainingToken(auth: UserAuth): Promise<TrainingTokenInfo> {
+  try {
+    const { data } = await api.post<TrainingTokenInfo>("/api/training/token", {
+      auth,
+      payload: {},
+    });
+    return data;
+  } catch (err) {
+    throw new Error(extractApiError(err, "Could not mint a training token"));
   }
 }
 

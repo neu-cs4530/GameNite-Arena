@@ -16,22 +16,42 @@ export interface RecapOutcome {
 }
 
 /**
- * Derives the recap headline from the match result and the viewer's entity
- * id (their userId, recovered from their own ratingChanges entry). Watchers
- * pass null and get a neutral headline.
+ * Whose result this recap narrates: the viewer themselves, or the viewer's
+ * deployed model that held the seat while they spectated.
  */
-export function deriveOutcome(result: MatchResultView, myEntityId: string | null): RecapOutcome {
+export type RecapSubject = "you" | "model";
+
+/** House lint: const OBJECTS are camelCase (UPPER_CASE is for primitives/arrays). */
+const subjectLabels: Record<RecapSubject, { won: string; lost: string }> = {
+  you: { won: "You won", lost: "You lost" },
+  model: { won: "Your model won", lost: "Your model lost" },
+};
+
+/**
+ * Derives the recap headline from the match result and the subject's entity
+ * id (the viewer's userId recovered from their own ratingChanges entry, or
+ * their model's modelId when the model held the seat). Watchers pass null
+ * and get a neutral headline.
+ */
+export function deriveOutcome(
+  result: MatchResultView,
+  myEntityId: string | null,
+  subject: RecapSubject = "you",
+): RecapOutcome {
   if (result.outcome === "draw") return { headline: "Draw", tone: "default" };
   if (result.outcome === "abandoned") return { headline: "Game abandoned", tone: "default" };
   if (myEntityId === null) return { headline: "Game over", tone: "default" };
 
+  const labels = subjectLabels[subject];
   const won = result.winnerId === myEntityId;
   if (result.outcome === "forfeit") {
     return won
-      ? { headline: "You won by forfeit", tone: "success" }
-      : { headline: "You lost by forfeit", tone: "danger" };
+      ? { headline: `${labels.won} by forfeit`, tone: "success" }
+      : { headline: `${labels.lost} by forfeit`, tone: "danger" };
   }
-  return won ? { headline: "You won", tone: "success" } : { headline: "You lost", tone: "danger" };
+  return won
+    ? { headline: labels.won, tone: "success" }
+    : { headline: labels.lost, tone: "danger" };
 }
 
 /**
@@ -48,6 +68,18 @@ export function extractMyChange(
 ): { entityId: string; delta: number } | null {
   if (!result.ratingChanges || userPlayerIndex < 0) return null;
   return result.ratingChanges[userPlayerIndex] ?? null;
+}
+
+/**
+ * Picks an entity's rating change by id. AI seats are written with
+ * entityId = modelId (rating.service.ts), so a spectating owner finds
+ * their model here rather than via a player index.
+ */
+export function extractEntityChange(
+  result: MatchResultView,
+  entityId: string,
+): { entityId: string; delta: number } | null {
+  return result.ratingChanges?.find((change) => change.entityId === entityId) ?? null;
 }
 
 /** Whether a game view shows a finished game (per-game knowledge lives here). */

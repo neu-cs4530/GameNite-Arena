@@ -9,7 +9,15 @@ import { HyperparamForm } from "../components/trainer/index.ts";
 import { hyperparamPresets, trainerGameNames } from "../components/trainer/trainerConsts.ts";
 import { MultiToggle } from "../components/filters/index.ts";
 import useAuth from "../hooks/useAuth.ts";
+import { getModel } from "../services/modelService.ts";
 import { getJob, submitJob } from "../services/trainingService.ts";
+import {
+  buildHeuristicsExtra,
+  defaultHeuristicSelections,
+  heuristicFieldsFor,
+  mergeExtraConfig,
+  splitHeuristicsExtra,
+} from "../util/heuristicsForm.ts";
 import {
   ALL_GAME_KEYS,
   type HyperparamPreset,
@@ -32,6 +40,7 @@ export default function NewTrainingRun(): JSX.Element {
   const auth = useAuth();
   const [searchParams] = useSearchParams();
   const fromJob = searchParams.get("fromJob");
+  const fromModel = searchParams.get("fromModel");
   const presetParam = searchParams.get("preset");
 
   const [game, setGame] = useState<TrainerGameKey>("nim");
@@ -42,22 +51,36 @@ export default function NewTrainingRun(): JSX.Element {
     }
     return { ...defaultHp };
   });
+  // Per-game heuristic dropdown selections (null = game has no tunables).
+  const [heuristics, setHeuristics] = useState<Record<string, string> | null>(() =>
+    defaultHeuristicSelections("nim"),
+  );
+  // Set when this run continues an existing model (?fromModel= after a
+  // fork): the session registers against that model instead of a new one.
+  const [continueModelId, setContinueModelId] = useState<string | undefined>(undefined);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<Error | null>(null);
   // Bumped when an async prefill lands: HyperparamForm's inputs keep local
   // state, so a remount is what makes the prefilled values visible.
   const [prefillVersion, setPrefillVersion] = useState(0);
 
-  /* "Run again": prefill from the real source run. */
+  /* "Run again": prefill from the real source run. The stored heuristics
+   * block is split back out into the dropdowns (validated through the
+   * shared parseHeuristics) so the textarea only carries power-user keys. */
   useEffect(() => {
     if (!fromJob) return;
     let cancelled = false;
     getJob(fromJob)
       .then((source) => {
         if (cancelled) return;
+        const { selections, rest } = splitHeuristicsExtra(
+          source.gameKey,
+          source.hyperparameters.extraConfig,
+        );
         setGame(source.gameKey);
         setName(source.modelDisplayName);
-        setHp({ ...source.hyperparameters });
+        setHp({ ...source.hyperparameters, extraConfig: rest });
+        setHeuristics(selections ?? defaultHeuristicSelections(source.gameKey));
         setPrefillVersion((v) => v + 1);
       })
       .catch(() => {
@@ -67,6 +90,28 @@ export default function NewTrainingRun(): JSX.Element {
       cancelled = true;
     };
   }, [fromJob]);
+
+  /* "Continue training": prefill from a real model (the fork flow lands
+   * here). The session registers against that model id. */
+  useEffect(() => {
+    if (!fromModel) return;
+    let cancelled = false;
+    getModel(fromModel)
+      .then((model) => {
+        if (cancelled) return;
+        setGame(model.gameKey);
+        setName(`Continue training ${model.displayName}`);
+        setContinueModelId(model.id);
+        setHeuristics(defaultHeuristicSelections(model.gameKey));
+        setPrefillVersion((v) => v + 1);
+      })
+      .catch(() => {
+        // Model gone — the form simply starts blank.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [fromModel]);
 
   const episodesError =
     hp.episodes < 1
@@ -91,9 +136,18 @@ export default function NewTrainingRun(): JSX.Element {
     try {
       const { jobId } = await submitJob(
         {
+          modelId: continueModelId,
           gameKey: game,
           modelDisplayName: name.trim(),
-          hyperparameters: hp,
+          hyperparameters: {
+            ...hp,
+            // The dropdowns are the validated surface: on key collision
+            // with the textarea, the heuristics block wins.
+            extraConfig: mergeExtraConfig(
+              hp.extraConfig,
+              heuristics ? buildHeuristicsExtra(game, heuristics) : null,
+            ),
+          },
         },
         auth,
       );
@@ -120,7 +174,12 @@ export default function NewTrainingRun(): JSX.Element {
           singleSelect
           onChange={(next) => {
             const choice = next[next.length - 1] as TrainerGameKey | undefined;
-            if (choice) setGame(choice);
+            if (choice) {
+              setGame(choice);
+              // Heuristics are per-game knobs; switching game resets them
+              // to the new game's defaults (or none).
+              setHeuristics(defaultHeuristicSelections(choice));
+            }
           }}
         />
       </Section>
@@ -136,6 +195,46 @@ export default function NewTrainingRun(): JSX.Element {
           data-testid="model-name-input"
         />
       </Section>
+
+      {heuristics && (
+        <Section
+          title="Training heuristics"
+          subtitle="How this game's trainer sets up each learning episode — applied by your local trainer."
+          testId="heuristics-section"
+        >
+          <div className="ga-new-run__heuristics">
+            {(heuristicFieldsFor(game) ?? []).map((field) => {
+              const selected = heuristics[field.key] ?? field.defaultValue;
+              const active = field.options.find((option) => option.value === selected);
+              return (
+                <div className="ga-new-run__heuristic" key={field.key}>
+                  <label className="ga-new-run__heuristic-label" htmlFor={`heuristic-${field.key}`}>
+                    {field.label}
+                  </label>
+                  <select
+                    id={`heuristic-${field.key}`}
+                    value={selected}
+                    onChange={(e) => setHeuristics({ ...heuristics, [field.key]: e.target.value })}
+                    data-testid={`heuristic-${field.key}`}
+                  >
+                    {field.options.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p
+                    className="ga-new-run__heuristic-help"
+                    data-testid={`heuristic-${field.key}-help`}
+                  >
+                    {active?.description ?? field.description}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </Section>
+      )}
 
       <Section
         title="Training settings"

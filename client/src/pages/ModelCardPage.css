@@ -123,3 +123,48 @@
   text-decoration: underline;
   font-size: var(--text-small);
 }
+
+/* --- Real deployment rows (DeploymentView projections) ------------------- */
+
+.ga-model-page__deployments {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elevated);
+  overflow: hidden;
+}
+
+.ga-model-page__deployment {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--text-body);
+}
+
+.ga-model-page__deployment:last-child {
+  border-bottom: none;
+}
+
+.ga-model-page__deployment-name {
+  font-weight: var(--weight-semibold);
+  color: var(--color-fg);
+}
+
+.ga-model-page__deployment-rating {
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ga-model-page__deployment-spacer {
+  flex: 1;
+}
+
+.ga-model-page__deploy-error {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-small);
+  color: var(--color-danger);
+}
