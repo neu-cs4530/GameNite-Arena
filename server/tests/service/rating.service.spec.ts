@@ -12,6 +12,7 @@ import {
   updateRatingsForGame,
 } from "../../src/services/rating.service.ts";
 import { createRedisConnection } from "../../src/services/redis.ts";
+import { leaderboardCacheKey } from "../../src/services/leaderboard.service.ts";
 
 const baseGame: GameRecord = {
   type: "nim",
@@ -90,9 +91,9 @@ describe("updateRatingsForGame", () => {
   it("invalidates the cached leaderboard so the board can't contradict new ratings", async () => {
     const redis = createRedisConnection();
     try {
-      await redis.set("leaderboard:nim:all", "stale");
-      await redis.set("leaderboard:nim:human", "stale");
-      await redis.set("leaderboard:nim:ai", "stale");
+      await redis.set(leaderboardCacheKey("nim", "all"), "stale");
+      await redis.set(leaderboardCacheKey("nim", "human"), "stale");
+      await redis.set(leaderboardCacheKey("nim", "ai"), "stale");
       const game: GameRecord = {
         ...baseGame,
         state: { remaining: 0, nextPlayer: 1 },
@@ -100,9 +101,9 @@ describe("updateRatingsForGame", () => {
 
       await updateRatingsForGame(game, "game-cache");
 
-      expect(await redis.get("leaderboard:nim:all")).toBeNull();
-      expect(await redis.get("leaderboard:nim:human")).toBeNull();
-      expect(await redis.get("leaderboard:nim:ai")).toBeNull();
+      expect(await redis.get(leaderboardCacheKey("nim", "all"))).toBeNull();
+      expect(await redis.get(leaderboardCacheKey("nim", "human"))).toBeNull();
+      expect(await redis.get(leaderboardCacheKey("nim", "ai"))).toBeNull();
     } finally {
       await redis.quit();
     }
