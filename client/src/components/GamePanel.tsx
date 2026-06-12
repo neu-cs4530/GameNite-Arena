@@ -9,6 +9,7 @@ import useTimeSince from "../hooks/useTimeSince.ts";
 import Card from "./ui/Card.tsx";
 import RecapPanel from "./recap/RecapPanel.tsx";
 import { getReplay } from "../services/replayService.ts";
+import { isNotFound } from "../services/serviceFallback.ts";
 import { isViewDone, recapMode, resultFromReplay } from "../util/recap.ts";
 
 /**
@@ -54,13 +55,17 @@ export default function GamePanel({
     let cancelled = false;
     getReplay(gameId)
       .then((replay) => {
-        if (!cancelled) setRecovered(resultFromReplay(replay));
+        if (!cancelled) {
+          setRecovered(resultFromReplay(replay));
+          setRecoverySettled(true);
+        }
       })
-      .catch(() => {
-        // No persisted record (or it is unreadable) — genuinely casual.
-      })
-      .finally(() => {
-        if (!cancelled) setRecoverySettled(true);
+      .catch((err) => {
+        // Only a 404 proves the match was never archived — genuinely casual.
+        // A network/server failure proves nothing, so leave recovery
+        // unsettled rather than render a false "casual" claim for a match
+        // that may have been rated.
+        if (!cancelled && isNotFound(err)) setRecoverySettled(true);
       });
     return () => {
       cancelled = true;
