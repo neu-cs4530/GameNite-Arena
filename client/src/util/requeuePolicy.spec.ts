@@ -3,6 +3,7 @@ import {
   ensureQueueSession,
   modelSeatFor,
   parseQueueSession,
+  policyOf,
   queueHrefFromSession,
   queueSessionKey,
   recordGamePlayed,
@@ -87,11 +88,51 @@ describe("queue session storage", () => {
   it("rejects sessions missing required fields rather than guessing", () => {
     expect(parseQueueSession('{"gameKey":"nim"}')).toBeNull();
     expect(parseQueueSession('{"gameKey":"nim","rated":"yes","played":0}')).toBeNull();
+    expect(parseQueueSession('{"gameKey":7,"rated":true,"played":0}')).toBeNull();
+    expect(parseQueueSession('{"gameKey":"nim","rated":true,"played":"2"}')).toBeNull();
+  });
+
+  it("degrades wrong-typed optional fields instead of rejecting the session", () => {
+    const parsed = parseQueueSession(
+      '{"gameKey":"nim","rated":true,"played":0,"requeueLimit":"lots",' +
+        '"deploymentId":7,"lastCountedGameId":9,"autoRequeue":"yes"}',
+    );
+    expect(parsed).toEqual({
+      gameKey: "nim",
+      rated: true,
+      deploymentId: undefined,
+      modelId: undefined,
+      modelName: undefined,
+      autoRequeue: false,
+      requeueLimit: 0,
+      played: 0,
+      lastCountedGameId: null,
+    });
+    expect(
+      parseQueueSession('{"gameKey":"nim","rated":true,"played":0,"requeueLimit":-2}'),
+    ).toEqual(expect.objectContaining({ requeueLimit: 0 }));
   });
 
   it("sanitizes counters on the way in", () => {
     const tampered = serializeQueueSession(session()).replace('"played":0', '"played":-4');
     expect(parseQueueSession(tampered)?.played).toBe(0);
+    const fractional = serializeQueueSession(session()).replace(
+      '"requeueLimit":3',
+      '"requeueLimit":3.7',
+    );
+    expect(parseQueueSession(fractional)?.requeueLimit).toBe(3);
+    const fractionalPlayed = serializeQueueSession(session()).replace('"played":0', '"played":1.5');
+    expect(parseQueueSession(fractionalPlayed)?.played).toBe(0);
+  });
+});
+
+describe("policyOf", () => {
+  it("projects exactly the policy fields the decisions read", () => {
+    expect(policyOf(session({ autoRequeue: false, requeueLimit: 10, played: 4 }))).toEqual({
+      enabled: false,
+      limit: 10,
+      played: 4,
+    });
   });
 });
 

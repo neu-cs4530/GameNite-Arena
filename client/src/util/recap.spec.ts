@@ -3,6 +3,7 @@ import {
   deriveOutcome,
   extractEntityChange,
   extractMyChange,
+  formatDelta,
   isViewDone,
   recapMode,
   resultFromReplay,
@@ -217,5 +218,13 @@ describe("resultFromReplay", () => {
     expect(
       resultFromReplay({ rated: false, result: { winnerId: "u1", outcome: "win" } }),
     ).toBeNull();
+  });
+});
+
+describe("formatDelta", () => {
+  it("signs and rounds both directions, keeping zero positive", () => {
+    expect(formatDelta(12.25)).toBe("+12");
+    expect(formatDelta(-11.5)).toBe("-11");
+    expect(formatDelta(0)).toBe("+0");
   });
 });
