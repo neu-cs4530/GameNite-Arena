@@ -5,12 +5,23 @@
  *   GET /api/profile/:username — full ProfileSummary (general + per-game +
  *   puzzle stats), unauthenticated like the other read surfaces.
  */
-import { type Request, type Response } from "express";
+import { type ProfileSummary } from "@gamenite/shared";
+import { buildProfileSummary } from "../services/profile.service.ts";
+import { type RestAPI } from "../types.ts";
 
-export async function getProfileSummary(
-  _req: Request<{ username: string }>,
-  res: Response,
-): Promise<void> {
-  // Implemented by profile.service.ts (see docs/profile-puzzles-rework.md).
-  res.status(501).send({ error: "profile summary not implemented yet" });
-}
+/**
+ * Serves the aggregate ProfileSummary for one user.
+ * @param req The request with the username as a route parameter.
+ * @param res The response: the summary (200) or an error (404).
+ */
+export const getProfileSummary: RestAPI<ProfileSummary, { username: string }> = async (
+  req,
+  res,
+) => {
+  const summary = await buildProfileSummary(req.params.username);
+  if (summary === null) {
+    res.status(404).send({ error: "User not found" });
+    return;
+  }
+  res.send(summary);
+};

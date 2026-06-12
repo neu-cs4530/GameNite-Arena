@@ -19,7 +19,10 @@ export function todayYmd(now: Date = new Date()): string {
  * missed day it is stale history, not a live streak. Every read path must
  * serve this derived value — never the raw record.
  */
-export function effectiveStreak(streak: PuzzleStreak, today: string = todayYmd()): PuzzleStreakView {
+export function effectiveStreak(
+  streak: PuzzleStreak,
+  today: string = todayYmd(),
+): PuzzleStreakView {
   const alive =
     streak.lastSolvedAt !== undefined &&
     (streak.lastSolvedAt === today || streak.lastSolvedAt === dayBefore(today));

@@ -1,19 +1,28 @@
-import type { GameKey } from "@gamenite/shared";
+import type {
+  GameKey,
+  PuzzleAttemptResult,
+  PuzzleHintResult,
+  PuzzleViewerAttempt,
+} from "@gamenite/shared";
+import { dailyPuzzleKey, puzzleHintKey, type MatchRecord, type PuzzleRecord } from "../models.ts";
 import {
-  dailyPuzzleKey,
-  type GlickoRating,
-  type MatchRecord,
-  type PuzzleRecord,
-  type PuzzleStreak,
-} from "../models.ts";
-import { MatchRepo, PuzzleAttemptRepo, PuzzleRepo, UserRepo } from "../repository.ts";
+  MatchRepo,
+  PuzzleAttemptRepo,
+  PuzzleHintRepo,
+  PuzzleRepo,
+  UserRepo,
+} from "../repository.ts";
+import { getUserByUsername } from "./auth.service.ts";
 import { gameServices } from "./game.service.ts";
 import {
   updateRating,
   DEFAULT_RATING,
   DEFAULT_RD,
+  DEFAULT_VOLATILITY,
   type Glicko2GameResult,
 } from "./glicko2.service.ts";
+import { invalidatePuzzleLeaderboardCache } from "./puzzleLeaderboard.service.ts";
+import { dayBefore, effectiveStreak } from "./puzzleStreak.util.ts";
 
 /**
  * Games we generate daily puzzles for — deliberately a subset of all playable
@@ -35,17 +44,27 @@ const MIN_MOVES_FOR_PUZZLE = 4;
 const SOLUTION_MOVE_COUNT = 2;
 
 /**
+ * Returns the stored puzzle for one game and puzzle-day, or null when there
+ * is none. Games outside PUZZLE_GAME_KEYS always resolve null — even a stale
+ * stored record (written before a game was delisted) must never serve.
+ *
+ * @param gameKey - Which game to look up.
+ * @param date - The puzzle day (YYYY-MM-DD).
+ * @returns The PuzzleRecord for that day, or null.
+ */
+async function getPuzzleForDate(gameKey: GameKey, date: string): Promise<PuzzleRecord | null> {
+  if (!PUZZLE_GAME_KEYS.includes(gameKey)) return null;
+  return PuzzleRepo.find(`${gameKey}:${date}`);
+}
+
+/**
  * Returns today's puzzle for a game, or null if none has been generated yet.
- * Games outside PUZZLE_GAME_KEYS always resolve null — even a stale stored
- * record (written before a game was delisted) must never serve.
  *
  * @param gameKey - Which game to look up.
  * @returns The PuzzleRecord for today, or null.
  */
 export async function getTodaysPuzzle(gameKey: GameKey): Promise<PuzzleRecord | null> {
-  if (!PUZZLE_GAME_KEYS.includes(gameKey)) return null;
-  const key = dailyPuzzleKey({ gameKey, date: new Date() });
-  return PuzzleRepo.find(key);
+  return getPuzzleForDate(gameKey, new Date().toISOString().slice(0, 10));
 }
 
 /**
@@ -72,17 +91,19 @@ export async function getOrGenerateTodaysPuzzle(gameKey: GameKey): Promise<Puzzl
  *
  * The stored position is the WATCHER view (`viewAs(state, -1)`), so hidden
  * information — like the guess game's secret number — never reaches the
- * client inside the position.
+ * client inside the position. The raw pre-split state is also returned so
+ * the miner can soundness-check the split move against the game logic.
  *
  * @param match - The archived source match.
  * @param splitIndex - Index of the first solution move.
- * @returns The hydrated position + raw solution moves, or null when the
- *          archived moves don't replay cleanly (corrupt entry).
+ * @returns The pre-split state, hydrated position, and raw solution moves,
+ *          or null when the archived moves don't replay cleanly (corrupt
+ *          entry).
  */
 function hydrateSplit(
   match: MatchRecord,
   splitIndex: number,
-): { position: unknown; solutionMoves: unknown[] } | null {
+): { state: unknown; position: unknown; solutionMoves: unknown[] } | null {
   const servicer = gameServices[match.gameKey];
   const players = match.participants.map((p) => p.id);
 
@@ -101,6 +122,7 @@ function hydrateSplit(
   }
 
   return {
+    state,
     position: servicer.view(state, -1).view,
     solutionMoves: match.moves.slice(splitIndex).map((m) => m.move),
   };
@@ -135,10 +157,16 @@ function explainSolution(gameKey: GameKey, solutionMoves: unknown[]): string {
  * that day. Skips silently if no suitable match exists yet, and refuses
  * outright for games outside PUZZLE_GAME_KEYS (positions not deducible).
  *
+ * Candidates are SOUNDNESS-checked: the archived split move must pass the
+ * game's `isWinningMove` hook (nim: leaves remaining ≡ 1 mod 4). A match
+ * whose winner blundered at the split — and only won because the opponent
+ * blundered back — never becomes a puzzle, because its labeled solution
+ * would lose to best play.
+ *
  * The stored record uses per-game shapes end to end: `position` is the
  * hydrated watcher view of the game state (e.g. `{remaining, nextPlayer}`
  * for nim), and `solution.moves` are raw move payloads (e.g. `3`) — the
- * exact encoding the attempt endpoint compares a submitted move against.
+ * exact encoding the attempt endpoint grades a submitted move against.
  *
  * @param gameKey - Which game to generate a puzzle for.
  * @param date - The calendar day this puzzle belongs to.
@@ -159,8 +187,9 @@ export async function generatePuzzleForGame(
   if (allMatchKeys.length === 0) return null;
 
   const allMatches = await MatchRepo.getMany(allMatchKeys);
+  const servicer = gameServices[gameKey];
 
-  // most recent wins first; fall through corrupt entries to older ones
+  // most recent wins first; fall through corrupt/unsound entries to older ones
   const candidates = allMatches
     .map((match, index) => ({ match, matchId: allMatchKeys[index] }))
     .filter(
@@ -175,6 +204,10 @@ export async function generatePuzzleForGame(
     const splitIndex = match.moves.length - SOLUTION_MOVE_COUNT;
     const hydrated = hydrateSplit(match, splitIndex);
     if (hydrated === null) continue;
+
+    // Soundness gate: if the game can judge moves, the archived split move
+    // must be genuinely winning, or the "solution" teaches a losing line.
+    if (servicer.isWinningMove(hydrated.state, hydrated.solutionMoves[0]) === false) continue;
 
     const puzzle: PuzzleRecord = {
       gameKey,
@@ -209,64 +242,75 @@ export async function generateAllDailyPuzzles(date: Date = new Date()): Promise<
 // scored against a fresh average player (1500 rating, 350 rd).
 const puzzleOpponent = { opponentRating: DEFAULT_RATING, opponentRd: DEFAULT_RD };
 
-/** One graded submission against today's puzzle. */
+/**
+ * One graded submission against a daily puzzle. `date` is the puzzle-day the
+ * client actually rendered (echoed from the GET): it pins the puzzle graded
+ * against, the rated slot, the streak day, and the attempt log — a session
+ * straddling UTC midnight is graded against the puzzle it shows. There is no
+ * client-supplied hint count: hint state lives server-side in PuzzleHintRepo.
+ */
 export interface PuzzleAttemptInput {
   move: unknown;
   timeMs: number;
-  hintsUsed: number;
+  date: string; // YYYY-MM-DD
 }
 
 /**
- * What the attempt endpoint returns. `rated: false` marks a practice attempt:
- * still graded honestly, but the eloDelta is 0 and `newRating`/`streak` echo
- * the user's unchanged state.
- */
-export interface AttemptResult {
-  success: boolean;
-  rated: boolean;
-  eloDelta: number;
-  newRating: GlickoRating;
-  streak: PuzzleStreak;
-}
-
-/**
- * Grades one attempt against today's puzzle and applies the daily
- * rated-attempt economy:
+ * Grades one attempt against the puzzle pinned by `attempt.date` and applies
+ * the daily rated-attempt economy:
  *
- * - Only the FIRST UNHINTED attempt of the UTC day per (user, game) is rated:
- *   it moves the user's puzzle Glicko and (on success) the streak, and spends
- *   the day's rated slot (`puzzleLastRatedAt[gameKey]`).
- * - Every other attempt is practice — retries, and ANY attempt with
- *   `hintsUsed > 0` (the hint reveals the winning move, so a hinted solve
- *   must never gain rating). Practice attempts are still graded and logged,
- *   but `eloDelta` is 0 and rating/streak stay frozen.
- * - A hinted attempt does not spend the rated slot: the first unhinted
- *   attempt of the day is the rated one even if hints were browsed earlier.
+ * - GRADING goes through the game's `isWinningMove` hook: ANY winning move
+ *   scores, and an archived blunder can never be the grading key. Exact JSON
+ *   equality with `solution.moves[0]` is only a fallback for games without
+ *   the hook. (The stored position is the watcher view; for nim it parses as
+ *   the state directly.)
+ * - Only the FIRST UNHINTED attempt per (user, game, puzzle-date) is RATED:
+ *   it moves the user's per-game puzzle Glicko (`puzzleRatings[gameKey]`,
+ *   created at 1500/350 on first use) and spends that date's rated slot
+ *   (`puzzleLastRatedAt[gameKey] === date`). Every other attempt is practice:
+ *   still graded and logged, but eloDelta 0 and rating frozen.
+ * - The STREAK is decoupled from the rated slot: it advances on the first
+ *   unhinted SUCCESSFUL solve of a puzzle-date, even when the rated slot was
+ *   already spent by an earlier failure. Consecutive puzzle-dates chain;
+ *   a gap resets the chain to 1. Hinted solves never advance it.
+ * - An attempt is HINTED when PuzzleHintRepo holds a grant for this user and
+ *   puzzle — the hint reveals the answer, so a hinted attempt is never rated
+ *   and never advances the streak.
+ * - The served streak is the EFFECTIVE streak as of the puzzle-day (zeroed
+ *   when the stored chain is already broken); the raw record is history.
  *
- * @param gameKey - Which game's daily puzzle was attempted.
  * @param userId - The attempting user (already authenticated by the caller).
- * @param attempt - The raw move plus elapsed time and hint count.
- * @returns The graded result, or null when there is no puzzle for today.
+ * @param gameKey - Which game's daily puzzle was attempted.
+ * @param attempt - The raw move, elapsed time, and pinned puzzle-date.
+ * @returns The graded result, or null when no puzzle exists for that date.
  */
 export async function submitAttempt(
-  gameKey: GameKey,
   userId: string,
+  gameKey: GameKey,
   attempt: PuzzleAttemptInput,
-): Promise<AttemptResult | null> {
-  const puzzleKey = dailyPuzzleKey({ gameKey, date: new Date() });
-  const puzzle = await getTodaysPuzzle(gameKey);
+): Promise<PuzzleAttemptResult | null> {
+  const { date } = attempt;
+  const puzzle = await getPuzzleForDate(gameKey, date);
   if (!puzzle) return null;
+  const puzzleId = `${gameKey}:${date}`;
 
-  // check the submitted move against the first solution move
-  const success = JSON.stringify(attempt.move) === JSON.stringify(puzzle.solution.moves[0]);
+  // grade through the game logic; archived-move equality only as a fallback
+  const verdict = gameServices[gameKey].isWinningMove(puzzle.position, attempt.move);
+  const success =
+    verdict !== null
+      ? verdict
+      : JSON.stringify(attempt.move) === JSON.stringify(puzzle.solution.moves[0]);
 
   const userRecord = await UserRepo.get(userId);
-  const today = new Date().toISOString().slice(0, 10);
-  const rated = attempt.hintsUsed === 0 && userRecord.puzzleLastRatedAt?.[gameKey] !== today;
+  const hinted = (await PuzzleHintRepo.find(puzzleHintKey(userId, puzzleId))) !== null;
+  const rated = !hinted && userRecord.puzzleLastRatedAt?.[gameKey] !== date;
 
-  const currentRating = userRecord.puzzleRatings[gameKey] ?? { rating: 1500, rd: 350, vol: 0.06 };
+  const currentRating = userRecord.puzzleRatings[gameKey] ?? {
+    rating: DEFAULT_RATING,
+    rd: DEFAULT_RD,
+    vol: DEFAULT_VOLATILITY,
+  };
   let newRating = currentRating;
-  let newStreak = userRecord.puzzleStreak;
   let eloDelta = 0;
 
   if (rated) {
@@ -281,38 +325,121 @@ export async function submitAttempt(
     );
     newRating = { rating: updated.rating, rd: updated.rd, vol: updated.volatility };
     eloDelta = Math.round(newRating.rating - currentRating.rating);
+  }
 
-    // streak only updates on the first successful solve of each day
-    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-    if (success && userRecord.puzzleStreak.lastSolvedAt !== today) {
-      const current =
-        userRecord.puzzleStreak.lastSolvedAt === yesterday
-          ? userRecord.puzzleStreak.current + 1
-          : 1;
-      newStreak = {
-        current,
-        best: Math.max(current, userRecord.puzzleStreak.best),
-        lastSolvedAt: today,
-      };
-    }
+  // Streak: first unhinted successful solve of this puzzle-date, rated or
+  // not. The `<` guard keeps a late solve of an OLDER date's puzzle from
+  // regressing lastSolvedAt and nuking a live chain.
+  const storedStreak = userRecord.puzzleStreak;
+  const advancesStreak =
+    success &&
+    !hinted &&
+    (storedStreak.lastSolvedAt === undefined || storedStreak.lastSolvedAt < date);
+  let newStreak = storedStreak;
+  if (advancesStreak) {
+    const current = storedStreak.lastSolvedAt === dayBefore(date) ? storedStreak.current + 1 : 1;
+    newStreak = {
+      current,
+      best: Math.max(current, storedStreak.best),
+      lastSolvedAt: date,
+    };
+  }
 
+  // persist whenever rating OR streak changed
+  if (rated || advancesStreak) {
     await UserRepo.set(userId, {
       ...userRecord,
-      puzzleRatings: { ...userRecord.puzzleRatings, [gameKey]: newRating },
+      puzzleRatings: rated
+        ? { ...userRecord.puzzleRatings, [gameKey]: newRating }
+        : userRecord.puzzleRatings,
       puzzleStreak: newStreak,
-      puzzleLastRatedAt: { ...userRecord.puzzleLastRatedAt, [gameKey]: today },
+      puzzleLastRatedAt: rated
+        ? { ...userRecord.puzzleLastRatedAt, [gameKey]: date }
+        : userRecord.puzzleLastRatedAt,
     });
+    await invalidatePuzzleLeaderboardCache(gameKey);
   }
 
   await PuzzleAttemptRepo.add({
-    puzzleId: puzzleKey,
+    puzzleId,
     attemptedBy: { id: userId, type: "human" },
     success,
+    rated,
     timeMs: attempt.timeMs,
-    hintsUsed: attempt.hintsUsed,
+    hintsUsed: hinted ? 1 : 0,
     eloDelta,
     createdAt: new Date().toISOString(),
   });
 
-  return { success, rated, eloDelta, newRating, streak: newStreak };
+  return {
+    success,
+    rated,
+    eloDelta,
+    newRating,
+    // every served streak is the EFFECTIVE streak, never the raw record
+    streak: effectiveStreak(newStreak, date),
+    solutionMove: puzzle.solution.moves[0],
+    explanation: puzzle.solution.explanation,
+  };
+}
+
+/**
+ * Reveals the archived solution move for the puzzle pinned by `date` and
+ * records the grant in PuzzleHintRepo under `<userId>|<puzzleId>`. From this
+ * point every attempt by this user on this puzzle is hinted: never rated,
+ * never streak-advancing. Idempotent — a repeat request keeps the original
+ * grant record.
+ *
+ * @param userId - The requesting user (already authenticated by the caller).
+ * @param gameKey - Which game's daily puzzle the hint is for.
+ * @param date - The puzzle-day (YYYY-MM-DD) the client is rendering.
+ * @returns The hint payload, or null when no puzzle exists for that date.
+ */
+export async function grantHint(
+  userId: string,
+  gameKey: GameKey,
+  date: string,
+): Promise<PuzzleHintResult | null> {
+  const puzzle = await getPuzzleForDate(gameKey, date);
+  if (!puzzle) return null;
+  const puzzleId = `${gameKey}:${date}`;
+
+  const key = puzzleHintKey(userId, puzzleId);
+  const existing = await PuzzleHintRepo.find(key);
+  if (existing === null) {
+    await PuzzleHintRepo.set(key, { userId, puzzleId, grantedAt: new Date().toISOString() });
+  }
+
+  return { hintMove: puzzle.solution.moves[0], explanation: puzzle.solution.explanation };
+}
+
+/**
+ * Summarizes one user's standing against one puzzle from the attempt log,
+ * for the GET's `?for=<username>` affordance (solved badges on Home/Portal).
+ *
+ * @param username - The viewer's username (NOT id — it comes from the URL).
+ * @param puzzleId - The puzzle's deterministic `<gameKey>:<date>` key.
+ * @returns The viewer's attempted/solved/rated flags, or null when no such
+ *          user exists.
+ */
+export async function getViewerAttempt(
+  username: string,
+  puzzleId: string,
+): Promise<PuzzleViewerAttempt | null> {
+  const user = await getUserByUsername(username);
+  if (!user) return null;
+
+  const keys = await PuzzleAttemptRepo.getAllKeys();
+  const allAttempts = keys.length > 0 ? await PuzzleAttemptRepo.getMany(keys) : [];
+  const mine = allAttempts.filter(
+    (a) => a.puzzleId === puzzleId && a.attemptedBy.id === user.userId,
+  );
+
+  return {
+    attempted: mine.length > 0,
+    solved: mine.some((a) => a.success),
+    // records written before the profile rework lack `rated` — fall back to
+    // the nonzero eloDelta that only rated attempts could carry
+    rated: mine.some((a) => a.rated ?? a.eloDelta !== 0),
+  };
 }

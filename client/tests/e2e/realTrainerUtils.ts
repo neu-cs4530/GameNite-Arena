@@ -154,7 +154,10 @@ export async function uploadArtifact(
       file: {
         name: "trained.pth",
         mimeType: "application/octet-stream",
-        buffer: Buffer.from(contents),
+        // Cast: jsdom's type chain (unit-test harness) surfaces a second
+        // Uint8Array generic instantiation that makes tsc see this Buffer
+        // as a plain Uint8Array. The runtime value is a Node Buffer.
+        buffer: Buffer.from(contents) as Buffer,
       },
     },
   });
