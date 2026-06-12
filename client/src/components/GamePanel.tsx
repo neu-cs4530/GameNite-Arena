@@ -8,8 +8,10 @@ import useSocketsForGame from "../hooks/useSocketsForGame.ts";
 import useTimeSince from "../hooks/useTimeSince.ts";
 import Card from "./ui/Card.tsx";
 import RecapPanel from "./recap/RecapPanel.tsx";
+import RequeueStrip from "./recap/RequeueStrip.tsx";
 import { getReplay } from "../services/replayService.ts";
 import { isViewDone, recapMode, resultFromReplay } from "../util/recap.ts";
+import { modelSeatFor, parseQueueSession, queueSessionKey } from "../util/requeuePolicy.ts";
 
 /**
  * How long a finished game waits for a `gameResult` event before concluding
@@ -75,6 +77,17 @@ export default function GamePanel({
     recoverySettled,
   });
 
+  // The queue session (if any) ties this game to an auto-requeue run and
+  // tells the recap when the viewer's MODEL held the seat. Read once — the
+  // session only changes through the recap strip below.
+  const [queueSession] = useState(() =>
+    parseQueueSession(window.sessionStorage.getItem(queueSessionKey(type))),
+  );
+  const modelEntityId = modelSeatFor(queueSession, effectiveResult, players);
+  // Only participants' recaps drive the requeue run: a bystander watching
+  // someone else's game must never burn the viewer's requeue counter.
+  const participated = userPlayerIndex >= 0 || modelEntityId !== null;
+
   return hasWatched ? (
     <div className="gamePanel">
       <div className="gameRoster">
@@ -119,7 +132,12 @@ export default function GamePanel({
         <div className="gameFrame waiting content">waiting for game to begin</div>
       )}
       {recap === "rated" && effectiveResult && (
-        <RecapPanel gameKey={type} result={effectiveResult} userPlayerIndex={userPlayerIndex} />
+        <RecapPanel
+          gameKey={type}
+          result={effectiveResult}
+          userPlayerIndex={userPlayerIndex}
+          modelEntityId={modelEntityId}
+        />
       )}
       {recap === "casual" && (
         <Card className="ga-recap ga-recap--casual" testId="recap-casual">
@@ -127,6 +145,7 @@ export default function GamePanel({
           <p>Casual game — no Glicko changes.</p>
         </Card>
       )}
+      {recap !== "none" && participated && <RequeueStrip gameKey={type} gameId={gameId} />}
     </div>
   ) : (
     <div></div>

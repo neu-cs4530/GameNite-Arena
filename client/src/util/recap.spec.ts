@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   deriveOutcome,
+  extractEntityChange,
   extractMyChange,
   isViewDone,
   recapMode,
@@ -46,6 +47,70 @@ describe("deriveOutcome", () => {
 
   it("stays neutral for watchers (no self id)", () => {
     expect(deriveOutcome(win("them"), null)).toEqual({ headline: "Game over", tone: "default" });
+  });
+
+  describe("when the viewer's model held the seat", () => {
+    it("credits the model, not the viewer", () => {
+      expect(deriveOutcome(win("m-1"), "m-1", "model")).toEqual({
+        headline: "Your model won",
+        tone: "success",
+      });
+      expect(deriveOutcome(win("them"), "m-1", "model")).toEqual({
+        headline: "Your model lost",
+        tone: "danger",
+      });
+    });
+
+    it("labels model forfeits honestly", () => {
+      expect(deriveOutcome({ winnerId: "m-1", outcome: "forfeit" }, "m-1", "model")).toEqual({
+        headline: "Your model won by forfeit",
+        tone: "success",
+      });
+      expect(deriveOutcome({ winnerId: "them", outcome: "forfeit" }, "m-1", "model")).toEqual({
+        headline: "Your model lost by forfeit",
+        tone: "danger",
+      });
+    });
+
+    it("keeps draws, abandonments and unknown ids neutral", () => {
+      expect(deriveOutcome({ outcome: "draw" }, "m-1", "model")).toEqual({
+        headline: "Draw",
+        tone: "default",
+      });
+      expect(deriveOutcome({ outcome: "abandoned" }, "m-1", "model")).toEqual({
+        headline: "Game abandoned",
+        tone: "default",
+      });
+      expect(deriveOutcome(win("them"), null, "model")).toEqual({
+        headline: "Game over",
+        tone: "default",
+      });
+    });
+  });
+});
+
+describe("extractEntityChange", () => {
+  // The server writes AI seats' ratingChanges with entityId = modelId, so a
+  // spectating owner finds their model by id, not by player index.
+  const result: MatchResultView = {
+    winnerId: "m-1",
+    outcome: "win",
+    ratingChanges: [
+      { entityId: "u-1", delta: -9.5 },
+      { entityId: "m-1", delta: 9.5 },
+    ],
+  };
+
+  it("finds the entity's change by id", () => {
+    expect(extractEntityChange(result, "m-1")).toEqual({ entityId: "m-1", delta: 9.5 });
+  });
+
+  it("returns null when the entity was not rated in this game", () => {
+    expect(extractEntityChange(result, "m-2")).toBeNull();
+  });
+
+  it("returns null when there are no rating changes at all", () => {
+    expect(extractEntityChange({ outcome: "abandoned" }, "m-1")).toBeNull();
   });
 });
 
