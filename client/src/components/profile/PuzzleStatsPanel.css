@@ -1,0 +1,78 @@
+.ga-puzzle-stats {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.ga-puzzle-stats__overview {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+.ga-puzzle-stats__overview .ga-stat-tile,
+.ga-puzzle-stats__game-tiles .ga-stat-tile {
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.ga-puzzle-stats__game {
+  gap: var(--space-3);
+}
+
+.ga-puzzle-stats__game-title,
+.ga-puzzle-stats__history-title {
+  margin: 0;
+  font-size: var(--text-h3);
+  font-weight: var(--weight-semibold);
+}
+
+.ga-puzzle-stats__game-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.ga-puzzle-stats__history {
+  gap: var(--space-3);
+}
+
+.ga-puzzle-attempts {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-small);
+}
+
+.ga-puzzle-attempts th {
+  text-align: left;
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-fg-subtle);
+  font-weight: var(--weight-semibold);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border-strong);
+}
+
+.ga-puzzle-attempts td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-fg);
+}
+
+.ga-puzzle-attempts tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.ga-puzzle-attempts__delta {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 900px) {
+  .ga-puzzle-stats__game-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -117,6 +117,13 @@
   white-space: nowrap;
 }
 
+/* Puzzle rows show tier + provisional side by side (no RD on the wire). */
+.ga-leaderboards__puzzle-rating {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 /* --- Narrow ------------------------------------------------------------- */
 
 @media (max-width: 640px) {

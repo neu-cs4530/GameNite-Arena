@@ -13,11 +13,12 @@ import Skeleton from "../components/ui/Skeleton.tsx";
 import TimeAgo from "../components/ui/TimeAgo.tsx";
 import { MultiToggle } from "../components/filters/index.ts";
 import useAsync from "../hooks/useAsync.ts";
+import useDailyPuzzles from "../hooks/useDailyPuzzles.ts";
 import useLoginContext from "../hooks/useLoginContext.ts";
 import useQueueCounts from "../hooks/useQueueCounts.ts";
 import { gameList } from "../services/gameService.ts";
 import { fetchRating, inProgressGamesFor, queueTileLabel } from "../services/matchmakingService.ts";
-import { PLAYABLE_GAME_KEYS, gameNames } from "../util/consts.ts";
+import { PLAYABLE_GAME_KEYS, PUZZLE_GAME_KEYS, gameNames } from "../util/consts.ts";
 
 type Mode = "casual" | "ranked";
 
@@ -55,6 +56,17 @@ export default function GamesPortal(): JSX.Element {
   const gamesResult = useAsync(gameList, []);
   const inProgress = inProgressGamesFor(gamesResult.data ?? [], user.username);
 
+  // Real solved-today state for the puzzle tile badges (viewerAttempt from
+  // `?for=`). Which games HAVE a daily puzzle is static (PUZZLE_GAME_KEYS);
+  // only the solved checkmark depends on this fetch, so an outage degrades
+  // to the plain badge instead of hiding it.
+  const dailyPuzzles = useDailyPuzzles(user.username);
+
+  function puzzleSolvedToday(key: GameKey): boolean {
+    const slot = dailyPuzzles.data?.[key];
+    return slot?.status === "ok" && slot.puzzle?.viewerAttempt?.solved === true;
+  }
+
   function selectGame(key: string) {
     // The grid only renders playable keys, so the assertion is safe.
     setSelectedGame(key as GameKey);
@@ -70,7 +82,19 @@ export default function GamesPortal(): JSX.Element {
         selectedKey={selectedGame}
         onSelect={selectGame}
         renderTileExtra={(key) => (
-          <span data-testid={`queue-count-${key}`}>{queueTileLabel(counts[key as GameKey])}</span>
+          <span className="ga-portal__tile-extra">
+            <span data-testid={`queue-count-${key}`}>{queueTileLabel(counts[key as GameKey])}</span>
+            {PUZZLE_GAME_KEYS.includes(key as GameKey) &&
+              (puzzleSolvedToday(key as GameKey) ? (
+                <Badge variant="success" testId="portal-puzzle-badge">
+                  Daily puzzle solved ✓
+                </Badge>
+              ) : (
+                <Badge variant="info" testId="portal-puzzle-badge">
+                  Daily puzzle
+                </Badge>
+              ))}
+          </span>
         )}
       />
 

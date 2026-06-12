@@ -221,27 +221,9 @@ export interface AnalysisResult {
 
 /* --- Profile -------------------------------------------------------- */
 
-export interface ProfileGameStats {
-  gameKey: ReplayGameKey;
-  rating: number;
-  wins: number;
-  losses: number;
-  draws: number;
-}
-
-export interface ProfileDetail {
-  user: SafeUserInfo;
-  joinedAt: string;
-  overallElo: number;
-  totalMatches: number;
-  wins: number;
-  losses: number;
-  draws: number;
-  currentStreak: number;
-  perGame: ProfileGameStats[];
-  /** True if the requested profile exists and is loaded. */
-  exists: boolean;
-}
+/* The old client-composed ProfileDetail/ProfileGameStats shapes are gone:
+ * the profile page now renders the server's `ProfileSummary` aggregate
+ * (shared/src/profile.types.ts) fetched by services/profileService.ts. */
 
 export type ReplayGameKeyOrAll = ReplayGameKey | "all";
 

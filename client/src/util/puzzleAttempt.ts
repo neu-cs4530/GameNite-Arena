@@ -1,47 +1,66 @@
+import type { PuzzleAttemptResult } from "@gamenite/shared";
+
 /**
  * Pure state machine for the daily-puzzle attempt flow:
  *
  *   idle → viewing{startedAt} → submitting → result → viewing (retry)
  *
- * The page owns the side effects (fetching, POSTing the attempt); every
- * decision — including the attempt timer — lives here so it can be unit
- * tested with an injected clock. There is deliberately no visible timer in
- * the UI: `timeMs` is measured from puzzle load to submit and only sent to
- * the server.
+ * The page owns the side effects (fetching, POSTing attempts and hints);
+ * every decision — including the attempt timer — lives here so it can be
+ * unit tested with an injected clock. There is deliberately no visible
+ * timer in the UI: `timeMs` is measured from puzzle load to submit and only
+ * sent to the server.
+ *
+ * Hints are a server round-trip now (POST /api/puzzle/:gameKey/hint records
+ * the grant and forfeits the rated slot). The machine only tracks what the
+ * UI needs: whether a request is in flight, and — once granted — the
+ * revealed move plus the permanent `hinted` forfeit flag. There is no
+ * client-side hint COUNT anywhere: the server derives hint usage from its
+ * own grant log and ignores anything the client might claim.
  */
 
-/** The server's verdict on one attempt (mirror of the attempt endpoint). */
-export interface AttemptResultView {
-  success: boolean;
-  /**
-   * Whether this attempt moved rating/streak. Only the first UNHINTED
-   * attempt of the UTC day is rated; retries and hinted attempts come back
-   * `rated: false` (practice) with a zero eloDelta and the user's state
-   * echoed unchanged in `newRating`/`streak`.
-   */
-  rated: boolean;
-  eloDelta: number;
-  newRating: { rating: number; rd: number; vol: number };
-  streak: { current: number; best: number; lastSolvedAt?: string };
+/** What the hint endpoint revealed, as the UI renders it. */
+export interface PuzzleHintView {
+  move: unknown;
+  explanation?: string;
 }
 
 export type AttemptState =
   | { phase: "idle" }
-  | { phase: "viewing"; startedAt: number; hintsUsed: number; error: string | null }
-  | { phase: "submitting"; startedAt: number; hintsUsed: number; move: unknown; timeMs: number }
   | {
-      phase: "result";
-      hintsUsed: number;
+      phase: "viewing";
+      startedAt: number;
+      /** True once the server granted a hint — the rated slot is forfeit. */
+      hinted: boolean;
+      hint: PuzzleHintView | null;
+      /** True while the hint POST is in flight. */
+      hintPending: boolean;
+      error: string | null;
+    }
+  | {
+      phase: "submitting";
+      startedAt: number;
+      hinted: boolean;
+      hint: PuzzleHintView | null;
       move: unknown;
       timeMs: number;
-      result: AttemptResultView;
+    }
+  | {
+      phase: "result";
+      hinted: boolean;
+      hint: PuzzleHintView | null;
+      move: unknown;
+      timeMs: number;
+      result: PuzzleAttemptResult;
     };
 
 export type AttemptEvent =
   | { type: "puzzleLoaded"; now: number }
-  | { type: "hintRevealed" }
+  | { type: "hintRequested" }
+  | { type: "hintReceived"; hint: PuzzleHintView }
+  | { type: "hintFailed"; message: string }
   | { type: "submitted"; move: unknown; now: number }
-  | { type: "resolved"; result: AttemptResultView }
+  | { type: "resolved"; result: PuzzleAttemptResult }
   | { type: "failed"; message: string }
   | { type: "retried"; now: number }
   | { type: "reset" };
@@ -62,7 +81,7 @@ export function attemptTimeMs(startedAt: number, now: number): number {
 
 /**
  * Advances the attempt machine. Total: events that don't apply to the
- * current phase (stale network resolutions after a reset, hint clicks with
+ * current phase (stale network resolutions after a reset, hint grants with
  * no puzzle, …) leave the state untouched.
  *
  * @param state - The current attempt state.
@@ -72,21 +91,41 @@ export function attemptTimeMs(startedAt: number, now: number): number {
 export function attemptReducer(state: AttemptState, event: AttemptEvent): AttemptState {
   switch (event.type) {
     case "puzzleLoaded":
-      // A (re)load is a fresh attempt: new timer, hint count back to zero.
-      return { phase: "viewing", startedAt: event.now, hintsUsed: 0, error: null };
+      // A (re)load restarts the timer and clears LOCAL hint state. The
+      // forfeit itself is server-side: if a hint was already granted today
+      // the next attempt still comes back `rated: false` regardless of what
+      // this client remembers.
+      return {
+        phase: "viewing",
+        startedAt: event.now,
+        hinted: false,
+        hint: null,
+        hintPending: false,
+        error: null,
+      };
 
-    case "hintRevealed":
-      // Only the FIRST solution move is ever revealed, so re-opening the
-      // hint disclosure can never cost more than one hint.
+    case "hintRequested":
+      // Re-requesting an already-granted hint would just re-buy the same
+      // forfeit — the UI keeps showing what it has.
+      if (state.phase !== "viewing" || state.hinted) return state;
+      return { ...state, hintPending: true };
+
+    case "hintReceived":
       if (state.phase !== "viewing") return state;
-      return { ...state, hintsUsed: 1 };
+      return { ...state, hinted: true, hint: event.hint, hintPending: false };
+
+    case "hintFailed":
+      // The grant didn't happen, so the attempt is still unhinted/rated.
+      if (state.phase !== "viewing") return state;
+      return { ...state, hintPending: false, error: event.message };
 
     case "submitted":
       if (state.phase !== "viewing") return state;
       return {
         phase: "submitting",
         startedAt: state.startedAt,
-        hintsUsed: state.hintsUsed,
+        hinted: state.hinted,
+        hint: state.hint,
         move: event.move,
         timeMs: attemptTimeMs(state.startedAt, event.now),
       };
@@ -95,7 +134,8 @@ export function attemptReducer(state: AttemptState, event: AttemptEvent): Attemp
       if (state.phase !== "submitting") return state;
       return {
         phase: "result",
-        hintsUsed: state.hintsUsed,
+        hinted: state.hinted,
+        hint: state.hint,
         move: state.move,
         timeMs: state.timeMs,
         result: event.result,
@@ -108,16 +148,24 @@ export function attemptReducer(state: AttemptState, event: AttemptEvent): Attemp
       return {
         phase: "viewing",
         startedAt: state.startedAt,
-        hintsUsed: state.hintsUsed,
+        hinted: state.hinted,
+        hint: state.hint,
+        hintPending: false,
         error: event.message,
       };
 
     case "retried":
-      // A retry restarts the timer but keeps the hint count — the hint (and
-      // by now the full solution) can't be un-seen, so the next attempt is
-      // honestly marked as hinted.
+      // A retry restarts the timer but keeps the hint — it can't be un-seen,
+      // and the server-side forfeit stands either way.
       if (state.phase !== "result") return state;
-      return { phase: "viewing", startedAt: event.now, hintsUsed: state.hintsUsed, error: null };
+      return {
+        phase: "viewing",
+        startedAt: event.now,
+        hinted: state.hinted,
+        hint: state.hint,
+        hintPending: false,
+        error: null,
+      };
 
     case "reset":
       return initialAttemptState;

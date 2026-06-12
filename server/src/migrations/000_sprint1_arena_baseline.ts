@@ -1,6 +1,6 @@
 import type { Migration } from "./MigrationRunner.ts";
 import { GameRepo, UserRepo } from "../repository.ts";
-import type { GameRecord, GlickoRating, PuzzleStreak, UserRecord } from "../models.ts";
+import type { GameRecord, PuzzleStreak, UserRecord } from "../models.ts";
 
 /**
  * Sprint 1 baseline migration. Adds all GameNite Arena fields to existing

@@ -1,11 +1,14 @@
 import "./ActivityHeatmap.css";
 import type { JSX } from "react";
 import { useMemo } from "react";
+import type { HeatmapGrid } from "@gamenite/shared";
 import Card from "../ui/Card.tsx";
-import { MOCK_REPLAYS } from "../../__mocks__/replays.ts";
 
 interface ActivityHeatmapProps {
-  username: string | undefined;
+  /** 7 rows (Sunday..Saturday) x 24 columns (UTC hour) of match counts. */
+  grid: HeatmapGrid;
+  /** Optional override for the subheading (e.g. the scoped game's name). */
+  subtitle?: string;
 }
 
 const WEEKDAY_NAMES = [
@@ -19,29 +22,19 @@ const WEEKDAY_NAMES = [
 ];
 
 /**
- * 7x24 grid showing match counts for the user across (weekday, hour).
- * Each cell renders as a coloured square whose intensity is proportional to
- * the count of matches at that weekday/hour.
+ * 7x24 grid showing match counts across (weekday, hour). PURE presentational:
+ * the bucket counts arrive fully computed (server-aggregated real data via
+ * `ProfileSummary`); each cell renders as a coloured square whose intensity
+ * is proportional to the count at that weekday/hour.
  */
-export default function ActivityHeatmap({ username }: ActivityHeatmapProps): JSX.Element {
-  const grid = useMemo(() => {
-    const cells: number[][] = Array.from({ length: 7 }, () => Array<number>(24).fill(0));
-    if (!username) return cells;
-    for (const replay of MOCK_REPLAYS) {
-      if (!replay.participants.some((p) => p.username === username)) continue;
-      const d = new Date(replay.completedAt);
-      cells[d.getUTCDay()][d.getUTCHours()] += 1;
-    }
-    return cells;
-  }, [username]);
-
+export default function ActivityHeatmap({ grid, subtitle }: ActivityHeatmapProps): JSX.Element {
   const max = useMemo(() => grid.reduce((m, row) => Math.max(m, ...row), 0), [grid]);
 
   return (
     <Card className="ga-heatmap" testId="activity-heatmap">
       <header className="ga-heatmap__head">
         <h3>Activity heatmap</h3>
-        <span className="ga-heatmap__sub">Matches per weekday / hour (UTC)</span>
+        <span className="ga-heatmap__sub">{subtitle ?? "Matches per weekday / hour (UTC)"}</span>
       </header>
       <div className="ga-heatmap__grid" role="grid" aria-label="Match activity by weekday and hour">
         {grid.map((row, day) => (
