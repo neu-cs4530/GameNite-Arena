@@ -276,7 +276,7 @@ export default function TrainerDashboard(): JSX.Element {
               <li>
                 <strong>Start a run</strong> from the kit folder and watch it appear here live:
                 <CopyField
-                  value={`python3 example_local_training_nim.py --base-url ${window.location.origin} --username ${user.username} --password <your password>`}
+                  value={`.venv/bin/python train.py --base-url ${window.location.origin} --username ${user.username} --password <your password> --game nim`}
                   testId="quickstart-run-command"
                 />
               </li>
