@@ -487,6 +487,10 @@ export interface PuzzleAttemptRecord {
   puzzleId: RecordId; // References Puzzle records
   attemptedBy: PuzzleAttempter;
   success: boolean;
+  /** Whether this attempt moved the user's puzzle rating. Optional because
+   * records written before the profile rework lack it — readers fall back
+   * to `eloDelta !== 0`. */
+  rated?: boolean;
   timeMs: number;
   hintsUsed: number;
   eloDelta: number;
