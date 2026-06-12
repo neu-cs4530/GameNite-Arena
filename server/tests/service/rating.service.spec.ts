@@ -6,7 +6,11 @@ import {
   DEFAULT_RD,
   DEFAULT_VOLATILITY,
 } from "../../src/services/glicko2.service.ts";
-import { getRating, updateRatingsForGame } from "../../src/services/rating.service.ts";
+import {
+  getRating,
+  getRatingForEntity,
+  updateRatingsForGame,
+} from "../../src/services/rating.service.ts";
 import { createRedisConnection } from "../../src/services/redis.ts";
 
 const baseGame: GameRecord = {
@@ -196,5 +200,189 @@ describe("updateRatingsForGame", () => {
       ratingKey({ entityType: "human", entityId: "bob", gameKey: "nim" }),
     );
     expect(record!.gamesPlayed).toBe(2);
+  });
+});
+
+describe("getRatingForEntity", () => {
+  it("reads model ratings from the ai-prefixed key", async () => {
+    await RatingRepo.set(ratingKey({ entityType: "ai", entityId: "model-1", gameKey: "nim" }), {
+      entityId: "model-1",
+      entityType: "ai",
+      gameKey: "nim",
+      rating: 1800,
+      rd: 90,
+      vol: 0.05,
+      gamesPlayed: 4,
+      lastUpdatedAt: "2026-06-01T00:00:00.000Z",
+    });
+
+    const rating = await getRatingForEntity({ type: "ai", id: "model-1" }, "nim");
+    expect(rating).toEqual({ rating: 1800, rd: 90, volatility: 0.05 });
+  });
+
+  it("returns a fresh default rating for an unrated model", async () => {
+    const rating = await getRatingForEntity({ type: "ai", id: "model-unrated" }, "nim");
+    expect(rating).toEqual({
+      rating: DEFAULT_RATING,
+      rd: DEFAULT_RD,
+      volatility: DEFAULT_VOLATILITY,
+    });
+  });
+
+  it("matches getRating for human entities", async () => {
+    await RatingRepo.set(ratingKey({ entityType: "human", entityId: "vet", gameKey: "nim" }), {
+      entityId: "vet",
+      entityType: "human",
+      gameKey: "nim",
+      rating: 1700,
+      rd: 80,
+      vol: 0.05,
+      gamesPlayed: 12,
+      lastUpdatedAt: "2026-06-01T00:00:00.000Z",
+    });
+
+    expect(await getRatingForEntity({ type: "human", id: "vet" }, "nim")).toEqual(
+      await getRating("vet", "nim"),
+    );
+  });
+});
+
+describe("updateRatingsForGame with AI seats", () => {
+  const aiSeat = { deploymentId: "dep-1", modelId: "model-1", displayName: "NimBot" };
+  const aiGame: GameRecord = {
+    ...baseGame,
+    players: ["alice", "dep-1"],
+    aiPlayers: [null, aiSeat],
+    state: { remaining: 0, nextPlayer: 1 }, // alice took the last object: the AI seat wins
+  };
+
+  it("writes the model's rating under ai:<modelId> and the human's under human:", async () => {
+    await updateRatingsForGame(aiGame, "game-ai-1");
+
+    const modelRecord = await RatingRepo.find(
+      ratingKey({ entityType: "ai", entityId: "model-1", gameKey: "nim" }),
+    );
+    const humanRecord = await RatingRepo.find(
+      ratingKey({ entityType: "human", entityId: "alice", gameKey: "nim" }),
+    );
+
+    expect(modelRecord).not.toBeNull();
+    expect(modelRecord!.entityType).toBe("ai");
+    expect(modelRecord!.entityId).toBe("model-1");
+    expect(modelRecord!.rating).toBeGreaterThan(DEFAULT_RATING);
+    expect(modelRecord!.gamesPlayed).toBe(1);
+
+    expect(humanRecord).not.toBeNull();
+    expect(humanRecord!.entityType).toBe("human");
+    expect(humanRecord!.rating).toBeLessThan(DEFAULT_RATING);
+
+    // No rating leaked under the seat id or a human-keyed model id.
+    expect(
+      await RatingRepo.find(ratingKey({ entityType: "human", entityId: "dep-1", gameKey: "nim" })),
+    ).toBeNull();
+    expect(
+      await RatingRepo.find(
+        ratingKey({ entityType: "human", entityId: "model-1", gameKey: "nim" }),
+      ),
+    ).toBeNull();
+  });
+
+  it("keeps the seat id as winnerId but uses the model id in ratingChanges", async () => {
+    const result = await updateRatingsForGame(aiGame, "game-ai-2");
+
+    expect(result).toBeDefined();
+    expect(result!.winnerId).toBe("dep-1");
+    expect(result!.outcome).toBe("win");
+    expect(result!.ratingChanges).toEqual([
+      { entityId: "alice", delta: expect.any(Number) },
+      { entityId: "model-1", delta: expect.any(Number) },
+    ]);
+    expect(result!.ratingChanges![0].delta).toBeLessThan(0);
+    expect(result!.ratingChanges![1].delta).toBeGreaterThan(0);
+  });
+
+  it("rates a model-vs-model game under both model ids", async () => {
+    const bots: GameRecord = {
+      ...baseGame,
+      players: ["dep-1", "dep-2"],
+      aiPlayers: [aiSeat, { deploymentId: "dep-2", modelId: "model-2", displayName: "OtherBot" }],
+      state: { remaining: 0, nextPlayer: 0 }, // seat 1 took the last object: seat 0 wins
+    };
+
+    const result = await updateRatingsForGame(bots, "game-ai-3");
+
+    expect(result!.winnerId).toBe("dep-1");
+    expect(result!.ratingChanges).toEqual([
+      { entityId: "model-1", delta: expect.any(Number) },
+      { entityId: "model-2", delta: expect.any(Number) },
+    ]);
+    const winner = await RatingRepo.find(
+      ratingKey({ entityType: "ai", entityId: "model-1", gameKey: "nim" }),
+    );
+    const loser = await RatingRepo.find(
+      ratingKey({ entityType: "ai", entityId: "model-2", gameKey: "nim" }),
+    );
+    expect(winner!.rating).toBeGreaterThan(DEFAULT_RATING);
+    expect(loser!.rating).toBeLessThan(DEFAULT_RATING);
+  });
+});
+
+describe("updateRatingsForGame with a forced forfeit result", () => {
+  const aiSeat = { deploymentId: "dep-1", modelId: "model-1", displayName: "NimBot" };
+  // Mid-game state: the forfeit decides the game, not the board.
+  const forfeitGame: GameRecord = {
+    ...baseGame,
+    players: ["alice", "dep-1"],
+    aiPlayers: [null, aiSeat],
+    state: { remaining: 9, nextPlayer: 1 },
+  };
+
+  it("scores the surviving seat 0 as the winner and reports outcome forfeit", async () => {
+    const result = await updateRatingsForGame(forfeitGame, "game-f-1", {
+      winnerId: "alice",
+      outcome: "forfeit",
+    });
+
+    expect(result).toEqual({
+      winnerId: "alice",
+      outcome: "forfeit",
+      ratingChanges: [
+        { entityId: "alice", delta: expect.any(Number) },
+        { entityId: "model-1", delta: expect.any(Number) },
+      ],
+    });
+    expect(result!.ratingChanges![0].delta).toBeGreaterThan(0);
+    expect(result!.ratingChanges![1].delta).toBeLessThan(0);
+  });
+
+  it("scores the surviving seat 1 as the winner when seat 0 forfeits", async () => {
+    const flipped: GameRecord = {
+      ...forfeitGame,
+      players: ["dep-1", "alice"],
+      aiPlayers: [aiSeat, null],
+    };
+
+    const result = await updateRatingsForGame(flipped, "game-f-2", {
+      winnerId: "alice",
+      outcome: "forfeit",
+    });
+
+    expect(result!.winnerId).toBe("alice");
+    expect(result!.ratingChanges![0].delta).toBeLessThan(0); // model-1, seat 0
+    expect(result!.ratingChanges![1].delta).toBeGreaterThan(0); // alice, seat 1
+  });
+
+  it("patches the archived MatchRecord with the forfeit result", async () => {
+    await MatchRepo.set("game-f-3", baseMatch("nim"));
+
+    await updateRatingsForGame(forfeitGame, "game-f-3", {
+      winnerId: "alice",
+      outcome: "forfeit",
+    });
+
+    const match = await MatchRepo.get("game-f-3");
+    expect(match.result.outcome).toBe("forfeit");
+    expect(match.result.winnerId).toBe("alice");
+    expect(match.result.ratingChanges).toHaveLength(2);
   });
 });

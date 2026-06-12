@@ -60,8 +60,11 @@ export interface CommentRecord {
  * - `state`: absent if the game hasn't started, or the id for the game's state
  * - `done`: whether the game has finished
  * - `chat`: id for the game's chat
- * - `players`: human players for the game (Story 1, 3)
- * - `aiPlayers`: deployed AI participants in the game (Story 2.6)
+ * - `players`: seat ids for the game, in seat order: user ids for human
+ *              seats, deployment ids for AI seats (Story 1, 3, 2.6)
+ * - `aiPlayers`: deployed AI participants in the game, POSITIONAL with
+ *               `players` — `aiPlayers[i]` describes the AI in seat i, and is
+ *               null/absent for human seats (Story 2.6)
  * - `rated`: whether this game contributes to Glicko 2 ratings (Story 1.2)
  * - `delaySec`: broadcaster-configured live broadcast delay in seconds (Story 3.7)
  * - `invalidMoveStreaks`: per-AI count of consecutive invalid moves; AI forfeits at 3 (Story 2.8)
@@ -75,7 +78,7 @@ export interface GameRecord {
   done: boolean;
   chat: RecordId; // References Chat records
   players: RecordId[]; // References User records
-  aiPlayers: AIParticipant[]; // References Deployment records (Story 2.6)
+  aiPlayers: (AIParticipant | null)[]; // References Deployment records (Story 2.6)
   rated: boolean; // Story 1.2
   delaySec?: number; // Story 3.7
   invalidMoveStreaks?: { [modelId: string]: number }; // Story 2.8

@@ -104,6 +104,20 @@ describe("MatchRecorder", () => {
     ]);
   });
 
+  it("does not list a positional AI seat as a human participant", async () => {
+    const seatedGame: GameRecord = {
+      ...baseGame,
+      players: ["u-alice", "dep-9"],
+      aiPlayers: [null, { deploymentId: "dep-9", modelId: "model-9", displayName: "SeatBot" }],
+    };
+    await recorder.captureMove(seatedGame, "game-seats", "u-alice", { take: 2 }, true);
+    const stored = database.matches.get("game-seats")!;
+    expect(stored.participants).toEqual([
+      { id: "u-alice", type: "human", displayName: "Alice" },
+      { id: "model-9", type: "ai", displayName: "SeatBot" },
+    ]);
+  });
+
   it("clears in-progress state after persisting", async () => {
     await recorder.captureMove(baseGame, "game-001", "u-alice", { take: 1 }, true);
     expect(recorder.isRecording("game-001")).toBe(false);
