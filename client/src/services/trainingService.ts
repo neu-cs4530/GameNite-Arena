@@ -18,6 +18,7 @@ import {
   SocketEvents,
   type TrainingSessionInfo,
   type TrainingSessionListPage,
+  type TrainingTokenInfo,
   type UserAuth,
 } from "@gamenite/shared";
 import type { SubmitJobPayload, TrainingJobDetail, TrainingStreamEvent } from "../util/types.ts";
@@ -113,6 +114,23 @@ export async function submitJob(
     return { jobId: data.jobId };
   } catch (err) {
     throw new Error(extractApiError(err, "Could not register the training session"));
+  }
+}
+
+/**
+ * Mint an expiring training token (POST /api/training/token). The connect
+ * card embeds it in the copyable bootstrap command so the user's password
+ * never appears on the page or in their shell history.
+ */
+export async function mintTrainingToken(auth: UserAuth): Promise<TrainingTokenInfo> {
+  try {
+    const { data } = await api.post<TrainingTokenInfo>("/api/training/token", {
+      auth,
+      payload: {},
+    });
+    return data;
+  } catch (err) {
+    throw new Error(extractApiError(err, "Could not mint a training token"));
   }
 }
 
