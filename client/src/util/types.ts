@@ -248,6 +248,42 @@ export type ReplayGameKeyOrAll = ReplayGameKey | "all";
 /** Re-export for convenience: `GameKey` is the shared subset of `ReplayGameKey`. */
 export type SharedGameKey = GameKey;
 
+/* --- Leaderboards ------------------------------------------------------ */
+
+/** One ranked row from GET /api/leaderboard/:gameKey (client mirror). */
+export interface LeaderboardEntry {
+  rank: number;
+  entityId: string;
+  entityType: "human" | "ai";
+  displayName: string;
+  /** Present for humans only — links to /profile/:username. */
+  username?: string;
+  rating: number;
+  rd: number;
+  gamesPlayed: number;
+  provisional: boolean;
+  /** Rated wins in this game. */
+  wins: number;
+  /** wins / gamesPlayed as a 0..1 fraction; 0 when no games played. */
+  winRate: number;
+}
+
+/** Paginated leaderboard response (client mirror). */
+export interface LeaderboardPage {
+  gameKey: GameKey;
+  entityType: "human" | "ai" | "all";
+  page: number;
+  limit: number;
+  total: number;
+  entries: LeaderboardEntry[];
+}
+
+/** Sort keys offered on the leaderboards tab. "rating" is the server order. */
+export type LeaderboardSort = "rating" | "winRate" | "wins" | "gamesPlayed";
+
+/** Entity-type filter — maps straight onto the API's `type` param. */
+export type LeaderboardEntityFilter = "all" | "human" | "ai";
+
 /* ============================================================================
  * Trainer types (Models, Training Jobs, Deployments)
  * Mirrors upcoming server types; once the server lands these, swap to shared.

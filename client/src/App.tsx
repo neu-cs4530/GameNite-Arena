@@ -28,6 +28,8 @@ import TrainingJobLive from "./pages/TrainingJobLive.tsx";
 import ModelsBrowse from "./pages/ModelsBrowse.tsx";
 import ModelCardPage from "./pages/ModelCardPage.tsx";
 import ForkModelPage from "./pages/ForkModelPage.tsx";
+import Puzzles from "./pages/Puzzles.tsx";
+import Leaderboards from "./pages/Leaderboards.tsx";
 
 /** If `true`, all incoming socket messages will be logged */
 const DEBUG_SOCKETS = false;
@@ -132,8 +134,10 @@ export default function App() {
             <Route path="/forum/post/:threadId" element={<ThreadPage />} />
             <Route path="/games" element={<GamesPortal />} />
             <Route path="/games/queue/:gameKey" element={<MatchmakingQueue />} />
+            <Route path="/leaderboards" element={<Leaderboards />} />
             <Route path="/game/:gameId" element={<Game />} />
             <Route path="/profile/:username" element={<Profile />} />
+            <Route path="/puzzles" element={<Puzzles />} />
             <Route path="/replays" element={<ReplaysDiscovery />} />
             <Route path="/replays/:matchId" element={<ReplayViewer />} />
             <Route path="/study/:shareToken" element={<StudyView />} />
