@@ -127,3 +127,16 @@ class TestOtherGamesUnchanged:
 
     def test_decode_nim_action_unchanged(self):
         assert encoders.decode_action("nim", 2, None) == 3
+
+    def test_nim_decode_clamps_to_remaining(self):
+        # The forced endgame: at pile 1 the only legal take is 1 — the model
+        # head may prefer 3, but the service must return a legal move
+        # (live bug: take-3 at pile 1 was rejected by the rule engine and
+        # the model's game stalled forever).
+        assert encoders.decode_action("nim", 2, None, state={"remaining": 1}) == 1
+        assert encoders.decode_action("nim", 2, None, state={"remaining": 2}) == 2
+        assert encoders.decode_action("nim", 1, None, state={"remaining": 1}) == 1
+        # No state context -> behave as before.
+        assert encoders.decode_action("nim", 2, None, state=None) == 3
+        # Garbled state never breaks decoding.
+        assert encoders.decode_action("nim", 2, None, state={"remaining": "x"}) == 3

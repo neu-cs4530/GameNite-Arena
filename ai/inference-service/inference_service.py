@@ -188,7 +188,7 @@ def move(req: MoveRequest):
     try:
         obs = encoders.encode_state(dep.game, req.state, obs_size=dep.obs_size)
         raw_action = _predict(dep, obs)
-        chosen = encoders.decode_action(dep.game, raw_action, req.legal_moves)
+        chosen = encoders.decode_action(dep.game, raw_action, req.legal_moves, state=req.state)
     except encoders.EncodingError as e:
         with _LOCK:
             dep.consecutive_invalid += 1

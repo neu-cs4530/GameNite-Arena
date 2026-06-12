@@ -175,7 +175,9 @@ def encode_state(game: str, state: dict, obs_size: int | None = None) -> np.ndar
     return obs
 
 
-def decode_action(game: str, raw_action: int, legal_moves: list | None) -> object:
+def decode_action(
+    game: str, raw_action: int, legal_moves: list | None, state: dict | None = None
+) -> object:
     """
     Turn the model's integer output into a concrete move.
 
@@ -183,6 +185,9 @@ def decode_action(game: str, raw_action: int, legal_moves: list | None) -> objec
     For checkers (dynamic), raw_action indexes into legal_moves supplied by the
     caller; we clamp to the legal range so an out-of-range head still returns a
     legal move (the rule engine remains the final authority — see CoS 2.8).
+    For nim, when the request carries the position we clamp the take to what
+    is actually on the pile — at remaining=1 the only legal move is take 1,
+    whatever the policy head prefers.
     """
     if game == "checkers":
         if not legal_moves:
@@ -192,7 +197,11 @@ def decode_action(game: str, raw_action: int, legal_moves: list | None) -> objec
     if game == "tictactoe" or game == "connect4":
         return int(raw_action)          # cell / column index
     if game == "nim":
-        return int(raw_action) + 1       # action 0/1/2 -> take 1/2/3
+        take = int(raw_action) + 1
+        remaining = state.get("remaining") if isinstance(state, dict) else None
+        if isinstance(remaining, int) and remaining >= 1:
+            take = min(take, min(3, remaining))
+        return take
     if game == "numguesser":
         return int(raw_action) + 1       # action 0..99 -> guess 1..100
     raise EncodingError(f"Unknown game: {game}")
