@@ -39,6 +39,10 @@ test.describe("Queued: the handoff state", () => {
     await expect(page.getByTestId("connect-trainer-command")).toContainText(
       `--job-id ${run.jobId}`,
     );
+    // A nim run hands the user the REAL SB3 trainer, never the synthetic demo.
+    await expect(page.getByTestId("connect-trainer-command")).toContainText(
+      "example_local_training_nim.py",
+    );
     // No chart noise while there is nothing to chart.
     await expect(page.getByTestId("live-chart-section")).toHaveCount(0);
   });

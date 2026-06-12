@@ -152,8 +152,18 @@ def main() -> int:
     _assert_compatible(artifact, "nim")
 
     # Rebuild a live policy exactly the way the inference service does.
+    # The inference service ships with the repo, not the training kit — in a
+    # kit folder this deep check is unavailable, and that is fine: the
+    # platform already validated and stored the artifact above.
     sys.path.insert(0, str(AI_DIR / "inference-service"))
-    from inference_service import _rebuild_policy  # noqa: E402
+    try:
+        from inference_service import _rebuild_policy  # noqa: E402
+    except ImportError:
+        print("[run] artifact stored and hash-verified by the platform; "
+              "skipping the local inference rebuild (repo-only check) - done")
+        print(json.dumps({"jobId": job_id, "finalWinRate": win_rate,
+                          "steps": model.num_timesteps}))
+        return 0
 
     policy = _rebuild_policy(artifact)
     obs = np.array([1.0], dtype=np.float32)
