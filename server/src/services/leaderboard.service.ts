@@ -6,6 +6,24 @@ import { createRedisConnection } from "./redis.ts";
 // 5 minutes — fresh enough for a leaderboard, stale enough to not hammer the DB
 const LEADERBOARD_CACHE_SECONDS = 300;
 
+// Empty in production. Spec workers each set a process-unique namespace so
+// parallel vitest workers — which share ONE real Redis but have per-worker
+// in-memory repos — can't clobber each other's cached leaderboards.
+let cacheNamespace = "";
+
+/**
+ * Namespaces all leaderboard cache keys. Test hook — never call in
+ * production code (tests/setup.ts sets a per-process namespace).
+ */
+export function setLeaderboardCacheNamespaceForTests(namespace: string): void {
+  cacheNamespace = namespace;
+}
+
+/** The Redis key caching one game's sorted board for one entity filter. */
+export function leaderboardCacheKey(gameKey: GameKey, entityType: "human" | "ai" | "all"): string {
+  return `${cacheNamespace}leaderboard:${gameKey}:${entityType}`;
+}
+
 // spec calls for top 100 per game
 const MAX_LEADERBOARD_ENTRIES = 100;
 
@@ -83,7 +101,7 @@ async function fetchSortedEntries(
   fresh: boolean,
 ): Promise<LeaderboardEntry[]> {
   const redis = createRedisConnection();
-  const cacheKey = `leaderboard:${gameKey}:${entityType}`;
+  const cacheKey = leaderboardCacheKey(gameKey, entityType);
 
   try {
     // fresh=true skips the cache READ (post-match recaps need post-update
@@ -193,9 +211,9 @@ export async function invalidateLeaderboardCache(gameKey: GameKey): Promise<void
   const redis = createRedisConnection();
   try {
     await redis.del(
-      `leaderboard:${gameKey}:all`,
-      `leaderboard:${gameKey}:human`,
-      `leaderboard:${gameKey}:ai`,
+      leaderboardCacheKey(gameKey, "all"),
+      leaderboardCacheKey(gameKey, "human"),
+      leaderboardCacheKey(gameKey, "ai"),
     );
   } finally {
     await redis.quit();

@@ -143,6 +143,42 @@ export async function getModelById(modelId: RecordId): Promise<ModelInfo | null>
   return populateModelInfo(modelId);
 }
 
+/**
+ * Forks a model into a NEW record owned by the caller (Story 2.13): the
+ * gameKey carries over, the fork starts private with no trained artifact,
+ * and sourceRef/forkedFrom point back at the source. Visibility matches
+ * getModelById: any model that endpoint returns can be forked.
+ *
+ * @param user - The caller; becomes the fork's owner.
+ * @param sourceModelId - The model being forked.
+ * @param displayName - Optional name; defaults to `Fork of <source name>`.
+ * @returns the new model, in the same shape as the other model endpoints.
+ * @throws if the source model does not exist.
+ */
+export async function forkModel(
+  user: UserWithId,
+  sourceModelId: RecordId,
+  displayName?: string,
+): Promise<ModelInfo> {
+  const source = await ModelRepo.find(sourceModelId);
+  if (!source) throw new Error(`Model ${sourceModelId} not found`);
+
+  const now = new Date().toISOString();
+  const modelId = await ModelRepo.add({
+    userId: user.userId,
+    gameKey: source.gameKey,
+    displayName: displayName ?? `Fork of ${source.displayName}`,
+    sourceRef: `fork:${sourceModelId}`,
+    artifactRef: undefined,
+    forkedFrom: sourceModelId,
+    visibility: "private",
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  return populateModelInfo(modelId);
+}
+
 export async function getModelsByUser(userId: RecordId): Promise<ModelInfo[]> {
   const allKeys = await ModelRepo.getAllKeys();
   const owned = (

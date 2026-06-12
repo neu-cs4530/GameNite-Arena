@@ -175,3 +175,27 @@ describe("getLeaderboard win stats", () => {
     expect(rewarmed.entries[0]).toMatchObject({ rating: 1580, wins: 2 });
   });
 });
+
+describe("getLeaderboard edge cases", () => {
+  it("returns an empty page (and caches it) when nobody has a rating", async () => {
+    const page = await getLeaderboard({ gameKey: "guess" });
+    expect(page.total).toBe(0);
+    expect(page.entries).toEqual([]);
+    // Second read comes from the cached empty board.
+    const cached = await getLeaderboard({ gameKey: "guess" });
+    expect(cached.entries).toEqual([]);
+  });
+
+  it("falls back to the raw id when a rated entity's record is gone", async () => {
+    await seedRating("deleted-user", { rating: 1640 });
+    await seedRating("deleted-model", { entityType: "ai", rating: 1620 });
+
+    const page = await getLeaderboard({ gameKey: "nim" });
+
+    const human = page.entries.find((e) => e.entityId === "deleted-user")!;
+    const ai = page.entries.find((e) => e.entityId === "deleted-model")!;
+    expect(human.displayName).toBe("deleted-user");
+    expect(human.username).toBeUndefined();
+    expect(ai.displayName).toBe("deleted-model");
+  });
+});

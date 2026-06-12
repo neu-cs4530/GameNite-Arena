@@ -1,6 +1,9 @@
-import { type GameKey } from "@gamenite/shared";
+import { AI_PLAYABLE_GAME_KEYS, type GameKey } from "@gamenite/shared";
 import { gameServices } from "./game.service.ts";
-import { getRating } from "./rating.service.ts";
+import { getRatingForEntity, type RatingEntity } from "./rating.service.ts";
+import { type AIParticipant } from "../models.ts";
+import { DeploymentRepo } from "../repository.ts";
+import { type UserWithId } from "../types.ts";
 
 // how often the matchmaker loop runs
 export const TICK_INTERVAL_MS = 2000;
@@ -20,6 +23,14 @@ export interface QueueEntry {
   rated: boolean;
   joinedAt: Date;
   socketId: string;
+  /**
+   * When set, the user queued their deployed model to play in their place
+   * (CoS 2.6). The entry's `rating` is then the MODEL's rating, and the
+   * match seats the deployment instead of the user. Models and humans share
+   * pools by design — a model entry matches anyone in the same gameKey+rated
+   * pool.
+   */
+  aiSeat?: AIParticipant;
 }
 
 let queue: QueueEntry[] = [];
@@ -66,10 +77,54 @@ export function leaveQueue(userId: string, gameKey: GameKey): void {
   queue = queue.filter((e) => !(e.userId === userId && e.gameKey === gameKey));
 }
 
-/** A player's current rating for a game, used as their queue rating. */
-export async function getPlayerRating(userId: string, gameKey: GameKey): Promise<number> {
-  const rating = await getRating(userId, gameKey);
+/** An entity's (player's or model's) current rating, used as its queue rating. */
+export async function getEntityRating(entity: RatingEntity, gameKey: GameKey): Promise<number> {
+  const rating = await getRatingForEntity(entity, gameKey);
   return rating.rating;
+}
+
+/** A player's current rating for a game, used as their queue rating. */
+export function getPlayerRating(userId: string, gameKey: GameKey): Promise<number> {
+  return getEntityRating({ type: "human", id: userId }, gameKey);
+}
+
+/**
+ * Validates a queue-with-deployment request (CoS 2.6) and resolves the AI
+ * seat the matchmaker should place. A deployment may only be queued by its
+ * owner, while active, for its own game, and only for games models can play.
+ *
+ * @param user - The authenticated user asking to queue their model.
+ * @param deploymentId - The deployment from the join payload.
+ * @param gameKey - The game pool being joined.
+ * @returns the AI participant to seat at match time.
+ * @throws on any validation violation (caller reports it like any bad join).
+ */
+export async function resolveAiSeatForQueue(
+  user: UserWithId,
+  deploymentId: string,
+  gameKey: GameKey,
+): Promise<AIParticipant> {
+  if (!AI_PLAYABLE_GAME_KEYS.includes(gameKey)) {
+    throw new Error(
+      `user ${user.username} queued a model for ${gameKey}, but models cannot play ${gameKey}`,
+    );
+  }
+  const deployment = await DeploymentRepo.find(deploymentId);
+  if (!deployment) {
+    throw new Error(`user ${user.username} queued a deployment that does not exist`);
+  }
+  if (deployment.userId !== user.userId) {
+    throw new Error(`user ${user.username} queued a deployment they do not own`);
+  }
+  if (deployment.status !== "active") {
+    throw new Error(`user ${user.username} queued a deployment that is not active`);
+  }
+  if (deployment.gameKey !== gameKey) {
+    throw new Error(
+      `user ${user.username} queued a ${deployment.gameKey} deployment for ${gameKey}`,
+    );
+  }
+  return { deploymentId, modelId: deployment.modelId, displayName: deployment.displayName };
 }
 
 /** Each queued player's game/rated mode and current rating window, for live updates. */
