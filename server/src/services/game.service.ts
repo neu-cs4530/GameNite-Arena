@@ -360,20 +360,9 @@ export async function updateGame(
     }
   }
 
-  // After a move, check if the next player is an AI and fire its move.
-  // Best-effort: an AI failure must not roll back the move that was just
-  // accepted. When the AI's move finishes the game, its MatchResult is
-  // returned from THIS call so the controller still emits gameResult.
-  if (!result.done) {
-    try {
-      const aiOutcome = await maybeFireAiMove(gameId);
-      if (aiOutcome) return aiOutcome;
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error(`AI follow-up move failed for game ${gameId}:`, err);
-    }
-  }
-
+  // NOTE: an AI reply is deliberately NOT fired here. The controller
+  // schedules it (runAiTurns) so the human's move broadcasts first and the
+  // model's answer lands as its own paced, separately delivered turn.
   return { views: result.views, gameResult };
 }
 

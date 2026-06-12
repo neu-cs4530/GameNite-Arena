@@ -1,4 +1,4 @@
-import { sendViewUpdates } from "./game.controller.ts";
+import { runAiTurns } from "./game.controller.ts";
 import { withAuth, zGameKey, zMatchmakingJoinPayload } from "@gamenite/shared";
 import { type GameServer, type RestAPI, type SocketAPI, type UserWithId } from "../types.ts";
 import { enforceAuth } from "../services/auth.service.ts";
@@ -6,9 +6,7 @@ import {
   createGame,
   createGameWithAi,
   joinGame,
-  joinGameAsAi,
-  maybeFireAiMove,
-  startGame,
+  joinGameAsAi,startGame,
 } from "../services/game.service.ts";
 import {
   getEntityRating,
@@ -113,21 +111,7 @@ export async function startMatchedGame(
   // chains model-vs-model games — possibly all the way to a result, which is
   // then announced to the game room. Best-effort: a model that cannot open
   // leaves a normal, playable game behind.
-  try {
-    const aiOutcome = await maybeFireAiMove(game.gameId);
-    if (aiOutcome) {
-      // Clients already hold the pre-move view from gameWatch; without this
-      // broadcast the opening move exists only in the repo and every screen
-      // shows a frozen board.
-      sendViewUpdates(io, game.gameId, aiOutcome.views);
-    }
-    if (aiOutcome?.gameResult) {
-      io.to(game.gameId).emit("gameResult", { gameId: game.gameId, ...aiOutcome.gameResult });
-    }
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error(`AI opening move failed for game ${game.gameId}:`, err);
-  }
+  await runAiTurns(io, game.gameId);
 }
 
 /**

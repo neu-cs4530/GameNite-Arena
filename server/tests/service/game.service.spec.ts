@@ -25,11 +25,11 @@ import { DEFAULT_RATING } from "../../src/services/glicko2.service.ts";
 import type { UserWithId } from "../../src/types.ts";
 
 /* ---------------------------------------------------------------------------
- * The AI move loop (CoS 2.6): a deployed model seated in a game moves
- * automatically on its turn, and a game-ending AI move surfaces its
- * MatchResult from the OUTER updateGame call so the controller can emit
- * gameResult. Inference responses are scripted through the client seam —
- * the python service never runs here.
+ * The AI move loop (CoS 2.6): updateGame returns ONLY the human's own move;
+ * each AI turn is driven explicitly through maybeFireAiMove (one move per
+ * call), and a game-ending AI move carries its MatchResult in that call's
+ * outcome so the controller can emit gameResult. Inference responses are
+ * scripted through the client seam — the python service never runs here.
  * ------------------------------------------------------------------------- */
 
 const botSeat: AIParticipant = {
@@ -88,7 +88,7 @@ afterEach(() => {
 });
 
 describe("updateGame with an AI opponent", () => {
-  it("fires the AI reply after a human move and returns the post-AI views", async () => {
+  it("returns only the human's own move — the AI reply is a separate paced turn", async () => {
     const requestMove = scriptAiMoves(2);
     const gameId = await seedNimGame({
       players: [user0.userId, botSeat.deploymentId],
@@ -98,8 +98,16 @@ describe("updateGame with an AI opponent", () => {
 
     const { views, gameResult } = await updateGame(gameId, user0, 3);
 
+    // The human's broadcastable state shows ONLY their move; the model has
+    // not answered yet (the controller schedules that separately so the
+    // opponent never experiences an instant reply).
     expect(gameResult).toBeUndefined();
-    expect(nimView(views)).toEqual({ remaining: 16, nextPlayer: 0 });
+    expect(nimView(views)).toEqual({ remaining: 18, nextPlayer: 1 });
+    expect(requestMove).not.toHaveBeenCalled();
+
+    const reply = await maybeFireAiMove(gameId);
+    expect(reply?.gameResult).toBeUndefined();
+    expect(nimView(reply!.views)).toEqual({ remaining: 16, nextPlayer: 0 });
     expect(requestMove).toHaveBeenCalledExactlyOnceWith({
       deploymentId: botSeat.deploymentId,
       state: { remaining: 18 },
@@ -110,7 +118,7 @@ describe("updateGame with an AI opponent", () => {
     expect(stored.done).toBe(false);
   });
 
-  it("propagates the MatchResult when the AI's move ends a rated game", async () => {
+  it("the AI's own turn carries the MatchResult when it ends a rated game", async () => {
     scriptAiMoves(1);
     const gameId = await seedNimGame({
       players: [user0.userId, botSeat.deploymentId],
@@ -119,8 +127,13 @@ describe("updateGame with an AI opponent", () => {
     });
 
     // Human takes 3, leaving 1; the AI must take the last object and lose
-    // (misère nim) — its move ends the game.
-    const { views, gameResult } = await updateGame(gameId, user0, 3);
+    // (misère nim) — its move, fired as its own turn, ends the game.
+    const human = await updateGame(gameId, user0, 3);
+    expect(human.gameResult).toBeUndefined();
+    expect(nimView(human.views)).toEqual({ remaining: 1, nextPlayer: 1 });
+
+    const reply = await maybeFireAiMove(gameId);
+    const { views, gameResult } = reply!;
 
     expect(nimView(views)).toEqual({ remaining: 0, nextPlayer: 0 });
     expect(gameResult).toBeDefined();
@@ -144,18 +157,27 @@ describe("updateGame with an AI opponent", () => {
     });
 
     // 21 -h3-> 18 -a2-> 16 -h3-> 13 -a1-> 12 -h3-> 9 -a3-> 6 -h3-> 3 -a3-> 0
+    // A human move NEVER carries the AI's reply anymore — the reply is a
+    // separately scheduled, separately broadcast turn (paced for humans).
     const first = await updateGame(gameId, user0, 3);
     expect(first.gameResult).toBeUndefined();
-    const second = await updateGame(gameId, user0, 3);
-    expect(second.gameResult).toBeUndefined();
-    const third = await updateGame(gameId, user0, 3);
-    expect(third.gameResult).toBeUndefined();
-    const last = await updateGame(gameId, user0, 3);
+    expect((await GameRepo.get(gameId)).state).toEqual({ remaining: 18, nextPlayer: 1 });
+    const firstAi = await maybeFireAiMove(gameId);
+    expect(firstAi?.gameResult).toBeUndefined();
+    expect((await GameRepo.get(gameId)).state).toEqual({ remaining: 16, nextPlayer: 0 });
+
+    await updateGame(gameId, user0, 3);
+    await maybeFireAiMove(gameId);
+    await updateGame(gameId, user0, 3);
+    await maybeFireAiMove(gameId);
+    const lastHuman = await updateGame(gameId, user0, 3);
+    expect(lastHuman.gameResult).toBeUndefined();
+    const last = await maybeFireAiMove(gameId);
 
     // The AI took the last object, so the human wins (misère nim).
-    expect(last.gameResult).toBeDefined();
-    expect(last.gameResult!.winnerId).toBe(user0.userId);
-    expect(last.gameResult!.outcome).toBe("win");
+    expect(last?.gameResult).toBeDefined();
+    expect(last!.gameResult!.winnerId).toBe(user0.userId);
+    expect(last!.gameResult!.outcome).toBe("win");
 
     // Ratings landed under the human key and the MODEL's ai key.
     const humanRecord = await RatingRepo.find(
@@ -207,6 +229,9 @@ describe("updateGame with an AI opponent", () => {
 
     expect(gameResult).toBeUndefined();
     expect(nimView(views)).toEqual({ remaining: 18, nextPlayer: 1 });
+
+    // The AI turn fails closed: logged, no move, the human's move stands.
+    expect(await maybeFireAiMove(gameId)).toBeNull();
     const stored = await GameRepo.get(gameId);
     expect(stored.state).toEqual({ remaining: 18, nextPlayer: 1 });
     expect(consoleError).toHaveBeenCalled();
@@ -214,7 +239,6 @@ describe("updateGame with an AI opponent", () => {
 
   it("keeps the human move when the AI's move is illegal for the game", async () => {
     scriptAiMoves(15); // larger than remaining: nim rejects it
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     const gameId = await seedNimGame({
       players: [user0.userId, botSeat.deploymentId],
       aiPlayers: [null, botSeat],
@@ -225,7 +249,13 @@ describe("updateGame with an AI opponent", () => {
 
     expect(gameResult).toBeUndefined();
     expect(nimView(views)).toEqual({ remaining: 7, nextPlayer: 1 });
-    expect(consoleError).toHaveBeenCalled();
+
+    // The illegal AI move surfaces as a throw out of maybeFireAiMove (the
+    // controller loop logs it); the human's accepted move is untouched.
+    await expect(maybeFireAiMove(gameId)).rejects.toThrow(/invalid move/);
+    const stored = await GameRepo.get(gameId);
+    expect(stored.state).toEqual({ remaining: 7, nextPlayer: 1 });
+    expect(stored.done).toBe(false);
   });
 });
 
@@ -261,7 +291,14 @@ describe("maybeFireAiMove", () => {
       state: { remaining: 21, nextPlayer: 0 },
     });
 
-    const outcome = await maybeFireAiMove(gameId);
+    // One AI move per call: the controller loop drives the chain, so the
+    // spec drives it the same way until a move ends the game.
+    let outcome: Awaited<ReturnType<typeof maybeFireAiMove>> = null;
+    for (let turn = 0; turn < 7; turn++) {
+      outcome = await maybeFireAiMove(gameId);
+      expect(outcome).not.toBeNull();
+      if (outcome!.gameResult) break;
+    }
 
     expect(outcome).not.toBeNull();
     expect(outcome!.gameResult).toBeDefined();
@@ -454,6 +491,9 @@ describe("AI forfeit on persistent invalid moves (CoS 2.8)", () => {
 
     expect(gameResult).toBeUndefined();
     expect(nimView(views)).toEqual({ remaining: 7, nextPlayer: 1 });
+
+    // First strike: the AI turn produces no move, only streak bookkeeping.
+    expect(await maybeFireAiMove(gameId)).toBeNull();
     const stored = await GameRepo.get(gameId);
     expect(stored.done).toBe(false);
     expect(stored.invalidMoveStreaks).toEqual({ 1: 1 });
@@ -468,7 +508,13 @@ describe("AI forfeit on persistent invalid moves (CoS 2.8)", () => {
       state: { remaining: 10, nextPlayer: 0 },
     });
 
-    const { views, gameResult } = await updateGame(gameId, user0, 3);
+    const human = await updateGame(gameId, user0, 3);
+    expect(human.gameResult).toBeUndefined();
+
+    // The AI's own turn strikes out and decides the game.
+    const outcome = await maybeFireAiMove(gameId);
+    expect(outcome).not.toBeNull();
+    const { views, gameResult } = outcome!;
 
     expect(gameResult).toEqual({
       winnerId: user0.userId,
@@ -552,9 +598,12 @@ describe("AI forfeit on persistent invalid moves (CoS 2.8)", () => {
       rated: false,
     });
 
-    const { gameResult } = await updateGame(gameId, user0, 3);
+    const human = await updateGame(gameId, user0, 3);
+    expect(human.gameResult).toBeUndefined();
 
-    expect(gameResult).toEqual({ winnerId: user0.userId, outcome: "forfeit" });
+    const outcome = await maybeFireAiMove(gameId);
+
+    expect(outcome?.gameResult).toEqual({ winnerId: user0.userId, outcome: "forfeit" });
     expect(
       await RatingRepo.find(
         ratingKey({ entityType: "ai", entityId: botSeat.modelId, gameKey: "nim" }),
@@ -584,8 +633,11 @@ describe("AI forfeit on persistent invalid moves (CoS 2.8)", () => {
     });
 
     const { gameResult } = await updateGame(gameId, user0, 3);
-
     expect(gameResult).toBeUndefined();
+
+    // A 503 carries no consecutiveInvalid counter: the AI turn stands down
+    // without recording a streak.
+    expect(await maybeFireAiMove(gameId)).toBeNull();
     const stored = await GameRepo.get(gameId);
     expect(stored.invalidMoveStreaks).toBeUndefined();
     expect(stored.done).toBe(false);
@@ -779,9 +831,12 @@ describe("failure tolerance around archival", () => {
       rated: false,
     });
 
-    const { gameResult } = await updateGame(gameId, user0, 3);
+    const human = await updateGame(gameId, user0, 3);
+    expect(human.gameResult).toBeUndefined();
 
-    expect(gameResult).toEqual({ winnerId: user0.userId, outcome: "forfeit" });
+    const outcome = await maybeFireAiMove(gameId);
+
+    expect(outcome?.gameResult).toEqual({ winnerId: user0.userId, outcome: "forfeit" });
     expect((await GameRepo.get(gameId)).done).toBe(true);
     expect(consoleError).toHaveBeenCalledWith(
       expect.stringContaining("match capture failed"),

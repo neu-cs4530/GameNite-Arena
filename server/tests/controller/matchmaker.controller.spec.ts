@@ -1,3 +1,7 @@
+import {
+  setAiMoveDelayForTests,
+  resetAiMoveDelayForTests,
+} from "../../src/controllers/game.controller.ts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GameServer, GameServerSocket } from "../../src/types.ts";
 import { logSocketError } from "../../src/controllers/socket.controller.ts";
@@ -334,7 +338,10 @@ describe("startMatchedGame", () => {
     return emits.filter((e) => e.event === event && (room === undefined || e.room === room));
   }
 
+  beforeEach(() => setAiMoveDelayForTests(0));
+
   afterEach(() => {
+    resetAiMoveDelayForTests();
     resetInferenceClientForTests();
     vi.restoreAllMocks();
   });
@@ -463,7 +470,7 @@ describe("startMatchedGame", () => {
     expect(stored.state).toEqual({ remaining: 21, nextPlayer: 0 });
     expect(stored.done).toBe(false);
     expect(consoleError).toHaveBeenCalledWith(
-      expect.stringContaining("AI opening move failed"),
+      `AI turn failed for game ${gameId}:`,
       expect.anything(),
     );
   });

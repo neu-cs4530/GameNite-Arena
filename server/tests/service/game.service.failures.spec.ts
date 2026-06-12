@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { AIParticipant, GameRecord } from "../../src/models.ts";
 import { GameRepo } from "../../src/repository.ts";
 import { getUserByUsername } from "../../src/services/auth.service.ts";
-import { updateGame } from "../../src/services/game.service.ts";
+import { maybeFireAiMove, updateGame } from "../../src/services/game.service.ts";
 import { updateRatingsForGame } from "../../src/services/rating.service.ts";
 import {
   InferenceError,
@@ -76,10 +76,15 @@ describe("rating failures", () => {
     setInferenceClientForTests({ requestMove: vi.fn().mockResolvedValue({ move: 1 }) });
     const gameId = await seedNimGame({ remaining: 4, nextPlayer: 0 });
 
-    // Human takes 3; the AI takes the last object and ends the game.
-    const { gameResult } = await updateGame(gameId, user0, 3);
+    // Human takes 3; the AI's own turn takes the last object and ends the game.
+    const human = await updateGame(gameId, user0, 3);
+    expect(human.gameResult).toBeUndefined();
+    expect((await GameRepo.get(gameId)).done).toBe(false);
 
-    expect(gameResult).toBeUndefined();
+    const outcome = await maybeFireAiMove(gameId);
+
+    expect(outcome).not.toBeNull();
+    expect(outcome!.gameResult).toBeUndefined();
     expect((await GameRepo.get(gameId)).done).toBe(true);
     // eslint-disable-next-line no-console
     expect(console.error).toHaveBeenCalledWith(
@@ -93,9 +98,13 @@ describe("rating failures", () => {
     scriptForfeit();
     const gameId = await seedNimGame({ remaining: 10, nextPlayer: 0 });
 
-    const { gameResult } = await updateGame(gameId, user0, 3);
+    const human = await updateGame(gameId, user0, 3);
+    expect(human.gameResult).toBeUndefined();
 
-    expect(gameResult).toEqual({ winnerId: user0.userId, outcome: "forfeit" });
+    // The AI's turn strikes out (scripted 422 + forfeit) and decides the game.
+    const outcome = await maybeFireAiMove(gameId);
+
+    expect(outcome?.gameResult).toEqual({ winnerId: user0.userId, outcome: "forfeit" });
     expect((await GameRepo.get(gameId)).done).toBe(true);
   });
 
@@ -105,9 +114,12 @@ describe("rating failures", () => {
     scriptForfeit();
     const gameId = await seedNimGame({ remaining: 10, nextPlayer: 0 });
 
-    const { gameResult } = await updateGame(gameId, user0, 3);
+    const human = await updateGame(gameId, user0, 3);
+    expect(human.gameResult).toBeUndefined();
 
-    expect(gameResult).toEqual({ winnerId: user0.userId, outcome: "forfeit" });
+    const outcome = await maybeFireAiMove(gameId);
+
+    expect(outcome?.gameResult).toEqual({ winnerId: user0.userId, outcome: "forfeit" });
     expect(vi.mocked(updateRatingsForGame)).toHaveBeenCalledWith(expect.anything(), gameId, {
       winnerId: user0.userId,
       outcome: "forfeit",
