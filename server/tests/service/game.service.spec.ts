@@ -426,3 +426,166 @@ describe("createGameWithAi / joinGameAsAi", () => {
     await expect(joinGameAsAi(game.gameId, botSeat)).rejects.toThrow(/full/);
   });
 });
+
+describe("AI forfeit on persistent invalid moves (CoS 2.8)", () => {
+  function scriptInferenceRejection(consecutiveInvalid: number, forfeit: boolean): void {
+    setInferenceClientForTests({
+      requestMove: vi.fn().mockRejectedValue(
+        new InferenceError("Inference /inference/move failed: no legal action", 422, {
+          consecutiveInvalid,
+          forfeit,
+        }),
+      ),
+    });
+  }
+
+  it("records the streak and lets the human move stand before the third strike", async () => {
+    scriptInferenceRejection(1, false);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const gameId = await seedNimGame({
+      players: [user0.userId, botSeat.deploymentId],
+      aiPlayers: [null, botSeat],
+      state: { remaining: 10, nextPlayer: 0 },
+    });
+
+    const { views, gameResult } = await updateGame(gameId, user0, 3);
+
+    expect(gameResult).toBeUndefined();
+    expect(nimView(views)).toEqual({ remaining: 7, nextPlayer: 1 });
+    const stored = await GameRepo.get(gameId);
+    expect(stored.done).toBe(false);
+    expect(stored.invalidMoveStreaks).toEqual({ 1: 1 });
+    expect(consoleError).toHaveBeenCalled();
+  });
+
+  it("forfeits the game to the other seat on the third strike", async () => {
+    scriptInferenceRejection(3, true);
+    const gameId = await seedNimGame({
+      players: [user0.userId, botSeat.deploymentId],
+      aiPlayers: [null, botSeat],
+      state: { remaining: 10, nextPlayer: 0 },
+    });
+
+    const { views, gameResult } = await updateGame(gameId, user0, 3);
+
+    expect(gameResult).toEqual({
+      winnerId: user0.userId,
+      outcome: "forfeit",
+      ratingChanges: [
+        { entityId: user0.userId, delta: expect.any(Number) },
+        { entityId: botSeat.modelId, delta: expect.any(Number) },
+      ],
+    });
+    expect(gameResult!.ratingChanges![0].delta).toBeGreaterThan(0);
+    expect(gameResult!.ratingChanges![1].delta).toBeLessThan(0);
+    // The board shows the human's accepted move; the game is over.
+    expect(nimView(views)).toEqual({ remaining: 7, nextPlayer: 1 });
+
+    const stored = await GameRepo.get(gameId);
+    expect(stored.done).toBe(true);
+    expect(stored.matchId).toBe(gameId);
+    expect(stored.invalidMoveStreaks).toEqual({ 1: 3 });
+
+    // The winner's rating rose under the human key; the model's fell.
+    const humanRecord = await RatingRepo.find(
+      ratingKey({ entityType: "human", entityId: user0.userId, gameKey: "nim" }),
+    );
+    const modelRecord = await RatingRepo.find(
+      ratingKey({ entityType: "ai", entityId: botSeat.modelId, gameKey: "nim" }),
+    );
+    expect(humanRecord!.rating).toBeGreaterThan(DEFAULT_RATING);
+    expect(modelRecord!.rating).toBeLessThan(DEFAULT_RATING);
+
+    // The archive carries the forfeit with the human's lone move.
+    const match = await MatchRepo.get(gameId);
+    expect(match.result.outcome).toBe("forfeit");
+    expect(match.result.winnerId).toBe(user0.userId);
+    expect(match.result.ratingChanges).toHaveLength(2);
+    expect(match.moves).toHaveLength(1);
+  });
+
+  it("forfeits an opening-move strikeout from seat 0 with no captured moves", async () => {
+    scriptInferenceRejection(3, true);
+    const gameId = await seedNimGame({
+      players: [botSeat.deploymentId, user0.userId],
+      aiPlayers: [botSeat, null],
+      state: { remaining: 21, nextPlayer: 0 },
+    });
+
+    const outcome = await maybeFireAiMove(gameId);
+
+    expect(outcome).not.toBeNull();
+    expect(outcome!.gameResult).toEqual({
+      winnerId: user0.userId,
+      outcome: "forfeit",
+      ratingChanges: [
+        { entityId: botSeat.modelId, delta: expect.any(Number) },
+        { entityId: user0.userId, delta: expect.any(Number) },
+      ],
+    });
+    expect(nimView(outcome!.views)).toEqual({ remaining: 21, nextPlayer: 0 });
+
+    const stored = await GameRepo.get(gameId);
+    expect(stored.done).toBe(true);
+    expect(stored.invalidMoveStreaks).toEqual({ 0: 3 });
+
+    const match = await MatchRepo.get(gameId);
+    expect(match.result).toEqual({
+      outcome: "forfeit",
+      winnerId: user0.userId,
+      ratingChanges: [
+        { entityId: botSeat.modelId, delta: expect.any(Number) },
+        { entityId: user0.userId, delta: expect.any(Number) },
+      ],
+    });
+    expect(match.moves).toEqual([]);
+  });
+
+  it("emits a forfeit result without rating changes for unrated games", async () => {
+    scriptInferenceRejection(3, true);
+    const gameId = await seedNimGame({
+      players: [user0.userId, botSeat.deploymentId],
+      aiPlayers: [null, botSeat],
+      state: { remaining: 10, nextPlayer: 0 },
+      rated: false,
+    });
+
+    const { gameResult } = await updateGame(gameId, user0, 3);
+
+    expect(gameResult).toEqual({ winnerId: user0.userId, outcome: "forfeit" });
+    expect(
+      await RatingRepo.find(
+        ratingKey({ entityType: "ai", entityId: botSeat.modelId, gameKey: "nim" }),
+      ),
+    ).toBeNull();
+    expect(
+      await RatingRepo.find(
+        ratingKey({ entityType: "human", entityId: user0.userId, gameKey: "nim" }),
+      ),
+    ).toBeNull();
+
+    const stored = await GameRepo.get(gameId);
+    expect(stored.done).toBe(true);
+  });
+
+  it("records no streak for inference failures without a counter", async () => {
+    setInferenceClientForTests({
+      requestMove: vi
+        .fn()
+        .mockRejectedValue(new InferenceError("Inference service unreachable: down", 503)),
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const gameId = await seedNimGame({
+      players: [user0.userId, botSeat.deploymentId],
+      aiPlayers: [null, botSeat],
+      state: { remaining: 10, nextPlayer: 0 },
+    });
+
+    const { gameResult } = await updateGame(gameId, user0, 3);
+
+    expect(gameResult).toBeUndefined();
+    const stored = await GameRepo.get(gameId);
+    expect(stored.invalidMoveStreaks).toBeUndefined();
+    expect(stored.done).toBe(false);
+  });
+});

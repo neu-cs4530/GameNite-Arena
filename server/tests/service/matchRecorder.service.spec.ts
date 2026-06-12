@@ -238,6 +238,59 @@ describe("MatchRecorder", () => {
     expect(database.matches.get("game-001")!.moves.map((m) => m.move)).toEqual([2]);
   });
 
+  describe("forfeit finalization (CoS 2.8)", () => {
+    const seatedGame: GameRecord = {
+      ...baseGame,
+      players: ["u-alice", "dep-9"],
+      aiPlayers: [null, { deploymentId: "dep-9", modelId: "model-9", displayName: "SeatBot" }],
+      state: { remaining: 7, nextPlayer: 1 },
+    };
+
+    it("finalizeAsForfeit persists the buffered moves with outcome forfeit and the winner", async () => {
+      await recorder.captureMove(seatedGame, "game-001", "u-alice", 3, false, {
+        remaining: 21,
+        nextPlayer: 0,
+      });
+      await recorder.captureMove(seatedGame, "game-001", "dep-9", 2, false);
+
+      await recorder.finalizeAsForfeit(seatedGame, "game-001", "u-alice");
+
+      const stored = database.matches.get("game-001")!;
+      expect(stored.result).toEqual({ outcome: "forfeit", winnerId: "u-alice" });
+      expect(stored.moves.map((m) => m.move)).toEqual([3, 2]);
+      expect(stored.initialState).toEqual({ remaining: 21, nextPlayer: 0 });
+      expect(recorder.isRecording("game-001")).toBe(false);
+    });
+
+    it("synthesizes an entry when the forfeit lands before any captured move", async () => {
+      await recorder.finalizeAsForfeit(seatedGame, "game-opening", "u-alice");
+
+      const stored = database.matches.get("game-opening")!;
+      expect(stored.result).toEqual({ outcome: "forfeit", winnerId: "u-alice" });
+      expect(stored.moves).toEqual([]);
+      // The synthesized entry snapshots the game's current state and seats.
+      expect(stored.initialState).toEqual({ remaining: 7, nextPlayer: 1 });
+      expect(stored.participants).toEqual([
+        { id: "u-alice", type: "human", displayName: "Alice" },
+        { id: "model-9", type: "ai", displayName: "SeatBot" },
+      ]);
+      expect(stored.rated).toBe(true);
+    });
+
+    it("is a no-op for an already-finalized game", async () => {
+      await recorder.captureMove(seatedGame, "game-001", "u-alice", 3, true, undefined, "u-alice");
+      const finished = database.matches.get("game-001")!;
+
+      await recorder.finalizeAsForfeit(seatedGame, "game-001", "dep-9");
+
+      expect(database.matches.get("game-001")).toEqual(finished);
+      expect(database.matches.get("game-001")!.result).toEqual({
+        outcome: "win",
+        winnerId: "u-alice",
+      });
+    });
+  });
+
   describe("abandoned-game finalization", () => {
     it("finalizeAsAbandoned persists the buffered moves with outcome abandoned and no winner", async () => {
       await recorder.captureMove(baseGame, "game-001", "u-alice", 3, false, {

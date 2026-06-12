@@ -67,7 +67,9 @@ export interface CommentRecord {
  *               null/absent for human seats (Story 2.6)
  * - `rated`: whether this game contributes to Glicko 2 ratings (Story 1.2)
  * - `delaySec`: broadcaster-configured live broadcast delay in seconds (Story 3.7)
- * - `invalidMoveStreaks`: per-AI count of consecutive invalid moves; AI forfeits at 3 (Story 2.8)
+ * - `invalidMoveStreaks`: per-seat (keyed by seat index) count of an AI's
+ *               consecutive invalid moves, mirrored from the inference
+ *               service's 422 counter; the AI forfeits at 3 (Story 2.8)
  * - `matchId`: set when game completes and a MatchRecord is created (Story 3.1)
  * - `createdAt`: when the game was created
  * - `createdBy`: user id of the person who created the game
@@ -81,7 +83,7 @@ export interface GameRecord {
   aiPlayers: (AIParticipant | null)[]; // References Deployment records (Story 2.6)
   rated: boolean; // Story 1.2
   delaySec?: number; // Story 3.7
-  invalidMoveStreaks?: { [modelId: string]: number }; // Story 2.8
+  invalidMoveStreaks?: { [seatIndex: string]: number }; // Story 2.8
   matchId?: RecordId; // References Match records, set on completion (Story 3.1)
   createdAt: DateISO;
   createdBy: RecordId; // References User records

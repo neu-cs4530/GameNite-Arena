@@ -90,6 +90,20 @@ export async function maybeFireAiMove(gameId: string): Promise<GameUpdateOutcome
     })) as { move: unknown };
     move = result.move;
   } catch (err) {
+    if (err instanceof inferenceClient.InferenceError) {
+      // CoS 2.8 bookkeeping: persist the model's consecutive-invalid streak
+      // for observability, and forfeit the game on the third strike.
+      if (typeof err.consecutiveInvalid === "number") {
+        game.invalidMoveStreaks = {
+          ...game.invalidMoveStreaks,
+          [nextPlayerIndex]: err.consecutiveInvalid,
+        };
+        await GameRepo.set(gameId, game);
+      }
+      if (err.forfeit) {
+        return forfeitAiSeat(gameId, nextPlayerIndex);
+      }
+    }
     // eslint-disable-next-line no-console
     console.error(`AI move failed for deployment ${aiDeploymentId}:`, err);
     return null;
@@ -101,6 +115,56 @@ export async function maybeFireAiMove(gameId: string): Promise<GameUpdateOutcome
   };
 
   return updateGame(gameId, aiUser, move);
+}
+
+/**
+ * Ends a game as an AI forfeit (CoS 2.8): the model in `forfeitingSeat`
+ * struck out on consecutive invalid moves, so the OTHER seat wins. Marks the
+ * game done, archives the match with outcome "forfeit", applies rating
+ * updates for rated games, and returns the outcome so gameResult emits. The
+ * returned views show the last accepted position — the forfeit was decided
+ * off the board.
+ */
+async function forfeitAiSeat(gameId: string, forfeitingSeat: number): Promise<GameUpdateOutcome> {
+  const game = await GameRepo.get(gameId);
+  const winnerId = game.players[forfeitingSeat === 0 ? 1 : 0];
+
+  game.done = true;
+  game.matchId = gameId;
+  await GameRepo.set(gameId, game);
+
+  try {
+    await matchRecorder.finalizeAsForfeit(game, gameId, winnerId);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`match capture failed for game ${gameId}:`, err);
+  }
+
+  let gameResult: MatchResult = { winnerId, outcome: "forfeit" };
+  if (game.rated) {
+    try {
+      const ratedResult = await updateRatingsForGame(game, gameId, {
+        winnerId,
+        outcome: "forfeit",
+      });
+      gameResult = ratedResult ?? gameResult;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`rating update failed for game ${gameId}:`, err);
+    }
+  }
+
+  const service = gameServices[game.type];
+  return {
+    views: {
+      watchers: service.view(game.state, -1),
+      players: game.players.map((userId, index) => ({
+        userId,
+        view: service.view(game.state, index),
+      })),
+    },
+    gameResult,
+  };
 }
 
 export async function createGame(

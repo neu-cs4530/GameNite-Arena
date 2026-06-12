@@ -167,6 +167,20 @@ export class MatchRecorder {
   }
 
   /**
+   * Finalizes a game as a forfeit (CoS 2.8): persists the buffered moves
+   * with result `{ outcome: "forfeit", winnerId }`. If the game had no
+   * captured moves yet (a model striking out on its opening move), an entry
+   * is synthesized from the game record so the forfeit still archives.
+   * No-op for already-finalized games.
+   */
+  async finalizeAsForfeit(game: GameRecord, gameId: string, winnerId: string): Promise<void> {
+    if (this._finalized.has(gameId)) return;
+    const entry =
+      this._inProgress.get(gameId) ?? this._startTracking(game, game.state, this._getCurrentTime());
+    await this._finalize(gameId, entry, { outcome: "forfeit", winnerId });
+  }
+
+  /**
    * Finalizes a tracked game as abandoned: persists the buffered moves with
    * result `{ outcome: "abandoned" }` (no winner), clears the in-progress
    * entry, and marks the game finalized. No-op for untracked or
