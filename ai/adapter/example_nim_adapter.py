@@ -7,8 +7,10 @@ Player who takes the last object LOSES.
 Observation : (1,) float32 — objects_remaining / starting_pile (normalised)
 Action      : Discrete(3)  — 0=take1, 1=take2, 2=take3
 
-Optimal strategy: always leave opponent on a multiple of 4.
-A well-trained model should rediscover this — use it as a sanity check.
+Optimal misère strategy: always leave your opponent on pile ≡ 1 (mod 4)
+(1, 5, 9, ...). The scripted opponent plays that line but blunders a
+fraction of its moves, so games are winnable and the win rate measures
+real skill instead of pinning at 0 or 1.
 
 Edge cases handled by the inference service:
   If pile == 1: only action 0 (take1) is valid → model must take it
@@ -27,9 +29,12 @@ STARTING_PILE = 21   # matches GameNite default
 
 
 class NimEnv(gym.Env):
-    def __init__(self, starting_pile: int = STARTING_PILE) -> None:
+    def __init__(
+        self, starting_pile: int = STARTING_PILE, opponent_mistake_rate: float = 0.25
+    ) -> None:
         super().__init__()
         self.starting_pile = starting_pile
+        self.opponent_mistake_rate = opponent_mistake_rate
         self.observation_space = spaces.Box(
             low=0.0, high=1.0, shape=(1,), dtype=np.float32
         )
@@ -52,8 +57,12 @@ class NimEnv(gym.Env):
         if self.pile == 0:
             return self._obs(), -1.0, True, False, {}
 
-        # Optimal opponent: always take (pile % 4) if possible, else take 1
-        opp_take = self.pile % 4 or 1
+        # Misère-optimal opponent (leave us on pile ≡ 1 mod 4), with an
+        # occasional uniform blunder so positions are winnable.
+        if self.np_random.random() < self.opponent_mistake_rate:
+            opp_take = int(self.np_random.integers(1, 4))
+        else:
+            opp_take = (self.pile - 1) % 4 or 1
         opp_take = min(opp_take, min(3, self.pile))
         self.pile -= opp_take
 
