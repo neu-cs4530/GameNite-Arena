@@ -1,15 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GameServer, GameServerSocket } from "../../src/types.ts";
 import { logSocketError } from "../../src/controllers/socket.controller.ts";
-import { socketJoinQueue, socketLeaveQueue } from "../../src/controllers/matchmaker.controller.ts";
+import {
+  getQueueStatus,
+  socketJoinQueue,
+  socketLeaveQueue,
+  startMatchedGame,
+  startMatchmakerLoop,
+} from "../../src/controllers/matchmaker.controller.ts";
 import {
   getQueueCounts,
+  joinQueue,
   leaveQueue,
   runMatchmakingTick,
+  MAX_WAIT_MS,
+  TICK_INTERVAL_MS,
+  type QueueEntry,
 } from "../../src/services/matchmaker.service.ts";
 import { getUserByUsername } from "../../src/services/auth.service.ts";
 import { ratingKey } from "../../src/models.ts";
-import { DeploymentRepo, ModelRepo, RatingRepo } from "../../src/repository.ts";
+import { DeploymentRepo, GameRepo, ModelRepo, RatingRepo } from "../../src/repository.ts";
+import {
+  resetInferenceClientForTests,
+  setInferenceClientForTests,
+} from "../../src/services/inferenceClient.ts";
 
 /* ---------------------------------------------------------------------------
  * socketJoinQueue / socketLeaveQueue, including the queue-with-deployment
@@ -274,5 +288,294 @@ describe("socketLeaveQueue", () => {
       mockServer,
     )({ auth: { username: "user0", password: "wrong" }, payload: "nim" });
     expect(logSocketError).toHaveBeenCalledExactlyOnceWith(mockSocket, new Error("Invalid auth"));
+  });
+});
+
+/* ---------------------------------------------------------------------------
+ * startMatchedGame / startMatchmakerLoop: seating matched entries (human or
+ * AI) into a created game, firing a seat-0 model's opening move, and the
+ * tick loop's emissions.
+ * ------------------------------------------------------------------------- */
+
+describe("startMatchedGame", () => {
+  function makeIoRecorder() {
+    const emits: { room: string; event: string; payload: Record<string, unknown> }[] = [];
+    const io = {
+      to: (room: string) => ({
+        emit: (event: string, payload: Record<string, unknown>) =>
+          emits.push({ room, event, payload }),
+      }),
+    } as unknown as GameServer;
+    return { io, emits };
+  }
+
+  async function queueEntry(
+    username: "user0" | "user1",
+    overrides: Partial<QueueEntry> = {},
+  ): Promise<QueueEntry> {
+    const user = (await getUserByUsername(username))!;
+    return {
+      userId: user.userId,
+      username,
+      gameKey: "nim",
+      rating: 1500,
+      rated: true,
+      joinedAt: new Date(),
+      socketId: `socket-${username}`,
+      ...overrides,
+    };
+  }
+
+  function findEmit(
+    emits: { room: string; event: string; payload: Record<string, unknown> }[],
+    event: string,
+    room?: string,
+  ) {
+    return emits.filter((e) => e.event === event && (room === undefined || e.room === room));
+  }
+
+  afterEach(() => {
+    resetInferenceClientForTests();
+    vi.restoreAllMocks();
+  });
+
+  it("starts a human-vs-human game and tells both sockets", async () => {
+    const { io, emits } = makeIoRecorder();
+    const a = await queueEntry("user0");
+    const b = await queueEntry("user1");
+
+    await startMatchedGame(io, a, b);
+
+    const found = findEmit(emits, "matchFound");
+    expect(found.map((e) => e.room).sort()).toEqual(["socket-user0", "socket-user1"]);
+    const gameId = found[0].payload["gameId"] as string;
+    expect(found[1].payload).toEqual({ gameId, gameKey: "nim" });
+
+    const stored = await GameRepo.get(gameId);
+    expect(stored.players).toEqual([a.userId, b.userId]);
+    expect(stored.aiPlayers).toEqual([]);
+    expect(stored.rated).toBe(true);
+    expect(stored.state).toEqual({ remaining: 21, nextPlayer: 0 });
+  });
+
+  it("seats a model entry on seat 0 and lets it open the game", async () => {
+    const { deploymentId, modelId } = await seedDeployment({ ownerUsername: "user0" });
+    const requestMove = vi.fn().mockResolvedValue({ move: 3 });
+    setInferenceClientForTests({ requestMove });
+    const { io, emits } = makeIoRecorder();
+    const a = await queueEntry("user0", {
+      aiSeat: { deploymentId, modelId, displayName: "QueueBot" },
+    });
+    const b = await queueEntry("user1");
+
+    await startMatchedGame(io, a, b);
+
+    const found = findEmit(emits, "matchFound");
+    expect(found).toHaveLength(2);
+    const gameId = found[0].payload["gameId"] as string;
+
+    const stored = await GameRepo.get(gameId);
+    expect(stored.players).toEqual([deploymentId, b.userId]);
+    expect(stored.aiPlayers[0]).toEqual({ deploymentId, modelId, displayName: "QueueBot" });
+    // The model opened the game: 21 → 18, human to move.
+    expect(stored.state).toEqual({ remaining: 18, nextPlayer: 1 });
+    expect(requestMove).toHaveBeenCalledExactlyOnceWith({
+      deploymentId,
+      state: { remaining: 21 },
+    });
+  });
+
+  it("seats a model entry on seat 1 without firing an opening move", async () => {
+    const { deploymentId, modelId } = await seedDeployment({ ownerUsername: "user1" });
+    const requestMove = vi.fn();
+    setInferenceClientForTests({ requestMove });
+    const { io, emits } = makeIoRecorder();
+    const a = await queueEntry("user0");
+    const b = await queueEntry("user1", {
+      aiSeat: { deploymentId, modelId, displayName: "QueueBot" },
+    });
+
+    await startMatchedGame(io, a, b);
+
+    const gameId = findEmit(emits, "matchFound")[0].payload["gameId"] as string;
+    const stored = await GameRepo.get(gameId);
+    expect(stored.players).toEqual([a.userId, deploymentId]);
+    expect(stored.aiPlayers).toEqual([null, { deploymentId, modelId, displayName: "QueueBot" }]);
+    // Seat 0 is human, so nobody moved yet.
+    expect(stored.state).toEqual({ remaining: 21, nextPlayer: 0 });
+    expect(requestMove).not.toHaveBeenCalled();
+  });
+
+  it("chains a model-vs-model game to completion and emits gameResult", async () => {
+    const depA = await seedDeployment({ ownerUsername: "user0", displayName: "BotA" });
+    const depB = await seedDeployment({ ownerUsername: "user1", displayName: "BotB" });
+    const requestMove = vi.fn().mockResolvedValue({ move: 3 });
+    setInferenceClientForTests({ requestMove });
+    const { io, emits } = makeIoRecorder();
+    const a = await queueEntry("user0", {
+      aiSeat: { deploymentId: depA.deploymentId, modelId: depA.modelId, displayName: "BotA" },
+    });
+    const b = await queueEntry("user1", {
+      aiSeat: { deploymentId: depB.deploymentId, modelId: depB.modelId, displayName: "BotB" },
+    });
+
+    await startMatchedGame(io, a, b);
+
+    const gameId = findEmit(emits, "matchFound")[0].payload["gameId"] as string;
+    const stored = await GameRepo.get(gameId);
+    expect(stored.done).toBe(true);
+
+    // Seven take-3 moves: seat 0 takes the last object, seat 1 wins.
+    const results = findEmit(emits, "gameResult", gameId);
+    expect(results).toHaveLength(1);
+    expect(results[0].payload["winnerId"]).toBe(depB.deploymentId);
+    expect(results[0].payload["outcome"]).toBe("win");
+  });
+
+  it("leaves the game playable when the opening AI move is rejected", async () => {
+    const { deploymentId, modelId } = await seedDeployment({ ownerUsername: "user0" });
+    const requestMove = vi.fn().mockResolvedValue({ move: 99 }); // illegal in nim
+    setInferenceClientForTests({ requestMove });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { io, emits } = makeIoRecorder();
+    const a = await queueEntry("user0", {
+      aiSeat: { deploymentId, modelId, displayName: "QueueBot" },
+    });
+    const b = await queueEntry("user1");
+
+    await startMatchedGame(io, a, b);
+
+    // matchFound still went out, the board is untouched, and the failure was
+    // logged rather than thrown.
+    expect(findEmit(emits, "matchFound")).toHaveLength(2);
+    const gameId = findEmit(emits, "matchFound")[0].payload["gameId"] as string;
+    const stored = await GameRepo.get(gameId);
+    expect(stored.state).toEqual({ remaining: 21, nextPlayer: 0 });
+    expect(stored.done).toBe(false);
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining("AI opening move failed"),
+      expect.anything(),
+    );
+  });
+});
+
+describe("startMatchmakerLoop", () => {
+  function makeIoRecorder() {
+    const emits: { room: string; event: string; payload: Record<string, unknown> }[] = [];
+    const io = {
+      to: (room: string) => ({
+        emit: (event: string, payload: Record<string, unknown>) =>
+          emits.push({ room, event, payload }),
+      }),
+    } as unknown as GameServer;
+    return { io, emits };
+  }
+
+  afterEach(async () => {
+    vi.useRealTimers();
+    const user2 = (await getUserByUsername("user2"))!;
+    const user3 = (await getUserByUsername("user3"))!;
+    leaveQueue(user2.userId, "nim");
+    leaveQueue(user3.userId, "guess");
+    vi.restoreAllMocks();
+  });
+
+  it("pairs, times out, and reports windows on each tick", async () => {
+    const user0 = (await getUserByUsername("user0"))!;
+    const user1 = (await getUserByUsername("user1"))!;
+    const user2 = (await getUserByUsername("user2"))!;
+    const user3 = (await getUserByUsername("user3"))!;
+    const base: Omit<QueueEntry, "userId" | "username" | "socketId"> = {
+      gameKey: "nim",
+      rating: 1500,
+      rated: true,
+      joinedAt: new Date(),
+    };
+    joinQueue({ ...base, userId: user0.userId, username: "user0", socketId: "s0" });
+    joinQueue({ ...base, userId: user1.userId, username: "user1", socketId: "s1" });
+    // user2 has waited past the cutoff: times out on this tick.
+    joinQueue({
+      ...base,
+      userId: user2.userId,
+      username: "user2",
+      socketId: "s2",
+      rated: false,
+      joinedAt: new Date(Date.now() - MAX_WAIT_MS),
+    });
+    // user3 waits alone in another pool: stays queued, gets a window update.
+    joinQueue({
+      ...base,
+      userId: user3.userId,
+      username: "user3",
+      socketId: "s3",
+      gameKey: "guess",
+    });
+
+    vi.useFakeTimers();
+    const { io, emits } = makeIoRecorder();
+    const handle = startMatchmakerLoop(io);
+    await vi.advanceTimersByTimeAsync(TICK_INTERVAL_MS);
+    clearInterval(handle);
+    vi.useRealTimers();
+    // Let the in-flight startMatchedGame promise finish on real time.
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    const found = emits.filter((e) => e.event === "matchFound");
+    expect(found.map((e) => e.room).sort()).toEqual(["s0", "s1"]);
+    const timeouts = emits.filter((e) => e.event === "matchmakingTimeout");
+    expect(timeouts).toEqual([
+      { room: "s2", event: "matchmakingTimeout", payload: { gameKey: "nim" } },
+    ]);
+    const windows = emits.filter((e) => e.event === "matchmakingWindowUpdate");
+    expect(windows).toEqual([
+      {
+        room: "s3",
+        event: "matchmakingWindowUpdate",
+        payload: { gameKey: "guess", window: expect.any(Number) },
+      },
+    ]);
+  });
+
+  it("logs and keeps ticking when a matched game fails to start", async () => {
+    const user0 = (await getUserByUsername("user0"))!;
+    const user1 = (await getUserByUsername("user1"))!;
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    // Both entries claim the SAME deployment seat: the second join collides,
+    // so startMatchedGame rejects after matching.
+    const aiSeat = { deploymentId: "dep-dup", modelId: "model-dup", displayName: "DupBot" };
+    const base: Omit<QueueEntry, "userId" | "username" | "socketId"> = {
+      gameKey: "nim",
+      rating: 1500,
+      rated: true,
+      joinedAt: new Date(),
+      aiSeat,
+    };
+    joinQueue({ ...base, userId: user0.userId, username: "user0", socketId: "s0" });
+    joinQueue({ ...base, userId: user1.userId, username: "user1", socketId: "s1" });
+
+    vi.useFakeTimers();
+    const { io, emits } = makeIoRecorder();
+    const handle = startMatchmakerLoop(io);
+    await vi.advanceTimersByTimeAsync(TICK_INTERVAL_MS);
+    clearInterval(handle);
+    vi.useRealTimers();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(emits.filter((e) => e.event === "matchFound")).toHaveLength(0);
+    expect(consoleError).toHaveBeenCalledWith("failed to start matched game:", expect.any(Error));
+  });
+});
+
+describe("getQueueStatus", () => {
+  it("reports the per-game queue counts", async () => {
+    const send = vi.fn();
+    await getQueueStatus(
+      {} as Parameters<typeof getQueueStatus>[0],
+      { send } as unknown as Parameters<typeof getQueueStatus>[1],
+    );
+    expect(send).toHaveBeenCalledExactlyOnceWith({
+      nim: { rated: 0, unrated: 0 },
+      guess: { rated: 0, unrated: 0 },
+    });
   });
 });

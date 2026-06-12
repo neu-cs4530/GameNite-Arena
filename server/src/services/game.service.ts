@@ -7,7 +7,7 @@ import { type GameServicer } from "../games/gameServiceManager.ts";
 import { nimGameService } from "../games/nim.ts";
 import { guessGameService } from "../games/guess.ts";
 import { type GameViewUpdates, type UserWithId } from "../types.ts";
-import { type MatchResult } from "../models.ts";
+import { type AIParticipant, type MatchResult } from "../models.ts";
 import { GameRepo } from "../repository.ts";
 import * as inferenceClient from "./inferenceClient.ts";
 
@@ -123,6 +123,31 @@ export async function createGame(
   return populateGameInfo(gameId);
 }
 
+/**
+ * Creates a game with a deployed model in seat 0 (CoS 2.6). The model's seat
+ * id in `players` is its deployment id, positionally mirrored in `aiPlayers`
+ * so the AI move loop knows whose turn it is.
+ */
+export async function createGameWithAi(
+  ai: AIParticipant,
+  type: GameKey,
+  createdAt: Date,
+  rated = false,
+): Promise<GameInfo> {
+  const chat = await createChat(createdAt);
+  const gameId = await GameRepo.add({
+    type,
+    done: false,
+    chat: chat.chatId,
+    createdAt: createdAt.toISOString(),
+    createdBy: ai.deploymentId,
+    players: [ai.deploymentId],
+    aiPlayers: [ai],
+    rated,
+  });
+  return populateGameInfo(gameId);
+}
+
 export async function getGameById(gameId: string): Promise<GameInfo | null> {
   const game = await GameRepo.find(gameId);
   if (!game) return null;
@@ -143,6 +168,34 @@ export async function joinGame(gameId: string, user: UserWithId): Promise<GameIn
   }
 
   game.players = [...game.players, user.userId];
+  await GameRepo.set(gameId, game);
+
+  return populateGameInfo(gameId);
+}
+
+/**
+ * Seats a deployed model in an open game (CoS 2.6), the AI counterpart of
+ * {@link joinGame}: the deployment id joins `players` and the participant
+ * lands at the same index of `aiPlayers` (human seats are padded with null).
+ */
+export async function joinGameAsAi(gameId: string, ai: AIParticipant): Promise<GameInfo> {
+  const game = await GameRepo.find(gameId);
+  if (!game) throw new Error(`deployment ${ai.deploymentId} joining invalid game`);
+  if (game.state) {
+    throw new Error(`deployment ${ai.deploymentId} joining game that started`);
+  }
+  if (game.players.some((seatId) => seatId === ai.deploymentId)) {
+    throw new Error(`deployment ${ai.deploymentId} joining game it is in already`);
+  }
+  if (game.players.length === gameServices[game.type].maxPlayers) {
+    throw new Error(`deployment ${ai.deploymentId} joining full`);
+  }
+
+  const aiPlayers = [...game.aiPlayers];
+  while (aiPlayers.length < game.players.length) aiPlayers.push(null);
+
+  game.players = [...game.players, ai.deploymentId];
+  game.aiPlayers = [...aiPlayers, ai];
   await GameRepo.set(gameId, game);
 
   return populateGameInfo(gameId);

@@ -2,9 +2,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import type { NimView } from "@gamenite/shared";
 import { ratingKey, type AIParticipant, type GameRecord } from "../../src/models.ts";
-import { GameRepo, MatchRepo, RatingRepo } from "../../src/repository.ts";
+import { DeploymentRepo, GameRepo, MatchRepo, RatingRepo } from "../../src/repository.ts";
 import { getUserByUsername } from "../../src/services/auth.service.ts";
-import { maybeFireAiMove, updateGame } from "../../src/services/game.service.ts";
+import {
+  createGame,
+  createGameWithAi,
+  getGameById,
+  joinGame,
+  joinGameAsAi,
+  maybeFireAiMove,
+  startGame,
+  updateGame,
+} from "../../src/services/game.service.ts";
 import {
   InferenceError,
   resetInferenceClientForTests,
@@ -321,5 +330,99 @@ describe("maybeFireAiMove", () => {
       state: { remaining: 21, nextPlayer: 0 },
     });
     expect(await maybeFireAiMove(gameId)).toBeNull();
+  });
+});
+
+describe("createGameWithAi / joinGameAsAi", () => {
+  /** Registers botSeat's deployment so AI seats can be rendered in GameInfo. */
+  async function seedBotDeployment(): Promise<void> {
+    await DeploymentRepo.set(botSeat.deploymentId, {
+      modelId: botSeat.modelId,
+      userId: user0.userId,
+      gameKey: "nim",
+      displayName: botSeat.displayName,
+      status: "active",
+      createdAt: "2026-06-02T00:00:00.000Z",
+      updatedAt: "2026-06-02T00:00:00.000Z",
+    });
+  }
+
+  it("creates a game with the model in seat 0, rendered as an AI user", async () => {
+    await seedBotDeployment();
+
+    const info = await createGameWithAi(botSeat, "nim", new Date(), true);
+
+    expect(info.status).toBe("waiting");
+    expect(info.players).toHaveLength(1);
+    expect(info.players[0]).toStrictEqual({
+      username: botSeat.deploymentId,
+      display: botSeat.displayName,
+      createdAt: new Date("2026-06-02T00:00:00.000Z"),
+      isAi: true,
+    });
+    expect(info.createdBy.isAi).toBe(true);
+
+    const stored = await GameRepo.get(info.gameId);
+    expect(stored.players).toEqual([botSeat.deploymentId]);
+    expect(stored.aiPlayers).toEqual([botSeat]);
+    expect(stored.rated).toBe(true);
+  });
+
+  it("joins a model into seat 1 of a human-created game, keeping seats positional", async () => {
+    await seedBotDeployment();
+    const game = await createGame(user0, "nim", new Date(), true);
+
+    const info = await joinGameAsAi(game.gameId, botSeat);
+
+    expect(info.players).toHaveLength(2);
+    expect(info.players[0].isAi).toBeUndefined();
+    expect(info.players[1].isAi).toBe(true);
+
+    const stored = await GameRepo.get(game.gameId);
+    expect(stored.players).toEqual([user0.userId, botSeat.deploymentId]);
+    expect(stored.aiPlayers).toEqual([null, botSeat]);
+  });
+
+  it("lets a human join and start an AI-created game", async () => {
+    await seedBotDeployment();
+    const game = await createGameWithAi(botSeat, "nim", new Date(), true);
+    await joinGame(game.gameId, user0);
+    await startGame(game.gameId, user0);
+
+    const info = (await getGameById(game.gameId))!;
+    expect(info.status).toBe("active");
+    expect(info.players.map((p) => p.isAi)).toEqual([true, undefined]);
+
+    const stored = await GameRepo.get(game.gameId);
+    expect(stored.players).toEqual([botSeat.deploymentId, user0.userId]);
+    expect(stored.aiPlayers).toEqual([botSeat]);
+  });
+
+  it("rejects joining an unknown game", async () => {
+    await expect(joinGameAsAi(randomUUID().toString(), botSeat)).rejects.toThrow(/invalid game/);
+  });
+
+  it("rejects joining a game that already started", async () => {
+    const user1 = (await getUserByUsername("user1"))!;
+    const game = await createGame(user0, "nim", new Date());
+    await joinGame(game.gameId, user1);
+    await startGame(game.gameId, user0);
+
+    await expect(joinGameAsAi(game.gameId, botSeat)).rejects.toThrow(/started/);
+  });
+
+  it("rejects a deployment joining a game it is already seated in", async () => {
+    await seedBotDeployment();
+    const game = await createGameWithAi(botSeat, "nim", new Date());
+
+    await expect(joinGameAsAi(game.gameId, botSeat)).rejects.toThrow(/already/);
+  });
+
+  it("rejects joining a full game", async () => {
+    const user1 = (await getUserByUsername("user1"))!;
+    const game = await createGame(user0, "nim", new Date());
+    await joinGame(game.gameId, user1);
+
+    await expect(joinGameAsAi(game.gameId, botSeat)).rejects.toThrow(/full/);
   });
 });
