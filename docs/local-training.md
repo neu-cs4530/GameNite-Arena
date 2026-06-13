@@ -50,8 +50,8 @@ curl -fsSL http://localhost:8000/api/training/kit/install.sh | sh -s -- --job-id
 individual files from `GET /api/training/kit/<name>` — the manifest is at
 `GET /api/training/kit`). The kit contains:
 
-- `train.py` — the trainer CLI (the kit **entrypoint**): real chunked SB3
-  PPO, real rollout evaluation, live reporting, artifact upload.
+- `train.py` — the trainer CLI (the kit **entrypoint**): real chunked SB3 PPO,
+  real rollout evaluation, live reporting, artifact upload.
 - `session_reporter.py` — the stdlib HTTP client (use it directly from your
   own loop if you outgrow `train.py`).
 - `base_adapter.py` + the per-game example adapters.
@@ -173,28 +173,28 @@ UI stops the loop on the next report.
 ### Training heuristics
 
 The new-run form exposes per-game training choices (catalog:
-`shared/src/trainingHeuristics.ts`). They ride in `config.extra.heuristics`
-on the job; `train.py` reads them back after attaching (public
+`shared/src/trainingHeuristics.ts`). They ride in `config.extra.heuristics` on
+the job; `train.py` reads them back after attaching (public
 `GET /api/training/:jobId`) and maps them onto env parameters. Missing or
 invalid values fall back to the defaults per key. For nim:
 
-| Heuristic       | Options (default first)                                 | Env effect                                          |
-| --------------- | -------------------------------------------------------- | --------------------------------------------------- |
-| `opponentStyle` | `misere-blunder-25`, `misere-blunder-15`, `uniform-random` | misère-optimal opponent with 25%/15% blunders, or a uniform random mover |
-| `startingPile`  | `random-8-21`, `fixed-21`                                 | random pile in [8, 21] per episode, or always the arena's 21 |
-| `rewardShaping` | `none`, `potential-mod4`                                  | optional potential-based mod-4 shaping (φ(terminal)=0, never changes the optimal policy); win-rate evals always run **unshaped** |
+| Heuristic       | Options (default first)                                    | Env effect                                                                                                                       |
+| --------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `opponentStyle` | `misere-blunder-25`, `misere-blunder-15`, `uniform-random` | misère-optimal opponent with 25%/15% blunders, or a uniform random mover                                                         |
+| `startingPile`  | `random-8-21`, `fixed-21`                                  | random pile in [8, 21] per episode, or always the arena's 21                                                                     |
+| `rewardShaping` | `none`, `potential-mod4`                                   | optional potential-based mod-4 shaping (φ(terminal)=0, never changes the optimal policy); win-rate evals always run **unshaped** |
 
 ### The nim v2 observation (and legacy artifacts)
 
 Training and serving share one observation contract per game
 (`ai/inference-service/encoders.py` mirrors the adapters). For nim the v2
 contract is a `(5,)` vector: `[pile/21, onehot4(pile % 4)]` — proven
-necessary: with only the normalized scalar, on-policy PPO cannot learn nim
-at all (collapses to a best-constant ~0.30 win rate); with the mod-4 one-hot
-it reaches the theoretical optimum. The serving encoder normalizes (the Node
-side sends the raw `{remaining}`) and dispatches on the **loaded artifact's**
-recorded `obs_size`: legacy `(1,)` artifacts keep working and now receive
-the normalized `[pile/21]` they were actually trained on.
+necessary: with only the normalized scalar, on-policy PPO cannot learn nim at
+all (collapses to a best-constant ~0.30 win rate); with the mod-4 one-hot it
+reaches the theoretical optimum. The serving encoder normalizes (the Node side
+sends the raw `{remaining}`) and dispatches on the **loaded artifact's**
+recorded `obs_size`: legacy `(1,)` artifacts keep working and now receive the
+normalized `[pile/21]` they were actually trained on.
 
 ## The trainer UI is real data, full stop
 
@@ -247,9 +247,9 @@ derived from MatchRepo, is the next block.
    to the live chart on the first report, and the metrics update with each
    chunk (~2k steps per report).
 6. Optional beats: click **Cancel** in the UI and watch the trainer log
-   `canceled from the web UI - stopping`; a completed run uploads its
-   artifact automatically, lighting up Download/Deploy and the sha-256 in
-   the Advanced panel.
+   `canceled from the web UI - stopping`; a completed run uploads its artifact
+   automatically, lighting up Download/Deploy and the sha-256 in the Advanced
+   panel.
 
 ### Known limitations (accepted, documented)
 
