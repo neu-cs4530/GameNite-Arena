@@ -266,12 +266,17 @@ export interface LeaderboardEntry {
   wins: number;
   /** wins / gamesPlayed as a 0..1 fraction; 0 when no games played. */
   winRate: number;
+  /** Daily period only: sum of today's rating changes. */
+  ratingDelta?: number;
+  /** Daily period only: rated games completed today. */
+  gamesPlayedToday?: number;
 }
 
 /** Paginated leaderboard response (client mirror). */
 export interface LeaderboardPage {
   gameKey: GameKey;
   entityType: "human" | "ai" | "all";
+  period: LeaderboardPeriod;
   page: number;
   limit: number;
   total: number;
@@ -283,6 +288,9 @@ export type LeaderboardSort = "rating" | "winRate" | "wins" | "gamesPlayed";
 
 /** Entity-type filter — maps straight onto the API's `type` param. */
 export type LeaderboardEntityFilter = "all" | "human" | "ai";
+
+/** "alltime" is the cached Glicko ranking; "daily" is today's rating gains. */
+export type LeaderboardPeriod = "alltime" | "daily";
 
 /* ============================================================================
  * Trainer types (Models, Training Jobs, Deployments)
