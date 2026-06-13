@@ -62,9 +62,7 @@ async function playNimToCompletion(first: Page, second: Page): Promise<[Page, Pa
 }
 
 test.describe("Leaderboards and post-match recap", () => {
-  test("leaderboards tab opens from the nav and discloses a game board", async ({
-    request,
-  }) => {
+  test("leaderboards tab opens from the nav and discloses a game board", async ({ request }) => {
     const user = await signupTrainerUser(request, "lbtab");
     await logIn(page1, user.username, user.password);
 
