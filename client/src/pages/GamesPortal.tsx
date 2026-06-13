@@ -34,7 +34,7 @@ export default function GamesPortal(): JSX.Element {
 
   return (
     <div className="ga-portal" data-testid="games-portal">
-      <PageHero title="Arena" lede="Pick a game — play it yourself or send your model in." />
+      <PageHero title="Arena" lede="Pick a game, pick a mode, we find your opponent." />
 
       <GameSelectGrid
         games={PLAYABLE_GAME_KEYS.map((key) => ({ key, label: gameNames[key] }))}
