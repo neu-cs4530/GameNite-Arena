@@ -17,6 +17,7 @@ import useAsync from "../../hooks/useAsync.ts";
 import useLoginContext from "../../hooks/useLoginContext.ts";
 import { getLeaderboard } from "../../services/leaderboardService.ts";
 import { gameNames } from "../../util/consts.ts";
+import { formatDelta } from "../../util/recap.ts";
 import {
   applyBoardView,
   findSelfEntry,
@@ -27,6 +28,7 @@ import {
 import type {
   LeaderboardEntityFilter,
   LeaderboardEntry,
+  LeaderboardPeriod,
   LeaderboardSort,
 } from "../../util/types.ts";
 
@@ -44,6 +46,11 @@ const ENTITY_OPTIONS: { value: LeaderboardEntityFilter; label: string }[] = [
   { value: "human", label: "Humans" },
   { value: "ai", label: "AIs" },
   { value: "all", label: "Both" },
+];
+
+const PERIOD_OPTIONS: { value: LeaderboardPeriod; label: string }[] = [
+  { value: "alltime", label: "All-time" },
+  { value: "daily", label: "Today" },
 ];
 
 interface LeaderboardBoardProps {
@@ -67,18 +74,21 @@ export default function LeaderboardBoard({
 }: LeaderboardBoardProps): JSX.Element {
   const { user } = useLoginContext();
   const [entityFilter, setEntityFilter] = useState<LeaderboardEntityFilter>("all");
+  const [period, setPeriod] = useState<LeaderboardPeriod>("alltime");
   const [sort, setSort] = useState<LeaderboardSort>("rating");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
 
   // One fetch of the full board (the server caps it at 100 entries) so the
   // alternate sorts and the name search can run client-side over everything.
+  // "daily" re-ranks by today's rating gain server-side; "alltime" is the
+  // cached Glicko order.
   const board = useAsync(
     useCallback(
-      () => getLeaderboard(gameKey, { type: entityFilter, limit: 100 }),
-      [gameKey, entityFilter],
+      () => getLeaderboard(gameKey, { type: entityFilter, period, limit: 100 }),
+      [gameKey, entityFilter, period],
     ),
-    [gameKey, entityFilter],
+    [gameKey, entityFilter, period],
   );
 
   const pageSize = compact ? COMPACT_PAGE_SIZE : FULL_PAGE_SIZE;
@@ -92,11 +102,15 @@ export default function LeaderboardBoard({
 
   const self = findSelfEntry(entries, user.username);
 
-  const activeCount = (entityFilter !== "all" ? 1 : 0) + (search.trim() !== "" ? 1 : 0);
+  const activeCount =
+    (entityFilter !== "all" ? 1 : 0) +
+    (period !== "alltime" ? 1 : 0) +
+    (search.trim() !== "" ? 1 : 0);
   const sortLabel = SORT_OPTIONS.find((o) => o.value === sort)?.label ?? "";
 
   function resetFilters(): void {
     setEntityFilter("all");
+    setPeriod("alltime");
     setSort("rating");
     setSearch("");
     setPage(1);
@@ -124,6 +138,16 @@ export default function LeaderboardBoard({
                 value={formatWinRate(self.winRate)}
                 testId="lb-self-winrate"
               />
+              {period === "daily" && self.ratingDelta !== undefined && (
+                <StatTile
+                  label="Today's Δ"
+                  value={formatDelta(self.ratingDelta)}
+                  tone={
+                    self.ratingDelta > 0 ? "success" : self.ratingDelta < 0 ? "danger" : "default"
+                  }
+                  testId="lb-self-delta"
+                />
+              )}
             </div>
           </Card>
         ) : (
@@ -156,6 +180,17 @@ export default function LeaderboardBoard({
             setPage(1);
           }}
           testId="lb-entity-toggle"
+        />
+        <MultiToggle
+          label="Period"
+          singleSelect
+          options={PERIOD_OPTIONS}
+          value={[period]}
+          onChange={([next]) => {
+            setPeriod(next);
+            setPage(1);
+          }}
+          testId="lb-period-toggle"
         />
         <SortSelect
           value={sort}
@@ -210,6 +245,7 @@ export default function LeaderboardBoard({
                 key={`${entry.entityType}:${entry.entityId}`}
                 entry={entry}
                 isSelf={self !== null && entry.entityId === self.entityId}
+                period={period}
               />
             ))}
           </div>
@@ -231,7 +267,15 @@ export default function LeaderboardBoard({
 }
 
 /** One compact board row. Every name is a profile / model-card link. */
-function BoardRow({ entry, isSelf }: { entry: LeaderboardEntry; isSelf: boolean }): JSX.Element {
+function BoardRow({
+  entry,
+  isSelf,
+  period,
+}: {
+  entry: LeaderboardEntry;
+  isSelf: boolean;
+  period: LeaderboardPeriod;
+}): JSX.Element {
   return (
     <div
       className={`ga-leaderboards__row${isSelf ? " ga-leaderboards__row--self" : ""}`}
@@ -255,6 +299,13 @@ function BoardRow({ entry, isSelf }: { entry: LeaderboardEntry; isSelf: boolean 
         rd={entry.rd}
         gamesPlayed={entry.gamesPlayed}
       />
+      {period === "daily" && entry.ratingDelta !== undefined && (
+        <Badge
+          variant={entry.ratingDelta > 0 ? "success" : entry.ratingDelta < 0 ? "danger" : "default"}
+        >
+          {formatDelta(entry.ratingDelta)} today
+        </Badge>
+      )}
       <span className="ga-leaderboards__stats">
         <span className="ga-leaderboards__stat" title="Rated games played">
           {entry.gamesPlayed} played
