@@ -7,7 +7,7 @@ import { type GameServicer } from "../games/gameServiceManager.ts";
 import { nimGameService } from "../games/nim.ts";
 import { guessGameService } from "../games/guess.ts";
 import { type GameViewUpdates, type UserWithId } from "../types.ts";
-import { type MatchResult } from "../models.ts";
+import { type AIParticipant, type MatchResult } from "../models.ts";
 import { GameRepo } from "../repository.ts";
 import * as inferenceClient from "./inferenceClient.ts";
 
@@ -54,14 +54,23 @@ function encodeStateForInference(gameKey: GameKey, state: unknown): Record<strin
   return state as Record<string, unknown>;
 }
 
+/** What updateGame resolves to: view updates plus the result of a finished rated game. */
+export interface GameUpdateOutcome {
+  views: GameViewUpdates;
+  gameResult: MatchResult | undefined;
+}
+
 /**
  * If the next player to move is an AI deployment, fire its move automatically.
- * Returns updated views if an AI move was made, null otherwise.
+ * Returns the full update outcome of the AI's move (which itself chains into
+ * the next AI move for model-vs-model games), or null if no AI move was made.
+ * A game-ending AI move carries its MatchResult in the outcome so callers can
+ * emit gameResult.
  *
  * CoS 2.6: deployed model plays ranked matches automatically.
  * CoS 2.8: forfeit after 3 consecutive invalid moves (tracked in inference service).
  */
-async function maybeFireAiMove(gameId: string): Promise<GameViewUpdates | null> {
+export async function maybeFireAiMove(gameId: string): Promise<GameUpdateOutcome | null> {
   const game = await GameRepo.find(gameId);
   if (!game?.state || game.done) return null;
 
@@ -81,6 +90,20 @@ async function maybeFireAiMove(gameId: string): Promise<GameViewUpdates | null> 
     })) as { move: unknown };
     move = result.move;
   } catch (err) {
+    if (err instanceof inferenceClient.InferenceError) {
+      // CoS 2.8 bookkeeping: persist the model's consecutive-invalid streak
+      // for observability, and forfeit the game on the third strike.
+      if (typeof err.consecutiveInvalid === "number") {
+        game.invalidMoveStreaks = {
+          ...game.invalidMoveStreaks,
+          [nextPlayerIndex]: err.consecutiveInvalid,
+        };
+        await GameRepo.set(gameId, game);
+      }
+      if (err.forfeit) {
+        return forfeitAiSeat(gameId, nextPlayerIndex);
+      }
+    }
     // eslint-disable-next-line no-console
     console.error(`AI move failed for deployment ${aiDeploymentId}:`, err);
     return null;
@@ -91,7 +114,57 @@ async function maybeFireAiMove(gameId: string): Promise<GameViewUpdates | null> 
     username: `ai:${aiDeploymentId}`,
   };
 
-  return updateGame(gameId, aiUser, move).then((r) => r.views);
+  return updateGame(gameId, aiUser, move);
+}
+
+/**
+ * Ends a game as an AI forfeit (CoS 2.8): the model in `forfeitingSeat`
+ * struck out on consecutive invalid moves, so the OTHER seat wins. Marks the
+ * game done, archives the match with outcome "forfeit", applies rating
+ * updates for rated games, and returns the outcome so gameResult emits. The
+ * returned views show the last accepted position — the forfeit was decided
+ * off the board.
+ */
+async function forfeitAiSeat(gameId: string, forfeitingSeat: number): Promise<GameUpdateOutcome> {
+  const game = await GameRepo.get(gameId);
+  const winnerId = game.players[forfeitingSeat === 0 ? 1 : 0];
+
+  game.done = true;
+  game.matchId = gameId;
+  await GameRepo.set(gameId, game);
+
+  try {
+    await matchRecorder.finalizeAsForfeit(game, gameId, winnerId);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`match capture failed for game ${gameId}:`, err);
+  }
+
+  let gameResult: MatchResult = { winnerId, outcome: "forfeit" };
+  if (game.rated) {
+    try {
+      const ratedResult = await updateRatingsForGame(game, gameId, {
+        winnerId,
+        outcome: "forfeit",
+      });
+      gameResult = ratedResult ?? gameResult;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`rating update failed for game ${gameId}:`, err);
+    }
+  }
+
+  const service = gameServices[game.type];
+  return {
+    views: {
+      watchers: service.view(game.state, -1),
+      players: game.players.map((userId, index) => ({
+        userId,
+        view: service.view(game.state, index),
+      })),
+    },
+    gameResult,
+  };
 }
 
 export async function createGame(
@@ -109,6 +182,31 @@ export async function createGame(
     createdBy: user.userId,
     players: [user.userId],
     aiPlayers: [],
+    rated,
+  });
+  return populateGameInfo(gameId);
+}
+
+/**
+ * Creates a game with a deployed model in seat 0 (CoS 2.6). The model's seat
+ * id in `players` is its deployment id, positionally mirrored in `aiPlayers`
+ * so the AI move loop knows whose turn it is.
+ */
+export async function createGameWithAi(
+  ai: AIParticipant,
+  type: GameKey,
+  createdAt: Date,
+  rated = false,
+): Promise<GameInfo> {
+  const chat = await createChat(createdAt);
+  const gameId = await GameRepo.add({
+    type,
+    done: false,
+    chat: chat.chatId,
+    createdAt: createdAt.toISOString(),
+    createdBy: ai.deploymentId,
+    players: [ai.deploymentId],
+    aiPlayers: [ai],
     rated,
   });
   return populateGameInfo(gameId);
@@ -134,6 +232,34 @@ export async function joinGame(gameId: string, user: UserWithId): Promise<GameIn
   }
 
   game.players = [...game.players, user.userId];
+  await GameRepo.set(gameId, game);
+
+  return populateGameInfo(gameId);
+}
+
+/**
+ * Seats a deployed model in an open game (CoS 2.6), the AI counterpart of
+ * {@link joinGame}: the deployment id joins `players` and the participant
+ * lands at the same index of `aiPlayers` (human seats are padded with null).
+ */
+export async function joinGameAsAi(gameId: string, ai: AIParticipant): Promise<GameInfo> {
+  const game = await GameRepo.find(gameId);
+  if (!game) throw new Error(`deployment ${ai.deploymentId} joining invalid game`);
+  if (game.state) {
+    throw new Error(`deployment ${ai.deploymentId} joining game that started`);
+  }
+  if (game.players.some((seatId) => seatId === ai.deploymentId)) {
+    throw new Error(`deployment ${ai.deploymentId} joining game it is in already`);
+  }
+  if (game.players.length === gameServices[game.type].maxPlayers) {
+    throw new Error(`deployment ${ai.deploymentId} joining full`);
+  }
+
+  const aiPlayers = [...game.aiPlayers];
+  while (aiPlayers.length < game.players.length) aiPlayers.push(null);
+
+  game.players = [...game.players, ai.deploymentId];
+  game.aiPlayers = [...aiPlayers, ai];
   await GameRepo.set(gameId, game);
 
   return populateGameInfo(gameId);
@@ -183,7 +309,7 @@ export async function updateGame(
   gameId: string,
   user: UserWithId,
   move: unknown,
-): Promise<{ views: GameViewUpdates; gameResult: MatchResult | undefined }> {
+): Promise<GameUpdateOutcome> {
   const game = await GameRepo.find(gameId);
   if (!game) throw new Error(`user ${user.username} acted on an invalid game`);
   if (!game.state) {
@@ -234,18 +360,9 @@ export async function updateGame(
     }
   }
 
-  // After a human move, check if the next player is an AI and fire its move.
-  // Best-effort: an AI failure must not roll back the human move.
-  if (!result.done) {
-    try {
-      const aiViews = await maybeFireAiMove(gameId);
-      if (aiViews) return { views: aiViews, gameResult: undefined };
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error(`AI follow-up move failed for game ${gameId}:`, err);
-    }
-  }
-
+  // NOTE: an AI reply is deliberately NOT fired here. The controller
+  // schedules it (runAiTurns) so the human's move broadcasts first and the
+  // model's answer lands as its own paced, separately delivered turn.
   return { views: result.views, gameResult };
 }
 
