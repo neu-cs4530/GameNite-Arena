@@ -34,7 +34,7 @@ jobs:
         run: npm run check
 
       - name: Formatting
-        run: npm run prettier
+        run: npm run prettier --write
 
       - name: Linting
         run: npm run lint
