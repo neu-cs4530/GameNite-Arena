@@ -22,7 +22,10 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 // A fixed puzzle day that is never the real "today" — proves the payload's
 // date pins grading rather than the server clock.
-const PINNED_DATE = "2026-06-10";
+// Yesterday: the legitimate midnight-straddle case (a session loaded the
+// puzzle just before UTC midnight, submits just after). Older dates are
+// refused by the server, so the pinned date must stay inside that window.
+const PINNED_DATE = dayBefore(today());
 
 // the test db doesn't have a puzzle generated for today, so we add one
 // ourselves with a known position to grade against ({remaining: 6}: the only

@@ -22,7 +22,7 @@ import {
   type Glicko2GameResult,
 } from "./glicko2.service.ts";
 import { invalidatePuzzleLeaderboardCache } from "./puzzleLeaderboard.service.ts";
-import { dayBefore, effectiveStreak } from "./puzzleStreak.util.ts";
+import { dayBefore, effectiveStreak, isAttemptableDate } from "./puzzleStreak.util.ts";
 
 /**
  * Games we generate daily puzzles for — deliberately a subset of all playable
@@ -288,8 +288,12 @@ export async function submitAttempt(
   userId: string,
   gameKey: GameKey,
   attempt: PuzzleAttemptInput,
+  now: Date = new Date(),
 ): Promise<PuzzleAttemptResult | null> {
   const { date } = attempt;
+  // Only today's (or yesterday's, for a midnight straddle) puzzle is live —
+  // refusing older dates closes the backfill-a-streak hole.
+  if (!isAttemptableDate(date, now.toISOString().slice(0, 10))) return null;
   const puzzle = await getPuzzleForDate(gameKey, date);
   if (!puzzle) return null;
   const puzzleId = `${gameKey}:${date}`;
@@ -399,7 +403,9 @@ export async function grantHint(
   userId: string,
   gameKey: GameKey,
   date: string,
+  now: Date = new Date(),
 ): Promise<PuzzleHintResult | null> {
+  if (!isAttemptableDate(date, now.toISOString().slice(0, 10))) return null;
   const puzzle = await getPuzzleForDate(gameKey, date);
   if (!puzzle) return null;
   const puzzleId = `${gameKey}:${date}`;

@@ -115,6 +115,19 @@ const D1 = "2026-06-10";
 const D2 = "2026-06-11"; // the day after D1
 const D4 = "2026-06-14"; // three days after D2 — breaks any chain
 
+// Anchor the service clock to the payload's own date so every fixed-date
+// call counts as a same-day attempt (the server only accepts today's or
+// yesterday's puzzle). Tests that exercise the date-window guard call
+// submitAttempt/grantHint directly with an explicit `now` instead.
+const asNow = (ymd: string): Date => new Date(`${ymd}T12:00:00.000Z`);
+const submit = (
+  userId: string,
+  gameKey: Parameters<typeof submitAttempt>[1],
+  input: Parameters<typeof submitAttempt>[2],
+) => submitAttempt(userId, gameKey, input, asNow(input.date));
+const hint = (userId: string, gameKey: Parameters<typeof grantHint>[1], date: string) =>
+  grantHint(userId, gameKey, date, asNow(date));
+
 /** Seed a nim puzzle for one fixed day with a known position + archived solution. */
 async function seedNimPuzzle(
   date: string,
@@ -259,8 +272,8 @@ describe("PUZZLE_GAME_KEYS: only deducible games get daily puzzles", () => {
     expect(await getOrGenerateTodaysPuzzle("guess")).toBeNull();
 
     const userId = await user1Id();
-    expect(await submitAttempt(userId, "guess", { move: 41, timeMs: 100, date })).toBeNull();
-    expect(await grantHint(userId, "guess", date)).toBeNull();
+    expect(await submit(userId, "guess", { move: 41, timeMs: 100, date })).toBeNull();
+    expect(await hint(userId, "guess", date)).toBeNull();
   });
 });
 
@@ -311,10 +324,10 @@ describe("submitAttempt: grading through isWinningMove", () => {
     await seedNimPuzzle(D1, { remaining: 6, nextPlayer: 1 }, [1]);
     const userId = await user1Id();
 
-    const win = await submitAttempt(userId, "nim", { move: 1, timeMs: 500, date: D1 });
+    const win = await submit(userId, "nim", { move: 1, timeMs: 500, date: D1 });
     expect(win!.success).toBe(true);
 
-    const loss = await submitAttempt(userId, "nim", { move: 3, timeMs: 500, date: D1 });
+    const loss = await submit(userId, "nim", { move: 3, timeMs: 500, date: D1 });
     expect(loss!.success).toBe(false);
   });
 
@@ -325,17 +338,17 @@ describe("submitAttempt: grading through isWinningMove", () => {
     await seedNimPuzzle(D1, { remaining: 6, nextPlayer: 1 }, [3]);
     const userId = await user1Id();
 
-    const win = await submitAttempt(userId, "nim", { move: 1, timeMs: 500, date: D1 });
+    const win = await submit(userId, "nim", { move: 1, timeMs: 500, date: D1 });
     expect(win!.success).toBe(true);
 
-    const loss = await submitAttempt(userId, "nim", { move: 3, timeMs: 500, date: D1 });
+    const loss = await submit(userId, "nim", { move: 3, timeMs: 500, date: D1 });
     expect(loss!.success).toBe(false);
   });
 
   it("reveals the archived solution move and explanation on the attempt response", async () => {
     await seedNimPuzzle(D1, { remaining: 6, nextPlayer: 1 }, [1]);
 
-    const outcome = await submitAttempt(await user1Id(), "nim", {
+    const outcome = await submit(await user1Id(), "nim", {
       move: 3,
       timeMs: 500,
       date: D1,
@@ -358,16 +371,53 @@ describe("submitAttempt: date pinning", () => {
   it("returns null when there is no puzzle stored for the payload's date", async () => {
     await seedNimPuzzle(D1, { remaining: 6, nextPlayer: 1 }, [1]);
 
-    expect(await submitAttempt(await user1Id(), "nim", { move: 1, timeMs: 500, date: D2 })).toBe(
-      null,
+    expect(await submit(await user1Id(), "nim", { move: 1, timeMs: 500, date: D2 })).toBe(null);
+  });
+
+  it("refuses dates older than yesterday — closes the backfill-a-streak hole", async () => {
+    // The puzzle EXISTS for D1, but D1 is three days before the clock (D4),
+    // so a crafted attempt that backfills it is rejected outright.
+    await seedNimPuzzle(D1, { remaining: 6, nextPlayer: 1 }, [1]);
+    const userId = await user1Id();
+
+    const backfilled = await submitAttempt(
+      userId,
+      "nim",
+      { move: 1, timeMs: 500, date: D1 },
+      asNow(D4),
     );
+    expect(backfilled).toBeNull();
+    // Nothing was logged, rated, or streaked off the rejected attempt.
+    expect(await PuzzleAttemptRepo.getAllKeys()).toHaveLength(0);
+    expect((await UserRepo.get(userId)).puzzleStreak).toStrictEqual({ current: 0, best: 0 });
+
+    // Yesterday (the midnight-straddle grace) is still accepted.
+    await seedNimPuzzle(D2, { remaining: 6, nextPlayer: 1 }, [1]);
+    const straddle = await submitAttempt(
+      userId,
+      "nim",
+      { move: 1, timeMs: 500, date: D1 },
+      asNow(D2),
+    );
+    expect(straddle).not.toBeNull();
+  });
+
+  it("refuses a future-dated attempt", async () => {
+    await seedNimPuzzle(D4, { remaining: 6, nextPlayer: 1 }, [1]);
+    const ahead = await submitAttempt(
+      await user1Id(),
+      "nim",
+      { move: 1, timeMs: 500, date: D4 },
+      asNow(D1),
+    );
+    expect(ahead).toBeNull();
   });
 
   it("logs the attempt under the pinned puzzle-date, not the wall clock", async () => {
     await seedNimPuzzle(D1, { remaining: 6, nextPlayer: 1 }, [1]);
     const userId = await user1Id();
 
-    await submitAttempt(userId, "nim", { move: 1, timeMs: 500, date: D1 });
+    await submit(userId, "nim", { move: 1, timeMs: 500, date: D1 });
 
     const attempts = await PuzzleAttemptRepo.getMany(await PuzzleAttemptRepo.getAllKeys());
     expect(attempts).toContainEqual(
@@ -383,12 +433,12 @@ describe("submitAttempt: date pinning", () => {
     await seedNimPuzzle(D2, { remaining: 6, nextPlayer: 1 }, [1]);
     const userId = await user1Id();
 
-    const first = await submitAttempt(userId, "nim", { move: 1, timeMs: 500, date: D1 });
+    const first = await submit(userId, "nim", { move: 1, timeMs: 500, date: D1 });
     expect(first!.rated).toBe(true);
     expect((await UserRepo.get(userId)).puzzleLastRatedAt?.nim).toBe(D1);
 
     // D1's slot is spent, but D2 is a different puzzle-date: still rated.
-    const second = await submitAttempt(userId, "nim", { move: 1, timeMs: 500, date: D2 });
+    const second = await submit(userId, "nim", { move: 1, timeMs: 500, date: D2 });
     expect(second!.rated).toBe(true);
     expect((await UserRepo.get(userId)).puzzleLastRatedAt?.nim).toBe(D2);
   });
@@ -408,7 +458,7 @@ describe("submitAttempt: daily rated-attempt economy", () => {
     await seedNimPuzzle(D1, { remaining: 6, nextPlayer: 1 }, [1]);
     const userId = await user1Id();
 
-    const outcome = await submitAttempt(userId, "nim", { move: 1, timeMs: 900, date: D1 });
+    const outcome = await submit(userId, "nim", { move: 1, timeMs: 900, date: D1 });
 
     expect(outcome).not.toBeNull();
     expect(outcome!.rated).toBe(true);
@@ -429,12 +479,12 @@ describe("submitAttempt: daily rated-attempt economy", () => {
     await seedNimPuzzle(D1, { remaining: 6, nextPlayer: 1 }, [1]);
     const userId = await user1Id();
 
-    const first = await submitAttempt(userId, "nim", { move: 1, timeMs: 700, date: D1 });
+    const first = await submit(userId, "nim", { move: 1, timeMs: 700, date: D1 });
     expect(first!.rated).toBe(true);
     const afterFirst = await UserRepo.get(userId);
 
     // The retry is still graded honestly but cannot farm rating.
-    const second = await submitAttempt(userId, "nim", { move: 1, timeMs: 400, date: D1 });
+    const second = await submit(userId, "nim", { move: 1, timeMs: 400, date: D1 });
     expect(second!.rated).toBe(false);
     expect(second!.success).toBe(true);
     expect(second!.eloDelta).toBe(0);
@@ -457,7 +507,7 @@ describe("submitAttempt: daily rated-attempt economy", () => {
       },
     });
 
-    const outcome = await submitAttempt(userId, "nim", { move: 1, timeMs: 500, date: D1 });
+    const outcome = await submit(userId, "nim", { move: 1, timeMs: 500, date: D1 });
 
     expect(outcome!.rated).toBe(true);
     expect(outcome!.newRating.rating).toBeGreaterThan(1610);
@@ -473,9 +523,9 @@ describe("submitAttempt: daily rated-attempt economy", () => {
     await seedNimPuzzle(D1, { remaining: 6, nextPlayer: 1 }, [1]);
     const userId = await user1Id();
 
-    await submitAttempt(userId, "nim", { move: 1, timeMs: 900, date: D1 });
-    await grantHint(userId, "nim", D1);
-    await submitAttempt(userId, "nim", { move: 1, timeMs: 200, date: D1 });
+    await submit(userId, "nim", { move: 1, timeMs: 900, date: D1 });
+    await hint(userId, "nim", D1);
+    await submit(userId, "nim", { move: 1, timeMs: 200, date: D1 });
 
     const attempts = await PuzzleAttemptRepo.getMany(await PuzzleAttemptRepo.getAllKeys());
     expect(attempts).toContainEqual(
@@ -514,14 +564,14 @@ describe("submitAttempt: streak decoupled from the rated slot", () => {
     const userId = await user1Id();
 
     // First unhinted attempt fails: slot spent, rating drops, no streak.
-    const first = await submitAttempt(userId, "nim", { move: 3, timeMs: 700, date: D1 });
+    const first = await submit(userId, "nim", { move: 3, timeMs: 700, date: D1 });
     expect(first!.rated).toBe(true);
     expect(first!.success).toBe(false);
     expect(first!.eloDelta).toBeLessThan(0);
     expect(first!.streak.current).toBe(0);
 
     // The second attempt solves it: unrated, but the streak MUST advance.
-    const second = await submitAttempt(userId, "nim", { move: 1, timeMs: 400, date: D1 });
+    const second = await submit(userId, "nim", { move: 1, timeMs: 400, date: D1 });
     expect(second!.rated).toBe(false);
     expect(second!.eloDelta).toBe(0);
     expect(second!.streak).toStrictEqual({ current: 1, best: 1, lastSolvedAt: D1 });
@@ -537,10 +587,10 @@ describe("submitAttempt: streak decoupled from the rated slot", () => {
     await seedNimPuzzle(D2, { remaining: 6, nextPlayer: 1 }, [1]);
     const userId = await user1Id();
 
-    const first = await submitAttempt(userId, "nim", { move: 1, timeMs: 500, date: D1 });
+    const first = await submit(userId, "nim", { move: 1, timeMs: 500, date: D1 });
     expect(first!.streak).toStrictEqual({ current: 1, best: 1, lastSolvedAt: D1 });
 
-    const second = await submitAttempt(userId, "nim", { move: 1, timeMs: 500, date: D2 });
+    const second = await submit(userId, "nim", { move: 1, timeMs: 500, date: D2 });
     expect(second!.streak).toStrictEqual({ current: 2, best: 2, lastSolvedAt: D2 });
   });
 
@@ -551,11 +601,11 @@ describe("submitAttempt: streak decoupled from the rated slot", () => {
     const userRecord = await UserRepo.get(userId);
     await UserRepo.set(userId, { ...userRecord, puzzleStreak: { current: 0, best: 7 } });
 
-    const first = await submitAttempt(userId, "nim", { move: 1, timeMs: 500, date: D1 });
+    const first = await submit(userId, "nim", { move: 1, timeMs: 500, date: D1 });
     expect(first!.streak).toStrictEqual({ current: 1, best: 7, lastSolvedAt: D1 });
 
     // D4 is three days later — the chain broke, so the solve restarts at 1.
-    const second = await submitAttempt(userId, "nim", { move: 1, timeMs: 500, date: D4 });
+    const second = await submit(userId, "nim", { move: 1, timeMs: 500, date: D4 });
     expect(second!.streak).toStrictEqual({ current: 1, best: 7, lastSolvedAt: D4 });
   });
 
@@ -563,8 +613,8 @@ describe("submitAttempt: streak decoupled from the rated slot", () => {
     await seedNimPuzzle(D1, { remaining: 6, nextPlayer: 1 }, [1]);
     const userId = await user1Id();
 
-    await submitAttempt(userId, "nim", { move: 1, timeMs: 500, date: D1 });
-    const again = await submitAttempt(userId, "nim", { move: 1, timeMs: 500, date: D1 });
+    await submit(userId, "nim", { move: 1, timeMs: 500, date: D1 });
+    const again = await submit(userId, "nim", { move: 1, timeMs: 500, date: D1 });
 
     expect(again!.streak).toStrictEqual({ current: 1, best: 1, lastSolvedAt: D1 });
     expect((await UserRepo.get(userId)).puzzleStreak).toStrictEqual({
@@ -579,8 +629,8 @@ describe("submitAttempt: streak decoupled from the rated slot", () => {
     await seedNimPuzzle(D2, { remaining: 6, nextPlayer: 1 }, [1]);
     const userId = await user1Id();
 
-    await submitAttempt(userId, "nim", { move: 1, timeMs: 500, date: D2 });
-    await submitAttempt(userId, "nim", { move: 1, timeMs: 500, date: D1 });
+    await submit(userId, "nim", { move: 1, timeMs: 500, date: D2 });
+    await submit(userId, "nim", { move: 1, timeMs: 500, date: D1 });
 
     expect((await UserRepo.get(userId)).puzzleStreak).toStrictEqual({
       current: 1,
@@ -593,8 +643,8 @@ describe("submitAttempt: streak decoupled from the rated slot", () => {
     await seedNimPuzzle(D1, { remaining: 6, nextPlayer: 1 }, [1]);
     const userId = await user1Id();
 
-    await grantHint(userId, "nim", D1);
-    const outcome = await submitAttempt(userId, "nim", { move: 1, timeMs: 300, date: D1 });
+    await hint(userId, "nim", D1);
+    const outcome = await submit(userId, "nim", { move: 1, timeMs: 300, date: D1 });
 
     expect(outcome!.success).toBe(true);
     expect(outcome!.rated).toBe(false);
@@ -619,7 +669,7 @@ describe("submitAttempt: served streaks go through effectiveStreak", () => {
       puzzleStreak: { current: 5, best: 9, lastSolvedAt: D2 },
     });
 
-    const outcome = await submitAttempt(userId, "nim", { move: 3, timeMs: 500, date: D4 });
+    const outcome = await submit(userId, "nim", { move: 3, timeMs: 500, date: D4 });
 
     expect(outcome!.success).toBe(false);
     expect(outcome!.streak).toStrictEqual({ current: 0, best: 9, lastSolvedAt: D2 });
@@ -643,16 +693,16 @@ describe("submitAttempt: served streaks go through effectiveStreak", () => {
 
 describe("grantHint", () => {
   it("returns null when there is no puzzle for that game and date", async () => {
-    expect(await grantHint(await user1Id(), "nim", D1)).toBeNull();
+    expect(await hint(await user1Id(), "nim", D1)).toBeNull();
   });
 
   it("reveals the archived solution move and records the grant", async () => {
     await seedNimPuzzle(D1, { remaining: 6, nextPlayer: 1 }, [1]);
     const userId = await user1Id();
 
-    const hint = await grantHint(userId, "nim", D1);
+    const result = await hint(userId, "nim", D1);
 
-    expect(hint).toStrictEqual({ hintMove: 1, explanation: "seeded by test" });
+    expect(result).toStrictEqual({ hintMove: 1, explanation: "seeded by test" });
     const record = await PuzzleHintRepo.find(puzzleHintKey(userId, `nim:${D1}`));
     expect(record).toMatchObject({ userId, puzzleId: `nim:${D1}` });
   });
@@ -661,10 +711,10 @@ describe("grantHint", () => {
     await seedNimPuzzle(D1, { remaining: 6, nextPlayer: 1 }, [1]);
     const userId = await user1Id();
 
-    const first = await grantHint(userId, "nim", D1);
+    const first = await hint(userId, "nim", D1);
     const recordAfterFirst = await PuzzleHintRepo.find(puzzleHintKey(userId, `nim:${D1}`));
 
-    const second = await grantHint(userId, "nim", D1);
+    const second = await hint(userId, "nim", D1);
     const recordAfterSecond = await PuzzleHintRepo.find(puzzleHintKey(userId, `nim:${D1}`));
 
     expect(second).toStrictEqual(first);
@@ -676,10 +726,10 @@ describe("grantHint", () => {
     await seedNimPuzzle(D1, { remaining: 6, nextPlayer: 1 }, [1]);
     const userId = await user1Id();
 
-    await grantHint(userId, "nim", D1);
+    await hint(userId, "nim", D1);
 
-    const first = await submitAttempt(userId, "nim", { move: 1, timeMs: 300, date: D1 });
-    const second = await submitAttempt(userId, "nim", { move: 1, timeMs: 300, date: D1 });
+    const first = await submit(userId, "nim", { move: 1, timeMs: 300, date: D1 });
+    const second = await submit(userId, "nim", { move: 1, timeMs: 300, date: D1 });
 
     expect(first!.rated).toBe(false);
     expect(second!.rated).toBe(false);

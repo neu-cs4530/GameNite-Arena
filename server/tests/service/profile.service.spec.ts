@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { GameKey } from "@gamenite/shared";
 import { ratingKey, type MatchRecord, type UserRecord } from "../../src/models.ts";
 import {
+  DeploymentRepo,
   MatchRepo,
   ModelRepo,
   PuzzleAttemptRepo,
@@ -83,6 +84,26 @@ async function seedModel(
   });
 }
 
+/** Seeds a deployment of a model. The deployment id is the AI seat id that
+ * appears in a match's `result.winnerId` (game.players holds deployment ids
+ * for AI seats), distinct from the model id used as the participant id. */
+async function seedDeployment(
+  deploymentId: string,
+  modelId: string,
+  ownerId: string,
+  gameKey: GameKey = "nim",
+): Promise<void> {
+  await DeploymentRepo.set(deploymentId, {
+    modelId,
+    userId: ownerId,
+    gameKey,
+    displayName: "deploy",
+    status: "active",
+    createdAt: "2026-06-01T00:00:00.000Z",
+    updatedAt: "2026-06-01T00:00:00.000Z",
+  });
+}
+
 /** Seeds one puzzle attempt; defaults to my successful unrated human attempt. */
 async function seedAttempt(args: {
   puzzleId: string;
@@ -123,6 +144,7 @@ beforeEach(async () => {
   // remaining repos this service scans are cleared here.
   await RatingRepo.clear();
   await ModelRepo.clear();
+  await DeploymentRepo.clear();
   await PuzzleAttemptRepo.clear();
   me = (await getUserByUsername("user0"))!;
   rival = (await getUserByUsername("user1"))!;
@@ -388,12 +410,18 @@ describe("bestAi", () => {
     await seedRating("model-a", { entityType: "ai", rating: 1600, gamesPlayed: 10 });
     await seedRating("model-b", { entityType: "ai", rating: 1700, gamesPlayed: 4 });
     await seedRating("model-theirs", { entityType: "ai", rating: 2000, gamesPlayed: 50 });
+    // Bravo was deployed; its deployment id is the seat id production writes
+    // into result.winnerId, NOT the model id.
+    await seedDeployment("deploy-b", "model-b", me.userId);
 
     const vsRival = (winnerId: string, outcome: MatchRecord["result"]["outcome"] = "win") => ({
       participants: [ai("model-b", "Bravo"), human(rival.userId, "Rival")],
       result: { winnerId, outcome },
     });
-    await seedMatch("ai-win", vsRival("model-b"));
+    // The AI win is recorded with the DEPLOYMENT id as winnerId (the real
+    // shape). If profile counted winnerId === modelId this would read as a
+    // loss — the bug this case pins.
+    await seedMatch("ai-win", vsRival("deploy-b"));
     await seedMatch("ai-loss", vsRival(rival.userId));
     await seedMatch("ai-forfeit-loss", vsRival(rival.userId, "forfeit"));
     // another model's match — not Bravo's record

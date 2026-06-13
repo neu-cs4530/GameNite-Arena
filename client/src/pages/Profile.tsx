@@ -67,7 +67,7 @@ export default function Profile() {
     refetch,
   } = useAsync<ProfileSummary>(producer, [username]);
 
-  const { filters, setFilter, setFilters, clearFilters } = useReplayFilters({
+  const { filters, setFilter, setFilters } = useReplayFilters({
     pageSize: PROFILE_MATCHES_PER_PAGE,
     forUser: username,
   });
@@ -135,6 +135,21 @@ export default function Profile() {
     params.delete("sort");
     setSearchParams(params, { replace: true });
   }, [scope, searchParams, setSearchParams]);
+
+  // "Clear filters" must clear ONLY the replay filters — not the profile's
+  // own navigation params. The hook's clearFilters wipes the whole query
+  // string, which would silently knock the page back to the General scope
+  // (and lose the active tab). Preserve scope + tab, and the game
+  // preselection when we're inside a game scope.
+  const clearProfileFilters = useCallback(() => {
+    const preserved = new URLSearchParams();
+    const scopeVal = searchParams.get(SCOPE_PARAM);
+    const tabVal = searchParams.get("tab");
+    if (scopeVal) preserved.set(SCOPE_PARAM, scopeVal);
+    if (tabVal) preserved.set("tab", tabVal);
+    if (isGameScope(scope)) preserved.set("game", scope);
+    setSearchParams(preserved);
+  }, [searchParams, scope, setSearchParams]);
 
   const replaysToShow = useMemo<ReplaySummary[]>(() => {
     return [...(page?.replays ?? []), ...extraReplays];
@@ -219,7 +234,7 @@ export default function Profile() {
                 filters={filters}
                 setFilter={setFilter}
                 setFilters={setFilters}
-                onClear={clearFilters}
+                onClear={clearProfileFilters}
                 showPresets
               />
 
@@ -230,7 +245,7 @@ export default function Profile() {
                   icon="?"
                   title="No replays match these filters"
                   body="Try widening your Elo range or clearing a filter."
-                  action={<Button onClick={clearFilters}>Clear filters</Button>}
+                  action={<Button onClick={clearProfileFilters}>Clear filters</Button>}
                 />
               ) : (
                 <>

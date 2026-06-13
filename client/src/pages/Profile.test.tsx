@@ -113,6 +113,20 @@ describe("Profile page — scope pills", () => {
     // The filtered replay area still renders (pre-filtered, honestly empty).
     expect(screen.getByTestId("profile-recent-matches")).toBeInTheDocument();
   });
+
+  it("'Clear filters' clears replay filters without leaving the active scope", async () => {
+    // Deep-link into the nim scope with an extra replay filter applied. The
+    // replay area is empty (stubbed hook), so its empty-state Clear button shows.
+    renderProfile("/profile/user0?scope=nim&minElo=1600");
+    expect(await screen.findByTestId("profile-header")).toBeInTheDocument();
+    expect(screen.getByTestId("scope-pill-nim")).toHaveAttribute("aria-checked", "true");
+
+    await userEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+
+    // The scope survives the clear — it must not snap back to General.
+    expect(screen.getByTestId("scope-pill-nim")).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByTestId("scope-pill-general")).toHaveAttribute("aria-checked", "false");
+  });
 });
 
 describe("Profile page — puzzles scope", () => {

@@ -39,6 +39,7 @@ import {
   type UserRecord,
 } from "../models.ts";
 import {
+  DeploymentRepo,
   MatchRepo,
   ModelRepo,
   PuzzleAttemptRepo,
@@ -86,11 +87,23 @@ const RECENT_ATTEMPT_LIMIT = 20;
  * draw) count toward the total only.
  */
 function classifyRecord(matches: ArchivedMatch[], entityId: string): ProfileRecordStats {
+  return classifyRecordAgainst(matches, new Set([entityId]));
+}
+
+/**
+ * Like `classifyRecord`, but a win is any match whose `winnerId` is one of
+ * `winningIds`. Needed when the entity's seat id in `result.winnerId` differs
+ * from its participant id (AI seats: deployment id vs model id).
+ */
+function classifyRecordAgainst(
+  matches: ArchivedMatch[],
+  winningIds: Set<string>,
+): ProfileRecordStats {
   const stats: ProfileRecordStats = { totalMatches: matches.length, wins: 0, losses: 0, draws: 0 };
   for (const { record } of matches) {
     const { winnerId, outcome } = record.result;
     if (outcome === "draw") stats.draws += 1;
-    else if (winnerId === entityId) stats.wins += 1;
+    else if (winnerId !== undefined && winningIds.has(winnerId)) stats.wins += 1;
     else if (winnerId !== undefined) stats.losses += 1;
   }
   return stats;
@@ -247,7 +260,19 @@ async function buildBestAi(
   const aiMatches = archive.filter(({ record }) =>
     record.participants.some((p) => p.type === "ai" && p.id === modelId),
   );
-  const { wins, losses } = classifyRecord(aiMatches, modelId);
+  // A match's archived participant id for an AI seat is the MODEL id, but
+  // `result.winnerId` is the SEAT id — i.e. the deployment id (game.players
+  // holds deployment ids for AI seats). So winning is decided against the
+  // model's deployment ids, not its model id. A model can have several
+  // deployments over its lifetime; any of them winning counts.
+  const deploymentKeys = await DeploymentRepo.getAllKeys();
+  const deployments =
+    deploymentKeys.length === 0 ? [] : await DeploymentRepo.getMany(deploymentKeys);
+  const winningIds = new Set<string>([modelId]); // tolerate either id shape
+  deploymentKeys.forEach((key, i) => {
+    if (deployments[i].modelId === modelId) winningIds.add(key);
+  });
+  const { wins, losses } = classifyRecordAgainst(aiMatches, winningIds);
   return {
     modelId,
     displayName,

@@ -14,6 +14,18 @@ export function todayYmd(now: Date = new Date()): string {
 }
 
 /**
+ * Whether `date` (YYYY-MM-DD) is one a user may legitimately attempt right
+ * now: today, or yesterday as a grace window for a session that loaded the
+ * puzzle just before UTC midnight and submitted just after. Any older date
+ * is refused — otherwise a client could submit a long ascending run of past
+ * daily-puzzle keys in one sitting to manufacture a streak (the records are
+ * never deleted), inflating both the live count and the public best.
+ */
+export function isAttemptableDate(date: string, today: string = todayYmd()): boolean {
+  return date === today || date === dayBefore(today);
+}
+
+/**
  * The streak a user has RIGHT NOW. The stored `current` is only meaningful
  * while the chain is alive (last solve was today or yesterday); after a
  * missed day it is stale history, not a live streak. Every read path must
