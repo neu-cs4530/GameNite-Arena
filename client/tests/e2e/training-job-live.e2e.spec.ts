@@ -39,6 +39,12 @@ test.describe("Queued: the handoff state", () => {
     await expect(page.getByTestId("connect-trainer-command")).toContainText(
       `--job-id ${run.jobId}`,
     );
+    // The card hands out the real kit bootstrap one-liner with a minted
+    // training token — never username/password on the page.
+    await expect(page.getByTestId("connect-trainer-command")).toContainText(
+      "/api/training/kit/install.sh",
+    );
+    await expect(page.getByTestId("connect-trainer-command")).toContainText("--token");
     // No chart noise while there is nothing to chart.
     await expect(page.getByTestId("live-chart-section")).toHaveCount(0);
   });

@@ -14,7 +14,7 @@ Supported games and their specs:
 │ checkers      │ 160        │ dynamic      │ 32 squares × 5 values,       │
 │               │            │              │ action = index into          │
 │               │            │              │ legal_moves list             │
-│ nim           │ 1          │ 3 (fixed)    │ single pile, take 1/2/3      │
+│ nim           │ 5          │ 3 (fixed)    │ single pile, take 1/2/3      │
 │ numguesser    │ 2          │ 100 (fixed)  │ guess 1-100, single turn     │
 └───────────────┴────────────┴──────────────┴──────────────────────────────┘
 """
@@ -52,7 +52,7 @@ GAME_OBS_SIZES: dict[str, int] = {
     "connect4":   42,   # 6×7 cells, each in {-1, 0, 1}
     "checkers":  160,   # 32 dark squares × 5 one-hot values
                         # (empty, R, B, RK, BK)
-    "nim":         1,   # objects remaining (normalised 0-1)
+    "nim":         5,   # [pile/starting_pile, onehot4(pile % 4)] — v2 contract
     "numguesser":  2,   # [num_opponents_normalised, round_normalised]
 }
 
@@ -97,7 +97,7 @@ class GameNiteAdapter(abc.ABC):
         - checkers   : (160,) 32 dark squares, each one-hot over 5 classes
                               order: square 0 … 31 (row-major, dark only)
                               classes: [empty, R, B, RK, BK]
-        - nim        : (1,)   objects_remaining / starting_pile  (0-1)
+        - nim        : (5,)   [pile/starting_pile, onehot4(pile % 4)]
         - numguesser : (2,)   [num_opponents/3, 0.0]  (second slot reserved)
 
         Parameters

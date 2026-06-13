@@ -6,9 +6,8 @@ import * as replay from "../../src/controllers/replay.controller.ts";
 import type { MatchRecord } from "../../src/models.ts";
 import { DeploymentRepo, MatchRepo } from "../../src/repository.ts";
 import {
-  mockInferenceClient,
-  resetInferenceClient,
-  setInferenceClient,
+  resetInferenceClientForTests,
+  setInferenceClientForTests,
 } from "../../src/services/inferenceClient.ts";
 import {
   InMemoryReplayStore,
@@ -313,7 +312,7 @@ describe("POST /api/replay/:matchId/analysis", () => {
       updatedAt: "2026-06-09T00:00:00.000Z",
     });
 
-    setInferenceClient(mockInferenceClient);
+    setInferenceClientForTests({ requestMove: () => Promise.resolve({ move: 1 }) });
     try {
       const res = await supertest(makeApp()).post(
         "/api/replay/ctrl-nim-engine/analysis?deploymentId=dep-1&userId=u-owner",
@@ -322,7 +321,7 @@ describe("POST /api/replay/:matchId/analysis", () => {
       expect(res.status).toBe(200);
       expect(res.body.perMove[0]).toMatchObject({ engineMove: 1 });
     } finally {
-      resetInferenceClient();
+      resetInferenceClientForTests();
     }
   });
 

@@ -1,5 +1,11 @@
+import "./NimGame.css";
+import { useEffect, useRef, useState } from "react";
 import type { NimMove, NimView } from "@gamenite/shared";
 import type { GameProps } from "../util/types.ts";
+import { deriveAiTake } from "./aiMoveFlash.ts";
+
+/** How long the AI's picked button stays highlighted. */
+const AI_FLASH_MS = 1400;
 
 export default function NimGame({
   view,
@@ -8,6 +14,23 @@ export default function NimGame({
   makeMove,
 }: GameProps<NimView, NimMove>) {
   const disabled = userPlayerIndex !== view.nextPlayer;
+  const hasAiSeat = players.some((p) => p.isAi);
+
+  // Flash the button the model "pressed": each new view is compared with
+  // the previous one; if an AI seat moved, its take lights up briefly.
+  const prevView = useRef<NimView | null>(null);
+  const [aiTake, setAiTake] = useState<number | null>(null);
+  useEffect(() => {
+    const picked = deriveAiTake(prevView.current, view, players);
+    prevView.current = view;
+    if (!picked) return undefined;
+    setAiTake(picked.take);
+    const timer = setTimeout(() => setAiTake(null), AI_FLASH_MS);
+    return () => clearTimeout(timer);
+  }, [view, players]);
+
+  const moveButtonClass = (take: number) =>
+    `secondary narrow${aiTake === take ? " ai-picked" : ""}`;
 
   /** Player's name */
   function playerDisplay(index: number) {
@@ -43,26 +66,29 @@ export default function NimGame({
           {playerDisplay(1 - view.nextPlayer)} to take the last object.
         </div>
       )}
-      {userPlayerIndex >= 0 && (
+      {(userPlayerIndex >= 0 || hasAiSeat) && (
         <div style={{ display: "flex", flexDirection: "row", gap: "0.5rem" }}>
           <button
-            className="secondary narrow"
+            className={moveButtonClass(1)}
             disabled={disabled || view.remaining < 1}
             onClick={() => makeMove(1)}
+            data-testid="nim-take-1"
           >
             Take one
           </button>
           <button
             disabled={disabled || view.remaining < 2}
-            className="secondary narrow"
+            className={moveButtonClass(2)}
             onClick={() => makeMove(2)}
+            data-testid="nim-take-2"
           >
             Take two
           </button>
           <button
             disabled={disabled || view.remaining < 3}
-            className="secondary narrow"
+            className={moveButtonClass(3)}
             onClick={() => makeMove(3)}
+            data-testid="nim-take-3"
           >
             Take three
           </button>

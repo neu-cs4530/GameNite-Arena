@@ -64,6 +64,7 @@ app.use(
         .get("/user/:username", model.getByUsername)
         .get("/:id", model.getById)
         .post("/:id/deploy", model.postDeploy)
+        .post("/:modelId/fork", model.postFork)
         .patch("/deployment/:id", model.patchDeploymentStatus),
     )
     .use("/leaderboard", express.Router().get("/:gameKey", leaderboard.getByGame))

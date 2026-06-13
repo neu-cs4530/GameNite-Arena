@@ -178,13 +178,7 @@ export default function TrainingJobLive(): JSX.Element {
         </div>
       </header>
 
-      {job.status === "queued" && (
-        <ConnectTrainerCard
-          jobId={job.id}
-          username={user.username}
-          targetEpisodes={job.targetEpisodes}
-        />
-      )}
+      {job.status === "queued" && <ConnectTrainerCard jobId={job.id} />}
 
       {showChart && (
         <section className="ga-live-job__chart" data-testid="live-chart-section">

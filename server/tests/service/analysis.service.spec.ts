@@ -3,9 +3,8 @@ import type { MatchRecord } from "../../src/models.ts";
 import { DeploymentRepo, MatchRepo } from "../../src/repository.ts";
 import { analyzeReplay } from "../../src/services/analysis.service.ts";
 import {
-  mockInferenceClient,
-  resetInferenceClient,
-  setInferenceClient,
+  resetInferenceClientForTests,
+  setInferenceClientForTests,
 } from "../../src/services/inferenceClient.ts";
 
 const P1 = { id: "u-p1", type: "human" as const, displayName: "Player One" };
@@ -108,11 +107,11 @@ describe("analyzeReplay", () => {
 
   describe("with a deploymentId", () => {
     afterEach(() => {
-      resetInferenceClient();
+      resetInferenceClientForTests();
     });
 
     it("nim: attaches the loaded model's move as engineMove", async () => {
-      setInferenceClient(mockInferenceClient);
+      setInferenceClientForTests({ requestMove: () => Promise.resolve({ move: 1 }) });
       await MatchRepo.set("m-nim-engine", nimMatch([3]));
 
       const result = await analyzeReplay("m-nim-engine", "dep-1");
@@ -121,7 +120,7 @@ describe("analyzeReplay", () => {
     });
 
     it("guess: attaches the loaded model's move as engineMove", async () => {
-      setInferenceClient(mockInferenceClient);
+      setInferenceClientForTests({ requestMove: () => Promise.resolve({ move: 1 }) });
       await MatchRepo.set("m-guess-engine", guessMatch([45], 50));
 
       const result = await analyzeReplay("m-guess-engine", "dep-1");
@@ -130,8 +129,7 @@ describe("analyzeReplay", () => {
     });
 
     it("falls back to no engineMove when the inference call fails", async () => {
-      setInferenceClient({
-        ...mockInferenceClient,
+      setInferenceClientForTests({
         requestMove: () => Promise.reject(new Error("inference down")),
       });
       await MatchRepo.set("m-nim-engine-down", nimMatch([3]));
@@ -152,7 +150,7 @@ describe("analyzeReplay", () => {
         updatedAt: "2026-06-09T00:00:00.000Z",
       });
       const loadModel = vi.fn().mockResolvedValue({ status: "loaded" });
-      setInferenceClient({ ...mockInferenceClient, loadModel });
+      setInferenceClientForTests({ loadModel });
       await MatchRepo.set("m-nim-load", nimMatch([3]));
 
       await analyzeReplay("m-nim-load", "dep-loaded");

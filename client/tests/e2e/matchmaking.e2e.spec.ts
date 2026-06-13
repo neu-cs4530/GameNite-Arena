@@ -30,17 +30,16 @@ test.afterEach(async () => {
   await context2.close();
 });
 
-/** Portal walk: select nim, reveal modes, pick Ranked, see the rating, Play. */
+/** Portal walk: the nim tile opens the section page; its Ranked CTA queues. */
 async function queueRankedNim(page: Page) {
   await page.goto("/games");
   await page.getByTestId("game-tile-nim").click();
+  await page.waitForURL("/games/nim");
 
-  // Mode chooser is progressive disclosure — it only exists after a game is
-  // selected, and the rating emblem only after Ranked is chosen.
-  await page.getByTestId("mode-chooser").getByRole("radio", { name: "Ranked" }).click();
-  await expect(page.getByTestId("portal-rating-emblem")).toBeVisible();
+  // The Ranked CTA carries the player's rating emblem once loaded.
+  await expect(page.getByTestId("play-ranked-rating")).toBeVisible();
 
-  await page.getByTestId("play-button").click();
+  await page.getByTestId("play-ranked").click();
   await page.waitForURL("/games/queue/nim?rated=true");
 }
 
