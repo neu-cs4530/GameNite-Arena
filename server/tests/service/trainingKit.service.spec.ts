@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildInstallScript, getKitManifest, getKitFilePath } from "../../src/services/trainingKit.service.ts";
+import {
+  buildInstallScript,
+  getKitManifest,
+  getKitFilePath,
+} from "../../src/services/trainingKit.service.ts";
 
 /* ---------------------------------------------------------------------------
  * The training kit is the platform-distributed set of files a user needs to

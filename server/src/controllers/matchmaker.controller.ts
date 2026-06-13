@@ -6,7 +6,8 @@ import {
   createGame,
   createGameWithAi,
   joinGame,
-  joinGameAsAi,startGame,
+  joinGameAsAi,
+  startGame,
 } from "../services/game.service.ts";
 import {
   getEntityRating,
