@@ -41,6 +41,8 @@ async function seedMatch(
     rated?: boolean;
     winnerId?: string;
     outcome?: MatchRecord["result"]["outcome"];
+    completedAt?: string;
+    ratingChanges?: { entityId: string; delta: number }[];
   } = {},
 ): Promise<void> {
   const record: MatchRecord = {
@@ -49,9 +51,13 @@ async function seedMatch(
     rated: overrides.rated ?? true,
     participants: participants.map((id) => ({ id, type: "human" as const, displayName: id })),
     moves: [],
-    result: { winnerId: overrides.winnerId, outcome: overrides.outcome ?? "win" },
+    result: {
+      winnerId: overrides.winnerId,
+      outcome: overrides.outcome ?? "win",
+      ratingChanges: overrides.ratingChanges,
+    },
     createdAt: "2026-06-01T00:00:00.000Z",
-    completedAt: "2026-06-01T00:05:00.000Z",
+    completedAt: overrides.completedAt ?? "2026-06-01T00:05:00.000Z",
   };
   await MatchRepo.add(record);
 }
@@ -76,6 +82,7 @@ describe("getLeaderboard win stats", () => {
 
     expect(page.gameKey).toBe("nim");
     expect(page.entityType).toBe("all");
+    expect(page.period).toBe("alltime");
     expect(page.page).toBe(1);
     expect(page.limit).toBe(50);
     expect(page.total).toBe(2);
@@ -173,5 +180,86 @@ describe("getLeaderboard win stats", () => {
     // ...and re-warms the cache for subsequent default reads.
     const rewarmed = await getLeaderboard({ gameKey: "nim" });
     expect(rewarmed.entries[0]).toMatchObject({ rating: 1580, wins: 2 });
+  });
+});
+
+describe("getLeaderboard daily period", () => {
+  it("ranks by today's rating gain and counts today's games/wins", async () => {
+    await seedRating("alice", { rating: 1620, gamesPlayed: 5 });
+    await seedRating("bob", { rating: 1580, gamesPlayed: 5 });
+    await seedMatch(["alice", "bob"], {
+      winnerId: "alice",
+      completedAt: "2026-06-01T10:00:00.000Z",
+      ratingChanges: [
+        { entityId: "alice", delta: 20 },
+        { entityId: "bob", delta: -20 },
+      ],
+    });
+
+    const page = await getLeaderboard({
+      gameKey: "nim",
+      period: "daily",
+      now: new Date("2026-06-01T18:00:00.000Z"),
+    });
+
+    expect(page.period).toBe("daily");
+    expect(page.entries[0]).toMatchObject({
+      entityId: "alice",
+      rating: 1620,
+      ratingDelta: 20,
+      gamesPlayedToday: 1,
+      wins: 1,
+      winRate: 1,
+    });
+    expect(page.entries[1]).toMatchObject({
+      entityId: "bob",
+      rating: 1580,
+      ratingDelta: -20,
+      gamesPlayedToday: 1,
+      wins: 0,
+      winRate: 0,
+    });
+  });
+
+  it("excludes matches completed before today (UTC midnight cutoff)", async () => {
+    await seedRating("alice", { rating: 1500 });
+    await seedMatch(["alice", "bob"], {
+      winnerId: "alice",
+      completedAt: "2026-05-31T23:59:00.000Z",
+      ratingChanges: [{ entityId: "alice", delta: 30 }],
+    });
+
+    const page = await getLeaderboard({
+      gameKey: "nim",
+      period: "daily",
+      now: new Date("2026-06-01T00:30:00.000Z"),
+    });
+
+    expect(page.entries).toHaveLength(0);
+  });
+
+  it("respects the entityType filter", async () => {
+    await seedRating("alice", { rating: 1500 });
+    await seedRating("bob", { rating: 1500 });
+    await seedMatch(["alice", "bob"], {
+      winnerId: "alice",
+      completedAt: "2026-06-01T10:00:00.000Z",
+      ratingChanges: [
+        { entityId: "alice", delta: 10 },
+        { entityId: "bob", delta: -10 },
+      ],
+    });
+
+    const now = new Date("2026-06-01T18:00:00.000Z");
+    const humans = await getLeaderboard({
+      gameKey: "nim",
+      period: "daily",
+      entityType: "human",
+      now,
+    });
+    const ais = await getLeaderboard({ gameKey: "nim", period: "daily", entityType: "ai", now });
+
+    expect(humans.entries).toHaveLength(2);
+    expect(ais.entries).toHaveLength(0);
   });
 });
