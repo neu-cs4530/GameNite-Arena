@@ -24,12 +24,18 @@ import inference_service as svc
 # stubs
 
 class StubModel:
-    """Stands in for an SB3 policy: predict() returns a fixed action."""
+    """Stands in for an SB3 policy: predict() returns a fixed action.
+
+    Records every observation it is asked about so tests can assert the
+    exact layout the trusted encoders produced.
+    """
 
     def __init__(self, action: int):
         self._action = action
+        self.seen_obs: list[np.ndarray] = []
 
     def predict(self, obs, deterministic=True):
+        self.seen_obs.append(np.asarray(obs))
         return np.array(self._action), None
 
 
@@ -52,17 +58,27 @@ def client():
     return TestClient(svc.app)
 
 
-def _load(client, monkeypatch, model_store, *, dep_id, game, action, model_id="m1"):
-    """Write a dummy .pth file and stub _load_policy, then call /inference/load."""
+def _load(client, monkeypatch, model_store, *, dep_id, game, action,
+          model_id="m1", obs_size=None):
+    """Write a dummy .pth file and stub _load_policy, then call /inference/load.
+
+    _load_policy returns (policy, obs_size) — the artifact's recorded
+    metadata.obs_size drives encoder dispatch (nim: 1 legacy, 5 v2).
+    """
     # Create the artifact file the endpoint expects
     pth = model_store / f"{model_id}.pth"
     pth.write_bytes(b"stub")
-    monkeypatch.setattr(svc, "_load_policy", lambda path: StubModel(action))
-    return client.post("/inference/load", json={
+    if obs_size is None:
+        obs_size = max(svc.encoders.OBS_SIZES[game])   # newest contract
+    stub = StubModel(action)
+    monkeypatch.setattr(svc, "_load_policy", lambda path: (stub, obs_size))
+    response = client.post("/inference/load", json={
         "deployment_id": dep_id,
         "game": game,
         "model_id": model_id,
     })
+    response.stub_model = stub
+    return response
 
 
 # tests
@@ -96,6 +112,43 @@ def test_move_nim_decodes_action(client, monkeypatch, model_store):
     })
     assert r.status_code == 200
     assert r.json()["move"] == 3
+
+
+def test_move_nim_v2_model_gets_v2_observation(client, monkeypatch, model_store):
+    """A v2 artifact (obs_size 5) must see [pile/21, onehot4(pile % 4)]."""
+    loaded = _load(client, monkeypatch, model_store,
+                   dep_id="d1", game="nim", action=0, obs_size=5)
+    assert loaded.status_code == 200
+    r = client.post("/inference/move", json={
+        "deployment_id": "d1", "state": {"remaining": 7},
+    })
+    assert r.status_code == 200
+    [obs] = loaded.stub_model.seen_obs
+    np.testing.assert_allclose(obs, [7 / 21, 0.0, 0.0, 0.0, 1.0])  # 7 % 4 == 3
+
+
+def test_move_nim_legacy_model_gets_normalized_scalar(client, monkeypatch, model_store):
+    """Legacy artifacts (obs_size 1) keep working AND get NORMALIZED input.
+
+    This is the deployed-model fix: training always sent pile/starting_pile,
+    so serving the raw integer put every nim model out of distribution.
+    """
+    loaded = _load(client, monkeypatch, model_store,
+                   dep_id="d1", game="nim", action=0, obs_size=1)
+    assert loaded.status_code == 200
+    r = client.post("/inference/move", json={
+        "deployment_id": "d1", "state": {"remaining": 7},
+    })
+    assert r.status_code == 200
+    [obs] = loaded.stub_model.seen_obs
+    np.testing.assert_allclose(obs, [7 / 21])   # not the raw 7
+
+
+def test_load_nim_rejects_unsupported_obs_size(client, monkeypatch, model_store):
+    r = _load(client, monkeypatch, model_store,
+              dep_id="d1", game="nim", action=0, obs_size=3)
+    assert r.status_code == 422
+    assert "obs_size" in r.json()["detail"]
 
 
 def test_move_checkers_uses_legal_moves(client, monkeypatch, model_store):

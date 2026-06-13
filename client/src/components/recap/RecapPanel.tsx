@@ -12,7 +12,12 @@ import { getLeaderboard } from "../../services/leaderboardService.ts";
 import { gameNames } from "../../util/consts.ts";
 import { formatWinRate } from "../../util/leaderboardView.ts";
 import { computeRankMovement, neighborSlice, type RankMovement } from "../../util/rankMovement.ts";
-import { deriveOutcome, extractMyChange, formatDelta } from "../../util/recap.ts";
+import {
+  deriveOutcome,
+  extractEntityChange,
+  extractMyChange,
+  formatDelta,
+} from "../../util/recap.ts";
 import type { LeaderboardEntry } from "../../util/types.ts";
 
 interface RecapPanelProps {
@@ -21,6 +26,12 @@ interface RecapPanelProps {
   result: MatchResultView;
   /** The viewer's index in the game's players list; -1 for watchers. */
   userPlayerIndex: number;
+  /**
+   * When the viewer's deployed model held the seat: the model's entity id
+   * (its modelId in ratingChanges). The recap then narrates the MODEL's
+   * result — "Your model won" — and tracks the model's rating movement.
+   */
+  modelEntityId?: string | null;
 }
 
 /** Human label for the movement strip header. */
@@ -47,9 +58,16 @@ export default function RecapPanel({
   gameKey,
   result,
   userPlayerIndex,
+  modelEntityId = null,
 }: RecapPanelProps): JSX.Element {
-  const myChange = extractMyChange(result, userPlayerIndex);
-  const outcome = deriveOutcome(result, myChange?.entityId ?? null);
+  const myChange =
+    modelEntityId !== null
+      ? extractEntityChange(result, modelEntityId)
+      : extractMyChange(result, userPlayerIndex);
+  const outcome =
+    modelEntityId !== null
+      ? deriveOutcome(result, modelEntityId, "model")
+      : deriveOutcome(result, myChange?.entityId ?? null);
 
   // fresh=1 bypasses the server's 5-minute leaderboard cache so this read
   // sees the ratings this very game just produced.

@@ -60,7 +60,8 @@ class TestConstants:
 
     def test_nim_spaces(self):
         assert GAME_ACTION_SPACES["nim"] == 3     # take 1, 2, or 3
-        assert GAME_OBS_SIZES["nim"] == 1
+        # v2 contract: [pile/starting_pile, onehot4(pile % 4)]
+        assert GAME_OBS_SIZES["nim"] == 5
 
     def test_numguesser_spaces(self):
         assert GAME_ACTION_SPACES["numguesser"] == 100
@@ -160,7 +161,7 @@ class TestNimMoveLegality:
     def test_obs_normalised_between_zero_and_one(self):
         self.env.pile = 21
         obs, _ = self.env.reset(seed=0)
-        assert obs.shape == (1,)
+        assert obs.shape == (5,)   # v2: [pile/starting_pile, onehot4(pile % 4)]
         assert 0.0 <= obs[0] <= 1.0
 
     def test_obs_zero_when_pile_empty(self):

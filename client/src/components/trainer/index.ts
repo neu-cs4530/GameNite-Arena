@@ -15,6 +15,3 @@ export { default as HyperparamInput } from "./HyperparamInput.tsx";
 export { default as ForkButton } from "./ForkButton.tsx";
 export { default as ModelCard } from "./ModelCard.tsx";
 export { default as ModelCardSkeleton } from "./ModelCardSkeleton.tsx";
-export { default as DeploymentCard } from "./DeploymentCard.tsx";
-export { default as ModelLineageTree } from "./ModelLineageTree.tsx";
-export { default as ModelFilterBar } from "./ModelFilterBar.tsx";

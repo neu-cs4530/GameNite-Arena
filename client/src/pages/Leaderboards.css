@@ -13,6 +13,10 @@
   font-size: var(--text-body);
 }
 
+/* The match board (rows, filters, self strip) lives with the shared
+   component: components/leaderboard/LeaderboardBoard.css. The classes below
+   are shared by the puzzle board this page still renders inline. */
+
 .ga-leaderboards__board {
   display: flex;
   flex-direction: column;
@@ -24,40 +28,6 @@
   font-size: var(--text-h2);
   font-weight: var(--weight-semibold);
   color: var(--color-fg);
-}
-
-/* --- "You" strip ------------------------------------------------------- */
-
-/* The Card is already a flex column; pin its children to the left and keep
-   the label-to-stats gap tight so the strip reads as one compact unit. */
-.ga-leaderboards__self {
-  align-items: flex-start;
-  gap: var(--space-2);
-}
-
-.ga-leaderboards__self-label {
-  font-size: var(--text-small);
-  font-weight: var(--weight-semibold);
-  color: var(--color-fg-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.ga-leaderboards__self-tiles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-8);
-}
-
-.ga-leaderboards__self-empty {
-  margin: 0;
-  font-size: var(--text-small);
-  color: var(--color-fg-muted);
-}
-
-.ga-leaderboards__summary {
-  font-size: var(--text-small);
-  color: var(--color-fg-muted);
 }
 
 /* --- Rows --------------------------------------------------------------- */

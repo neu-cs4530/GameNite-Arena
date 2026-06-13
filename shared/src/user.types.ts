@@ -11,6 +11,11 @@ export interface SafeUserInfo {
   username: string;
   display: string;
   createdAt: Date;
+  /**
+   * Set when this seat is occupied by a deployed model rather than a
+   * person (the username is then a synthetic ai id, not a real account).
+   */
+  isAi?: boolean;
 }
 
 /*** TYPES USED IN THE USER API ***/

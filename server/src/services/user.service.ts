@@ -1,22 +1,38 @@
 import { type SafeUserInfo, type UserUpdateRequest } from "@gamenite/shared";
 import { getUserByUsername, updateAuth } from "./auth.service.ts";
-import { UserRepo } from "../repository.ts";
+import { DeploymentRepo, UserRepo } from "../repository.ts";
 
 const disallowedUsernames = new Set(["login", "signup", "list"]);
 
 /**
- * Retrieves a single user from the database.
+ * Retrieves a single user from the database. AI seats store their deployment
+ * id where a user id would go (Story 2.6), so deployment ids are rendered as
+ * synthetic AI users instead of failing the user lookup.
  *
- * @param userId - Valid user id.
+ * @param userId - Valid user id, or the deployment id of a seated model.
  * @returns the found user object (without the password).
+ * @throws if the id is neither a user nor a deployment.
  */
 export async function populateSafeUserInfo(userId: string): Promise<SafeUserInfo> {
-  const record = await UserRepo.get(userId);
-  return {
-    username: record.username,
-    display: record.display,
-    createdAt: new Date(record.createdAt),
-  };
+  const record = await UserRepo.find(userId);
+  if (record) {
+    return {
+      username: record.username,
+      display: record.display,
+      createdAt: new Date(record.createdAt),
+    };
+  }
+  const deployment = await DeploymentRepo.find(userId);
+  if (deployment) {
+    return {
+      username: userId,
+      display: deployment.displayName,
+      createdAt: new Date(deployment.createdAt),
+      isAi: true,
+    };
+  }
+  // Same failure shape UserRepo.get would have produced before AI seats.
+  throw new Error(`Failed to find key ${userId} in repository user`);
 }
 
 /**

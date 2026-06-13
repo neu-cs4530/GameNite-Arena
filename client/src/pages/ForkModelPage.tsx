@@ -9,22 +9,21 @@ import Card from "../components/ui/Card.tsx";
 import ErrorState from "../components/ui/ErrorState.tsx";
 import Section from "../components/ui/Section.tsx";
 import Skeleton from "../components/ui/Skeleton.tsx";
-import { HyperparamForm } from "../components/trainer/index.ts";
 import { trainerGameNames } from "../components/trainer/trainerConsts.ts";
 import useModel from "../hooks/useModel.ts";
 import { forkModel } from "../services/modelService.ts";
-import { submitJob } from "../services/trainingService.ts";
-import type { TrainingHyperparameters } from "../util/types.ts";
 
-const defaultHp: TrainingHyperparameters = { episodes: 100_000, learningRate: 3e-4 };
-
+/**
+ * Forking is now exactly one real API call: name your copy, the server
+ * clones the model record (and artifact, when one exists), and you land on
+ * the new-run form pre-filled to continue training the fork.
+ */
 export default function ForkModelPage(): JSX.Element {
   const { modelId } = useParams();
   const navigate = useNavigate();
   const auth = useAuth();
   const { model, loading, error, refetch } = useModel(modelId);
   const [nameOverride, setNameOverride] = useState<string | null>(null);
-  const [hp, setHp] = useState<TrainingHyperparameters>(defaultHp);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<Error | null>(null);
 
@@ -37,23 +36,10 @@ export default function ForkModelPage(): JSX.Element {
     setSubmitError(null);
     setSubmitting(true);
     try {
-      const fork = await forkModel(model.id, {
-        displayName: name.trim() || `Fork of ${model.displayName}`,
-        visibility: "private",
-      });
-      const submitted = await submitJob(
-        {
-          modelId: fork.modelId,
-          gameKey: model.gameKey,
-          modelDisplayName: name.trim() || `Fork of ${model.displayName}`,
-          hyperparameters: hp,
-        },
-        auth,
-      );
-      void navigate(`/trainer/jobs/${submitted.jobId}`);
+      const fork = await forkModel(model.id, name.trim() || `Fork of ${model.displayName}`, auth);
+      void navigate(`/trainer/new?fromModel=${encodeURIComponent(fork.modelId)}`);
     } catch (err: unknown) {
-      const e2 = err instanceof Error ? err : new Error(String(err));
-      setSubmitError(e2);
+      setSubmitError(err instanceof Error ? err : new Error(String(err)));
     } finally {
       setSubmitting(false);
     }
@@ -76,36 +62,15 @@ export default function ForkModelPage(): JSX.Element {
           body={error?.message ?? "Model not found."}
           retry={() => refetch()}
         />
-        <Button variant="secondary" onClick={() => refetch()}>
-          Retry
-        </Button>
       </div>
     );
   }
 
-  const episodeError =
-    hp.episodes < 1
-      ? "Episode count must be at least 1."
-      : hp.episodes > 10_000_000
-        ? "Episode count cannot exceed 10,000,000."
-        : null;
-
   return (
-    <form
-      className="ga-fork-page"
-      data-testid="fork-model-page"
-      onSubmit={handleSubmit}
-      // noValidate: the episode input's min=1 + step=1000 makes nearly every
-      // value a stepMismatch (HTML steps base from min), silently blocking
-      // submission. Validation lives in HyperparamInput + episodeError.
-      noValidate
-    >
+    <form className="ga-fork-page" data-testid="fork-model-page" onSubmit={handleSubmit}>
       <header className="ga-fork-page__hero">
         <h1>Fork model</h1>
-        <p>
-          Create your own training run starting from this model's weights. Your fork is private by
-          default.
-        </p>
+        <p>Make your own copy of this model, then continue training it from where it left off.</p>
       </header>
 
       <Card density="default" testId="fork-source-summary">
@@ -122,12 +87,6 @@ export default function ForkModelPage(): JSX.Element {
             <span>{model.owner.displayName}</span>
             <span className="ga-fork-page__source-username">@{model.owner.username}</span>
           </div>
-          <div className="ga-fork-page__source-meta">
-            <span>Elo {model.elo}</span>
-            <span>{(model.winRate * 100).toFixed(0)}% win rate</span>
-            <span>{model.matchesPlayed.toLocaleString()} matches</span>
-            <span>{model.forkCount} forks</span>
-          </div>
         </div>
       </Card>
 
@@ -143,19 +102,6 @@ export default function ForkModelPage(): JSX.Element {
             data-testid="fork-new-name"
           />
         </div>
-      </Section>
-
-      <Section
-        title="Initial training config"
-        subtitle="Optionally tweak the hyperparams before launching the fork."
-        testId="fork-config-section"
-      >
-        <HyperparamForm value={hp} onChange={setHp} />
-        {episodeError && (
-          <span className="ga-fork-page__error" role="alert">
-            {episodeError}
-          </span>
-        )}
       </Section>
 
       {submitError && (
@@ -179,10 +125,10 @@ export default function ForkModelPage(): JSX.Element {
           type="submit"
           variant="primary"
           loading={submitting}
-          disabled={Boolean(episodeError)}
+          disabled={name.trim().length === 0}
           data-testid="fork-submit"
         >
-          Create fork and start training
+          Fork and continue training
         </Button>
       </div>
     </form>

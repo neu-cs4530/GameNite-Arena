@@ -64,7 +64,22 @@ export type MatchmakingJoinPayload = z.infer<typeof zMatchmakingJoinPayload>;
 export const zMatchmakingJoinPayload = z.object({
   gameKey: zGameKey,
   rated: z.boolean(),
+  /**
+   * Queue the user's deployed model in their place. The server validates
+   * ownership, "active" status, and that the deployment's game matches —
+   * the entry then competes with the MODEL's rating (ai:<modelId>), not
+   * the user's.
+   */
+  deploymentId: z.string().max(128).optional(),
 });
+
+/**
+ * Games whose deployed models can be queued for live matches. A game
+ * qualifies when its inference encoder is implemented AND the game's
+ * state machine exposes nextPlayer so the server knows when the model
+ * is to move (guess does neither today).
+ */
+export const AI_PLAYABLE_GAME_KEYS: GameKey[] = ["nim"];
 
 /**
  * The TaggedGameView type allows the views for different game to be

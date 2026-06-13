@@ -19,6 +19,14 @@ import {
 } from "../hooks/matchmakingReducer.ts";
 import { fetchRating, poolSize } from "../services/matchmakingService.ts";
 import { gameNames } from "../util/consts.ts";
+import { matchSettingsKey, parseMatchSettings } from "../util/matchSettings.ts";
+import {
+  ensureQueueSession,
+  parseQueueSession,
+  queueSessionKey,
+  serializeQueueSession,
+  type QueueSession,
+} from "../util/requeuePolicy.ts";
 
 /**
  * Route guard: the path param is user-controlled, so the queue only mounts
@@ -47,7 +55,9 @@ export default function MatchmakingQueue(): JSX.Element {
 /**
  * The classic queue screen. All queue *decisions* live in the pure
  * matchmakingReducer; this component only wires socket events, the 1s
- * elapsed tick, and navigation onto it.
+ * elapsed tick, and navigation onto it. When the section page handed over
+ * a deployment, the model takes the seat (deploymentId rides the join
+ * payload) and the owner is told they will spectate.
  */
 function QueueScreen({ gameKey }: { gameKey: GameKey }): JSX.Element {
   const { socket, user } = useLoginContext();
@@ -55,17 +65,49 @@ function QueueScreen({ gameKey }: { gameKey: GameKey }): JSX.Element {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const rated = searchParams.get("rated") === "true";
+  const deploymentId = searchParams.get("deploymentId") ?? undefined;
+  const modelId = searchParams.get("modelId") ?? undefined;
+  const modelName = searchParams.get("modelName") ?? undefined;
+  const modelSeat = deploymentId !== undefined;
 
   const [state, dispatch] = useReducer(matchmakingReducer, initialMatchmakingState);
   const counts = useQueueCounts();
 
+  const wantOwnRating = rated && !modelSeat;
   const ratingResult = useAsync(
     useCallback(
-      () => (rated ? fetchRating(gameKey, user.username) : Promise.resolve(null)),
-      [rated, gameKey, user.username],
+      () => (wantOwnRating ? fetchRating(gameKey, user.username) : Promise.resolve(null)),
+      [wantOwnRating, gameKey, user.username],
     ),
-    [rated, gameKey, user.username],
+    [wantOwnRating, gameKey, user.username],
   );
+
+  /* Seed (or continue) the auto-requeue session for this run: snapshot the
+   * per-game match settings and the seat, preserving the played count when
+   * the recap sends us back here for the same game/mode/seat. */
+  useEffect(() => {
+    const settings = parseMatchSettings(window.localStorage.getItem(matchSettingsKey(gameKey)));
+    const fresh: QueueSession = {
+      gameKey,
+      rated,
+      deploymentId,
+      modelId,
+      modelName,
+      autoRequeue: settings.autoRequeue,
+      requeueLimit: settings.requeueLimit,
+      played: 0,
+      lastCountedGameId: null,
+    };
+    const existing = parseQueueSession(window.sessionStorage.getItem(queueSessionKey(gameKey)));
+    try {
+      window.sessionStorage.setItem(
+        queueSessionKey(gameKey),
+        serializeQueueSession(ensureQueueSession(existing, fresh)),
+      );
+    } catch {
+      // Storage unavailable — auto-requeue silently degrades to manual.
+    }
+  }, [gameKey, rated, deploymentId, modelId, modelName]);
 
   /* Queue membership tracks this effect's lifetime exactly: join on mount,
    * leave on unmount (back button, found-navigation, anything). Events for
@@ -87,7 +129,10 @@ function QueueScreen({ gameKey }: { gameKey: GameKey }): JSX.Element {
     socket.on("matchFound", handleFound);
     socket.on("matchmakingTimeout", handleTimeout);
     socket.on("matchmakingWindowUpdate", handleWindow);
-    socket.emit("matchmakingJoin", { auth, payload: { gameKey, rated } });
+    socket.emit("matchmakingJoin", {
+      auth,
+      payload: { gameKey, rated, ...(deploymentId !== undefined ? { deploymentId } : {}) },
+    });
     dispatch({ type: "join" });
 
     return () => {
@@ -96,7 +141,7 @@ function QueueScreen({ gameKey }: { gameKey: GameKey }): JSX.Element {
       socket.off("matchmakingWindowUpdate", handleWindow);
       socket.emit("matchmakingLeave", { auth, payload: gameKey });
     };
-  }, [socket, auth, gameKey, rated]);
+  }, [socket, auth, gameKey, rated, deploymentId]);
 
   /* Elapsed timer only runs while actually searching. */
   const searching = state.phase === "searching";
@@ -115,11 +160,20 @@ function QueueScreen({ gameKey }: { gameKey: GameKey }): JSX.Element {
   function cancel() {
     socket.emit("matchmakingLeave", { auth, payload: gameKey });
     dispatch({ type: "cancel" });
-    void navigate("/games");
+    // An explicit cancel ends the auto-requeue run too.
+    try {
+      window.sessionStorage.removeItem(queueSessionKey(gameKey));
+    } catch {
+      // Nothing to clean if storage is unavailable.
+    }
+    void navigate(`/games/${gameKey}`);
   }
 
   function requeue() {
-    socket.emit("matchmakingJoin", { auth, payload: { gameKey, rated } });
+    socket.emit("matchmakingJoin", {
+      auth,
+      payload: { gameKey, rated, ...(deploymentId !== undefined ? { deploymentId } : {}) },
+    });
     dispatch({ type: "join" });
   }
 
@@ -128,7 +182,15 @@ function QueueScreen({ gameKey }: { gameKey: GameKey }): JSX.Element {
       <header className="ga-queue__header">
         <h1>{gameNames[gameKey]}</h1>
         <Badge variant={rated ? "info" : "default"}>{rated ? "Ranked" : "Casual"}</Badge>
+        {modelSeat && <Badge variant="ai">Model seat</Badge>}
       </header>
+
+      {modelSeat && (
+        <p className="ga-queue__model-seat" data-testid="queue-model-seat">
+          Your model <strong>{modelName ?? "(unnamed)"}</strong> is queueing — you&apos;ll spectate
+          the match.
+        </p>
+      )}
 
       {state.phase === "searching" && (
         <>
@@ -153,7 +215,15 @@ function QueueScreen({ gameKey }: { gameKey: GameKey }): JSX.Element {
               sub={rated ? "ranked pool" : "casual pool"}
               testId="stat-in-queue"
             />
-            {rated && (
+            {modelSeat && (
+              <StatTile
+                label="Seat"
+                value={modelName ?? "Your model"}
+                sub="competes with its own rating"
+                testId="stat-seat"
+              />
+            )}
+            {wantOwnRating && (
               <StatTile
                 label="Your rating"
                 value={
@@ -198,10 +268,10 @@ function QueueScreen({ gameKey }: { gameKey: GameKey }): JSX.Element {
               </Button>
               <Button
                 variant="ghost"
-                onClick={() => void navigate("/games")}
+                onClick={() => void navigate(`/games/${gameKey}`)}
                 data-testid="queue-back"
               >
-                Back to games
+                Back to {gameNames[gameKey]}
               </Button>
             </div>
           }

@@ -9,6 +9,7 @@ import {
   startGame,
   updateGame,
   viewGame,
+  maybeFireAiMove,
 } from "../services/game.service.ts";
 import { z } from "zod";
 import { logSocketError } from "./socket.controller.ts";
@@ -93,7 +94,66 @@ export const socketWatch: SocketAPI = (socket) => async (body) => {
 /**
  * Broadcast view updates to appropriate users
  */
-function sendViewUpdates(io: GameServer, gameId: string, updates: GameViewUpdates) {
+/**
+ * How long a model "thinks" before its move lands. Instant replies read as
+ * a bug to the human opponent (you move and it is immediately your turn
+ * again), so each AI turn is paced like a quick human one. Jitter keeps
+ * back-to-back moves from feeling metronomic.
+ */
+const AI_MOVE_DELAY_BASE_MS = 900;
+const AI_MOVE_DELAY_JITTER_MS = 500;
+let aiMoveDelayOverrideMs: number | null = null;
+
+/** Test seam: pace AI turns deterministically (0 = instant). */
+export function setAiMoveDelayForTests(ms: number): void {
+  aiMoveDelayOverrideMs = ms;
+}
+
+export function resetAiMoveDelayForTests(): void {
+  aiMoveDelayOverrideMs = null;
+}
+
+function aiMoveDelayMs(): number {
+  if (aiMoveDelayOverrideMs !== null) return aiMoveDelayOverrideMs;
+  return AI_MOVE_DELAY_BASE_MS + Math.random() * AI_MOVE_DELAY_JITTER_MS;
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Plays out every consecutive AI turn in `gameId`, pacing each move and
+ * broadcasting it as its own gameStateUpdated (and gameResult when a move
+ * ends the game). No-op when the player to move is human, the game is done,
+ * or the id is unknown. Model-vs-model games chain here, one paced move at
+ * a time. Errors are logged — a failed AI turn leaves a playable game.
+ */
+export async function runAiTurns(io: GameServer, gameId: string): Promise<void> {
+  for (;;) {
+    let outcome;
+    try {
+      await sleep(aiMoveDelayMs());
+      outcome = await maybeFireAiMove(gameId);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`AI turn failed for game ${gameId}:`, err);
+      return;
+    }
+    if (!outcome) return;
+    sendViewUpdates(io, gameId, outcome.views);
+    if (outcome.gameResult) {
+      io.to(gameId).emit("gameResult", { gameId, ...outcome.gameResult });
+      return;
+    }
+  }
+}
+
+/**
+ * Delivers a move's view updates: watcher view to the game room, each
+ * player's view to their private room. Exported because server-originated
+ * moves (a queued model opening the game) must broadcast the same way
+ * socket-originated moves do.
+ */
+export function sendViewUpdates(io: GameServer, gameId: string, updates: GameViewUpdates) {
   io.to(gameId).emit("gameStateUpdated", { ...updates.watchers, forPlayer: false });
   for (const { userId, view } of updates.players) {
     io.to(userRoom(gameId, userId)).emit("gameStateUpdated", { ...view, forPlayer: true });
@@ -159,6 +219,9 @@ export const socketMakeMove: SocketAPI = (socket, io) => async (body) => {
     sendViewUpdates(io, gameId, views);
     if (gameResult) {
       io.to(gameId).emit("gameResult", { gameId, ...gameResult });
+    } else {
+      // If a model is on turn now, its paced reply broadcasts separately.
+      void runAiTurns(io, gameId);
     }
   } catch (err) {
     logSocketError(socket, err);
