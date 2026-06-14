@@ -244,6 +244,51 @@ class TestMainDispatch:
         assert fake_run == []
         assert "no local trainer for 'guess'" in capsys.readouterr().err
 
+    def test_connect4_and_tictactoe_are_registered_trainers(self):
+        # The bug report: connect4 printed "no local trainer". These are now
+        # real trainers, alongside nim.
+        assert "connect4" in train.TRAINERS
+        assert "tictactoe" in train.TRAINERS
+        assert "nim" in train.TRAINERS
+
+    def test_connect4_self_register_dispatches(self, monkeypatch):
+        fake = use_session(monkeypatch, FakeSession())
+        calls = []
+        monkeypatch.setitem(train.TRAINERS, "connect4",
+                            lambda session, **kw: calls.append(kw) or 0)
+
+        rc = train.main(["--token", "t" * 32, "--game", "connect4",
+                         "--episodes", "4096"])
+
+        assert rc == 0
+        assert fake.started["gameKey"] == "connect4"
+        assert calls and calls[0]["episodes"] == 4096
+
+    def test_tictactoe_job_attaches(self, monkeypatch):
+        fake = use_session(monkeypatch, FakeSession(job_info={
+            "jobId": "web-9", "gameKey": "tictactoe", "status": "queued",
+            "config": {"episodes": 2048, "learningRate": 0.0003},
+        }))
+        calls = []
+        monkeypatch.setitem(train.TRAINERS, "tictactoe",
+                            lambda session, **kw: calls.append(kw) or 0)
+
+        rc = train.main(["--token", "t" * 32, "--job-id", "web-9"])
+
+        assert rc == 0
+        assert fake.attached == "web-9"
+        assert calls and calls[0]["episodes"] == 2048
+
+    def test_checkers_still_unsupported(self, monkeypatch, capsys):
+        # checkers stays stubbed (dynamic action space + no rules engine).
+        use_session(monkeypatch, FakeSession(job_info={
+            "jobId": "web-10", "gameKey": "checkers", "status": "queued",
+            "config": {"episodes": 100, "learningRate": 0.001},
+        }))
+        rc = train.main(["--token", "t" * 32, "--job-id", "web-10"])
+        assert rc == 2
+        assert "no local trainer for 'checkers'" in capsys.readouterr().err
+
     def test_invalid_args_exit_2_before_any_network(self, monkeypatch, capsys):
         monkeypatch.delenv("GAMENITE_TOKEN", raising=False)
         monkeypatch.delenv("GAMENITE_JOB_ID", raising=False)
