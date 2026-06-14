@@ -187,7 +187,13 @@ def move(req: MoveRequest):
 
     try:
         obs = encoders.encode_state(dep.game, req.state, obs_size=dep.obs_size)
-        raw_action = _predict(dep, obs)
+        action_n = encoders.ACTION_SPACES.get(dep.game)
+        mask = (
+            encoders.legal_action_mask(dep.game, req.state, action_n)
+            if isinstance(action_n, int)
+            else None
+        )
+        raw_action = _predict(dep, obs, mask)
         chosen = encoders.decode_action(dep.game, raw_action, req.legal_moves, state=req.state)
     except encoders.EncodingError as e:
         with _LOCK:
@@ -208,9 +214,35 @@ def move(req: MoveRequest):
     return {"deployment_id": req.deployment_id, "move": chosen}
 
 
-def _predict(dep: _Deployment, obs: np.ndarray) -> int:
+def _predict(dep: _Deployment, obs: np.ndarray, mask: "list[bool] | None" = None) -> int:
     model = dep.model
-    if hasattr(model, "predict"):
+    if not hasattr(model, "predict"):
+        raise HTTPException(500, "Loaded artifact has no predict().")
+
+    # No mask (or every action legal) → the model's deterministic argmax.
+    if mask is None or all(mask):
         action, _ = model.predict(obs, deterministic=True)
         return int(np.asarray(action).item())
-    raise HTTPException(500, "Loaded artifact has no predict().")
+
+    # Masked: rank the policy's action probabilities and take the best LEGAL
+    # one, so a full column / occupied cell can never be returned. Falls back
+    # to plain predict if probabilities can't be extracted.
+    try:
+        import torch
+
+        obs_t, _ = model.policy.obs_to_tensor(obs)
+        with torch.no_grad():
+            dist = model.policy.get_distribution(obs_t)
+        probs = np.asarray(dist.distribution.probs.cpu().numpy()).reshape(-1)
+    except Exception:
+        action, _ = model.predict(obs, deterministic=True)
+        idx = int(np.asarray(action).item())
+        return idx if (idx < len(mask) and mask[idx]) else next(
+            (i for i, ok in enumerate(mask) if ok), idx
+        )
+
+    legal = [p if (i < len(mask) and mask[i]) else -1.0 for i, p in enumerate(probs)]
+    if max(legal) < 0:  # nothing legal (shouldn't happen mid-game) — let predict decide
+        action, _ = model.predict(obs, deterministic=True)
+        return int(np.asarray(action).item())
+    return int(np.argmax(legal))

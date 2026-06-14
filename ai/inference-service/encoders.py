@@ -62,6 +62,36 @@ class EncodingError(ValueError):
     """Raised when a state payload does not match the expected shape."""
 
 
+def legal_action_mask(game: str, state: "dict | None", n: int) -> "list[bool]":
+    """
+    A boolean mask (length n) of which discrete actions are legal in `state`.
+
+    Fixed-action games (connect4/tictactoe/nim) have action spaces that are
+    NOT always fully legal — a full connect4 column or an occupied tictactoe
+    cell is a well-formed-but-illegal move the model can still pick. Masking
+    the policy to legal actions before argmax stops the model from repeatedly
+    choosing an illegal move and freezing the game. Games we can't constrain
+    from state alone return an all-true mask (no masking).
+    """
+    mask = [True] * n
+    if not isinstance(state, dict):
+        return mask
+    if game == "connect4":
+        board = state.get("board")
+        if isinstance(board, list) and board and isinstance(board[0], list):
+            top = board[0]  # a column is legal iff its top cell is empty (0)
+            return [bool(c < len(top) and top[c] == 0) for c in range(n)]
+    elif game == "tictactoe":
+        board = state.get("board")
+        if isinstance(board, list) and len(board) >= n:
+            return [board[i] == 0 for i in range(n)]
+    elif game == "nim":
+        remaining = state.get("remaining")
+        if isinstance(remaining, int):
+            return [(k + 1) <= remaining for k in range(n)]  # action k -> take k+1
+    return mask
+
+
 # tic-tac-toe
 
 def encode_tictactoe(state: dict) -> np.ndarray:
