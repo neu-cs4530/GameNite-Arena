@@ -83,6 +83,11 @@
   --space-6: 1.5rem; /* 24px */
   --space-8: 2rem; /* 32px */
   --space-10: 2.5rem; /* 40px */
+
+  /* Max width of a game board (tictactoe/connect4/checkers); boards are
+     aspect-ratio squares sized width: min(100%, var(--board-max)) so they
+     fill a narrow column without ever clipping. */
+  --board-max: 34rem;
   --space-12: 3rem; /* 48px */
   --space-16: 4rem; /* 64px */
   --space-20: 5rem; /* 80px */

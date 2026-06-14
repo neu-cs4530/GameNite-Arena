@@ -136,15 +136,15 @@ function getWinnerId(gameKey: GameKey, state: unknown, players: string[]): strin
   // algorithm).
   if (gameKey === "tictactoe") {
     const idx = ticTacToeLogic.winnerIndex?.(state as TicTacToeState);
-    return idx == null ? undefined : players[idx];
+    return idx === null || idx === undefined ? undefined : players[idx];
   }
   if (gameKey === "connect4") {
     const idx = connect4Logic.winnerIndex?.(state as Connect4State);
-    return idx == null ? undefined : players[idx];
+    return idx === null || idx === undefined ? undefined : players[idx];
   }
   if (gameKey === "checkers") {
     const idx = checkersLogic.winnerIndex?.(state as CheckersState);
-    return idx == null ? undefined : players[idx];
+    return idx === null || idx === undefined ? undefined : players[idx];
   }
 
   // guess: closest to the secret wins; an exact tie is a draw

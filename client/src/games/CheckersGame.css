@@ -1,0 +1,130 @@
+/* ============================================================================
+ * Checkers — live board.
+ *
+ * Sizing: the board is a square wrapper capped at --board-max but free to
+ * shrink to 100% of its (possibly half-width) column. Columns/rows are 1fr
+ * fractions of that square, so 64 cells always tile the available space
+ * exactly — there is no fixed pixel size to overflow a narrow column.
+ * ============================================================================ */
+
+.ch-game {
+  align-items: stretch;
+}
+
+.ch-status {
+  font-weight: var(--weight-semibold);
+  color: var(--color-fg);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* Centers the square board within whatever width the column allows. */
+.ch-board-wrap {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.ch-board {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  grid-template-rows: repeat(8, 1fr);
+  /* Shrinks to the column; never wider than --board-max (default 34rem). */
+  width: min(100%, var(--board-max, 34rem));
+  aspect-ratio: 1 / 1;
+  border: 2px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-surface);
+}
+
+.ch-square {
+  /* min-width:0 lets grid tracks shrink below intrinsic content size so the
+     fractional layout holds even in very narrow columns. */
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  position: relative;
+}
+
+.ch-square--light {
+  background-color: var(--color-bg-elevated);
+}
+
+.ch-square--dark {
+  background-color: var(--color-surface-2);
+}
+
+.ch-square--clickable {
+  cursor: pointer;
+}
+
+/* A friendly hint ring on your own pieces that can move this turn. */
+.ch-square--movable::after {
+  content: "";
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 max(2px, 0.18rem) var(--color-primary);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* Selected piece: solid primary ring on the square. */
+.ch-square--selected {
+  outline: max(3px, 0.22rem) solid var(--color-primary);
+  outline-offset: calc(-1 * max(3px, 0.22rem));
+}
+
+/* Legal destination: success-tinted square + a center dot marker. */
+.ch-square--dest {
+  background-color: var(--color-success-soft);
+}
+
+.ch-square--dest::before {
+  content: "";
+  position: absolute;
+  width: 32%;
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  background: var(--color-success);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.ch-piece {
+  width: 78%;
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  border: max(1px, 0.12rem) solid rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.ch-piece--red {
+  background: radial-gradient(circle at 32% 28%, #ff6b6b, #c92a2a 78%);
+}
+
+.ch-piece--black {
+  background: radial-gradient(circle at 32% 28%, #4a4a4a, #111418 78%);
+}
+
+/* King crown glyph scales with the cell via clamp so it never overpowers a
+   small board nor disappears on a large one. */
+.ch-crown {
+  font-size: clamp(0.7rem, 4.5cqw, 1.6rem);
+  line-height: 1;
+  color: var(--color-tier-gold);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.6);
+}
+
+/* Container query unit (cqw) for the crown is resolved against the board. */
+.ch-board {
+  container-type: inline-size;
+}

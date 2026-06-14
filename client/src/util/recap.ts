@@ -90,6 +90,18 @@ export function isViewDone(view: TaggedGameView | null): boolean {
       return view.view.remaining === 0;
     case "guess":
       return view.view.finished;
+    case "tictactoe":
+      return (
+        view.view.winningEntry !== null ||
+        view.view.board.every((row) => row.every((cell) => cell !== "."))
+      );
+    case "connect4":
+      return (
+        view.view.winningEntry !== null ||
+        view.view.board.every((row) => row.every((cell) => cell !== "."))
+      );
+    case "checkers":
+      return view.view.winner !== null;
   }
 }
 

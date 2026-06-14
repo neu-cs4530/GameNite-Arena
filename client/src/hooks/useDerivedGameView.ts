@@ -1,4 +1,11 @@
-import type { TaggedGameView, NimMove, GuessMove } from "@gamenite/shared";
+import type {
+  TaggedGameView,
+  NimMove,
+  GuessMove,
+  TicTacToeMove,
+  Connect4Move,
+  CheckersMove,
+} from "@gamenite/shared";
 import { useMemo } from "react";
 import type { ReplayDetail } from "../util/types.ts";
 import { NIM_DEFAULT_START, applyNimMove, nimViewFromState } from "../games/replay/nimReducer.ts";
@@ -8,6 +15,21 @@ import {
   guessViewFromState,
   type ReplayGuessState,
 } from "../games/replay/guessReducer.ts";
+import {
+  applyTicTacToeMove,
+  buildInitialTicTacToeState,
+  tictactoeViewFromState,
+} from "../games/replay/tictactoeReducer.ts";
+import {
+  applyConnect4Move,
+  buildInitialConnect4State,
+  connect4ViewFromState,
+} from "../games/replay/connect4Reducer.ts";
+import {
+  checkersDefaultStart,
+  applyCheckersMove,
+  checkersViewFromState,
+} from "../games/replay/checkersReducer.ts";
 
 /**
  * Replays state of a per-game view at a given move index. Pure: rebuilds
@@ -21,10 +43,36 @@ export default function useDerivedGameView(
     if (!replay) return null;
     if (replay.gameKey === "nim") return derivedNimView(replay, moveIndex);
     if (replay.gameKey === "guess") return derivedGuessView(replay, moveIndex);
-    // Other game keys aren't supported yet — return null so the stub view
-    // can render an explanation.
+    if (replay.gameKey === "tictactoe") return derivedTicTacToeView(replay, moveIndex);
+    if (replay.gameKey === "connect4") return derivedConnect4View(replay, moveIndex);
+    if (replay.gameKey === "checkers") return derivedCheckersView(replay, moveIndex);
+    // Unknown key — return null so the stub view can render an explanation.
     return null;
   }, [replay, moveIndex]);
+}
+
+function derivedTicTacToeView(replay: ReplayDetail, moveIndex: number): TaggedGameView {
+  let state = buildInitialTicTacToeState();
+  for (let i = 0; i < moveIndex && i < replay.moves.length; i++) {
+    state = applyTicTacToeMove(state, replay.moves[i].move as TicTacToeMove);
+  }
+  return { type: "tictactoe", view: tictactoeViewFromState(state) };
+}
+
+function derivedConnect4View(replay: ReplayDetail, moveIndex: number): TaggedGameView {
+  let state = buildInitialConnect4State();
+  for (let i = 0; i < moveIndex && i < replay.moves.length; i++) {
+    state = applyConnect4Move(state, replay.moves[i].move as Connect4Move);
+  }
+  return { type: "connect4", view: connect4ViewFromState(state) };
+}
+
+function derivedCheckersView(replay: ReplayDetail, moveIndex: number): TaggedGameView {
+  let state = checkersDefaultStart;
+  for (let i = 0; i < moveIndex && i < replay.moves.length; i++) {
+    state = applyCheckersMove(state, replay.moves[i].move as CheckersMove);
+  }
+  return { type: "checkers", view: checkersViewFromState(state) };
 }
 
 function derivedNimView(replay: ReplayDetail, moveIndex: number): TaggedGameView {

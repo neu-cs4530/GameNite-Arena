@@ -1,0 +1,137 @@
+/*
+ * Connect 4 — responsive board.
+ *
+ * The live board renders in a half-width column, and Connect 4 is 7 columns
+ * wide, so horizontal overflow is the worst-case risk. Everything below is
+ * fluid: the wrapper caps at --board-max but otherwise tracks its container
+ * (min(100%, …)), columns are fractional (1fr), discs are sized as a fraction
+ * of their cell, and gaps/glyphs use clamp(). No fixed px widths anywhere on
+ * the grid, so the board can shrink to fit any column without clipping.
+ */
+
+.c4-stage {
+  /* Container queries let the discs/arrows scale to the actual rendered
+     width, which matters in the half-width live column. */
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: min(100%, var(--board-max, 34rem));
+}
+
+/* Drop controls: a 7-column grid aligned 1:1 with the board grid. Because it
+   is itself `repeat(7, 1fr)` at the same width as the board, the row of
+   buttons can never be wider than the board and so can never overflow. */
+.c4-drops {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: clamp(2px, 1cqw, var(--space-2));
+  width: 100%;
+}
+
+.c4-drop {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  width: 70%;
+  margin-inline: auto; /* center within the 1fr track */
+  border-radius: var(--radius-pill);
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+  cursor: pointer;
+  transition:
+    background var(--duration-base, 0.15s) var(--ease-out, ease),
+    transform var(--duration-base, 0.15s) var(--ease-out, ease);
+}
+
+.c4-drop-arrow {
+  font-size: clamp(0.75rem, 3cqw, 1.25rem);
+  line-height: 1;
+}
+
+.c4-drop:hover:not(:disabled) {
+  background: var(--color-primary);
+  color: var(--color-bg);
+}
+
+.c4-drop:active:not(:disabled) {
+  transform: translateY(1px);
+  background: var(--color-primary-pressed);
+}
+
+.c4-drop:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.c4-drop:disabled {
+  cursor: default;
+  opacity: 0.35;
+  background: var(--color-surface-2);
+  color: var(--color-fg-subtle);
+}
+
+/* Flash for the column an AI seat just dropped in. */
+.c4-drop--ai,
+.c4-drop--ai:disabled {
+  opacity: 1;
+  background: var(--color-ai-soft);
+  color: var(--color-ai);
+  box-shadow: 0 0 0 2px var(--color-ai);
+}
+
+/* The board wrapper enforces the 7:6 aspect ratio so the grid never has to
+   guess at row heights. */
+.c4-frame {
+  width: 100%;
+  aspect-ratio: 7 / 6;
+  padding: clamp(4px, 1.5cqw, var(--space-3));
+  background: var(--color-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(14, 23, 38, 0.08));
+}
+
+.c4-board {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  grid-template-rows: repeat(6, 1fr);
+  gap: clamp(2px, 1cqw, var(--space-2));
+  width: 100%;
+  height: 100%;
+}
+
+.c4-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--color-bg-elevated);
+  box-shadow: inset 0 1px 2px rgba(14, 23, 38, 0.12);
+}
+
+.c4-cell--win {
+  background: var(--color-warning-soft);
+  box-shadow:
+    inset 0 1px 2px rgba(14, 23, 38, 0.12),
+    0 0 0 clamp(2px, 0.6cqw, 4px) var(--color-warning);
+}
+
+.c4-disc {
+  display: block;
+  aspect-ratio: 1;
+  width: 80%;
+  border-radius: 50%;
+  box-shadow: inset 0 -2px 4px rgba(14, 23, 38, 0.25);
+}
+
+.c4-disc--red {
+  background: var(--color-danger);
+}
+
+.c4-disc--yellow {
+  background: var(--color-tier-gold, #b58105);
+}

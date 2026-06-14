@@ -1,6 +1,21 @@
 div.gameContainer {
   display: grid;
   height: var(--content-vh);
-  overflow-y: clip;
-  grid-template-columns: 1fr 1fr;
+  /* Was overflow-y: clip with a 1fr 1fr split — an 8x8 checkers board could
+     not fit the half-width column and got clipped, not scrolled. Give the
+     board the dominant column, let it scroll, and drop the chat below the
+     board on narrow viewports. */
+  overflow-y: auto;
+  grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.6fr);
+}
+
+@media (max-width: 900px) {
+  div.gameContainer {
+    grid-template-columns: 1fr;
+    /* Stack board over chat and let the whole page scroll — keeping the fixed
+       content-vh height here collapsed the panel and pushed the board out of
+       view. auto height lets each section take its natural size. */
+    height: auto;
+    overflow-y: visible;
+  }
 }
