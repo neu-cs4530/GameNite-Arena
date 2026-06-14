@@ -27,6 +27,9 @@ import RailDrawer from "../components/replay/RailDrawer.tsx";
 
 import { recordView, downloadReplay } from "../services/replayService.ts";
 import { createAnnotation, createShareLink } from "../services/annotationService.ts";
+import { listDeploymentViews } from "../services/trainerViewService.ts";
+import { analysisModelOptions } from "../util/analysisModels.ts";
+import type { DeploymentView } from "@gamenite/shared";
 
 const SHORTCUT_HINTS = [
   { keys: "ArrowLeft", description: "Previous move", group: "Playback" },
@@ -49,7 +52,8 @@ export default function ReplayViewer(): JSX.Element {
   const initialMove = Number.isFinite(initialMoveParam) ? initialMoveParam : 0;
   const navigate = useNavigate();
 
-  const { user } = useLoginContext();
+  const { user, pass } = useLoginContext();
+  const auth = useMemo(() => ({ username: user.username, password: pass }), [user.username, pass]);
 
   const { replay, loading, error, refetch } = useReplay(matchId);
   const totalMoves = replay?.moves.length ?? 0;
@@ -62,6 +66,31 @@ export default function ReplayViewer(): JSX.Element {
   const [helpOpen, setHelpOpen] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
   const [analysisOpen, setAnalysisOpen] = useState(false);
+
+  // The signed-in user's deployed models, used to pick which engine analyzes
+  // this replay. Only models for THIS game that are active and artifact-backed
+  // are eligible (see analysisModelOptions); an empty list just means the
+  // built-in heuristic is the only engine offered.
+  const [deployments, setDeployments] = useState<DeploymentView[]>([]);
+  const [selectedDeploymentId, setSelectedDeploymentId] = useState("");
+  useEffect(() => {
+    let active = true;
+    listDeploymentViews(user.username)
+      .then((views) => {
+        if (active) setDeployments(views);
+      })
+      .catch(() => {
+        // Best-effort: if the list can't load, the user still gets the
+        // built-in heuristic engine.
+      });
+    return () => {
+      active = false;
+    };
+  }, [user.username]);
+  const modelOptions = useMemo(
+    () => (replay ? analysisModelOptions(deployments, replay.gameKey) : []),
+    [deployments, replay],
+  );
 
   // Unfold the analysis drawer the moment results first exist — running the
   // engine from the collapsed header should reveal what it produced. Derived
@@ -384,11 +413,35 @@ export default function ReplayViewer(): JSX.Element {
             testId="rail-drawer-engine"
             headerExtra={
               <>
+                {modelOptions.length > 0 && (
+                  <label className="ga-viewer__engine-model">
+                    <span className="ga-viewer__sr-only">Analysis model</span>
+                    <select
+                      className="ga-viewer__engine-select"
+                      aria-label="Analysis model"
+                      data-testid="analysis-model-select"
+                      value={selectedDeploymentId}
+                      onChange={(e) => setSelectedDeploymentId(e.target.value)}
+                    >
+                      <option value="">Built-in heuristic</option>
+                      {modelOptions.map((o) => (
+                        <option key={o.deploymentId} value={o.deploymentId}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 <Button
                   variant="secondary"
                   size="sm"
                   loading={analysisHook.loading}
-                  onClick={() => void analysisHook.run()}
+                  onClick={() =>
+                    void analysisHook.run({
+                      auth,
+                      deploymentId: selectedDeploymentId || undefined,
+                    })
+                  }
                 >
                   Analyze with engine
                 </Button>
@@ -401,7 +454,11 @@ export default function ReplayViewer(): JSX.Element {
                   variant="ghost"
                   size="sm"
                   onClick={() => {
-                    if (!analysisHook.analysis) void analysisHook.run();
+                    if (!analysisHook.analysis)
+                      void analysisHook.run({
+                        auth,
+                        deploymentId: selectedDeploymentId || undefined,
+                      });
                     setCompareOpen((o) => !o);
                     setAnalysisOpen(true);
                   }}

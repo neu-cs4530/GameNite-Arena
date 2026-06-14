@@ -117,6 +117,22 @@
   line-height: var(--leading-normal);
 }
 
+/* Model picker that sits next to the "Analyze with engine" button. */
+.ga-viewer__engine-model {
+  display: inline-flex;
+  align-items: center;
+}
+
+.ga-viewer__engine-select {
+  max-width: 14rem;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-small);
+  color: var(--color-fg);
+}
+
 /* -- Shared bits ----------------------------------------------------------- */
 
 .ga-viewer__share {
