@@ -52,13 +52,28 @@ export * from "./games/nim.types.ts";
 import type { GuessView } from "./games/guess.types.ts";
 export * from "./games/guess.types.ts";
 
+import type { TicTacToeView } from "./games/tictactoe.types.ts";
+export * from "./games/tictactoe.types.ts";
+
+import type { Connect4View } from "./games/connect4.types.ts";
+export * from "./games/connect4.types.ts";
+
+import type { CheckersView } from "./games/checkers.types.ts";
+export * from "./games/checkers.types.ts";
+
 /**
  * A GameKey selects which game is being played. There needs to be exactly one
  * key for each game. See README.md for the operations that are required to
  * add a new game.
  */
 export type GameKey = z.infer<typeof zGameKey>;
-export const zGameKey = z.union([z.literal("nim"), z.literal("guess")]);
+export const zGameKey = z.union([
+  z.literal("nim"),
+  z.literal("guess"),
+  z.literal("tictactoe"),
+  z.literal("connect4"),
+  z.literal("checkers"),
+]);
 
 export type MatchmakingJoinPayload = z.infer<typeof zMatchmakingJoinPayload>;
 export const zMatchmakingJoinPayload = z.object({
@@ -79,7 +94,12 @@ export const zMatchmakingJoinPayload = z.object({
  * state machine exposes nextPlayer so the server knows when the model
  * is to move (guess does neither today).
  */
-export const AI_PLAYABLE_GAME_KEYS: GameKey[] = ["nim"];
+export const AI_PLAYABLE_GAME_KEYS: GameKey[] = [
+  "nim",
+  "tictactoe",
+  "connect4",
+  "checkers",
+];
 
 /**
  * The TaggedGameView type allows the views for different game to be
@@ -88,4 +108,9 @@ export const AI_PLAYABLE_GAME_KEYS: GameKey[] = ["nim"];
  * Each game should have a tagged game view. The `type` should be the game's
  * GameKey, and the `view` should be the type of the games view.
  */
-export type TaggedGameView = { type: "nim"; view: NimView } | { type: "guess"; view: GuessView };
+export type TaggedGameView =
+  | { type: "nim"; view: NimView }
+  | { type: "guess"; view: GuessView }
+  | { type: "tictactoe"; view: TicTacToeView }
+  | { type: "connect4"; view: Connect4View }
+  | { type: "checkers"; view: CheckersView };

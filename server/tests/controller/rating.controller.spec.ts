@@ -91,7 +91,7 @@ describe("GET /api/rating/:gameKey/:username", () => {
   });
 
   it("400s for a game key that is not playable", async () => {
-    const res = await supertest(app).get("/api/rating/checkers/user0");
+    const res = await supertest(app).get("/api/rating/chess/user0");
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: "Unknown game" });
   });

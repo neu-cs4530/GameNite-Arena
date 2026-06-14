@@ -6,6 +6,9 @@ import { populateSafeUserInfo } from "./user.service.ts";
 import { type GameServicer } from "../games/gameServiceManager.ts";
 import { nimGameService } from "../games/nim.ts";
 import { guessGameService } from "../games/guess.ts";
+import { ticTacToeGameService } from "../games/tictactoe.ts";
+import { connect4GameService } from "../games/connect4.ts";
+import { checkersGameService } from "../games/checkers.ts";
 import { type GameViewUpdates, type UserWithId } from "../types.ts";
 import { type AIParticipant, type MatchResult } from "../models.ts";
 import { GameRepo } from "../repository.ts";
@@ -17,6 +20,9 @@ import * as inferenceClient from "./inferenceClient.ts";
 export const gameServices: { [key in GameKey]: GameServicer } = {
   nim: nimGameService,
   guess: guessGameService,
+  tictactoe: ticTacToeGameService,
+  connect4: connect4GameService,
+  checkers: checkersGameService,
 };
 
 /**

@@ -59,6 +59,9 @@ export class InMemoryReplayStore implements ReplayStore {
 const wireGameKey: Record<GameKey, ReplayGameKey> = {
   nim: "nim",
   guess: "guess",
+  tictactoe: "tictactoe",
+  connect4: "connect4",
+  checkers: "checkers",
 };
 
 /**
