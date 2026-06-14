@@ -5,6 +5,7 @@ import { SEED_REPLAYS } from "../../src/__fixtures__/replays.fixture.ts";
 import * as replay from "../../src/controllers/replay.controller.ts";
 import type { MatchRecord } from "../../src/models.ts";
 import { DeploymentRepo, MatchRepo } from "../../src/repository.ts";
+import { getUserByUsername } from "../../src/services/auth.service.ts";
 import {
   resetInferenceClientForTests,
   setInferenceClientForTests,
@@ -254,25 +255,33 @@ describe("POST /api/replay/:matchId/view", () => {
 });
 
 describe("POST /api/replay/:matchId/analysis", () => {
-  it("returns per-move engine flags for an archived nim match", async () => {
-    const record: MatchRecord = {
-      gameId: "game-nim-1",
-      gameKey: "nim",
-      rated: true,
-      participants: [
-        { id: "u-a", type: "human", displayName: "Alice" },
-        { id: "u-b", type: "human", displayName: "Bob" },
-      ],
-      // remaining=21 is already a forced loss, so move 0 is neutral no matter what.
-      moves: [{ actor: "u-a", move: 3, timestamp: "2026-06-09T00:00:00.000Z" }],
-      result: { outcome: "win", winnerId: "u-b" },
-      initialState: { remaining: 21, nextPlayer: 0 },
-      createdAt: "2026-06-09T00:10:00.000Z",
-      completedAt: "2026-06-09T00:10:00.000Z",
-    };
-    await MatchRepo.set("ctrl-nim", record);
+  // user1/pwd1111 is seeded by resetEverythingToDefaults (tests/setup.ts).
+  // The endpoint is authed like the rest of the API: the caller's userId is
+  // resolved server-side from credentials, never trusted from the client.
+  const auth1 = { username: "user1", password: "pwd1111" };
 
-    const res = await supertest(makeApp()).post("/api/replay/ctrl-nim/analysis");
+  const nimRecord = (): MatchRecord => ({
+    gameId: "game-nim-1",
+    gameKey: "nim",
+    rated: true,
+    participants: [
+      { id: "u-a", type: "human", displayName: "Alice" },
+      { id: "u-b", type: "human", displayName: "Bob" },
+    ],
+    // remaining=21 is already a forced loss, so move 0 is neutral no matter what.
+    moves: [{ actor: "u-a", move: 3, timestamp: "2026-06-09T00:00:00.000Z" }],
+    result: { outcome: "win", winnerId: "u-b" },
+    initialState: { remaining: 21, nextPlayer: 0 },
+    createdAt: "2026-06-09T00:10:00.000Z",
+    completedAt: "2026-06-09T00:10:00.000Z",
+  });
+
+  it("returns per-move engine flags for an archived nim match", async () => {
+    await MatchRepo.set("ctrl-nim", nimRecord());
+
+    const res = await supertest(makeApp())
+      .post("/api/replay/ctrl-nim/analysis")
+      .send({ auth: auth1, payload: {} });
 
     expect(res.status).toBe(200);
     expect(res.body.matchId).toBe("ctrl-nim");
@@ -280,31 +289,40 @@ describe("POST /api/replay/:matchId/analysis", () => {
     expect(res.body.perMove[0]).toMatchObject({ moveIndex: 0, flag: "neutral" });
   });
 
+  it("returns 400 when the request body omits auth", async () => {
+    await MatchRepo.set("ctrl-nim", nimRecord());
+
+    const res = await supertest(makeApp()).post("/api/replay/ctrl-nim/analysis").send({});
+
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: expect.any(String) });
+  });
+
+  it("returns 403 for invalid credentials", async () => {
+    await MatchRepo.set("ctrl-nim", nimRecord());
+
+    const res = await supertest(makeApp())
+      .post("/api/replay/ctrl-nim/analysis")
+      .send({ auth: { username: "user1", password: "wrong" }, payload: {} });
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: expect.any(String) });
+  });
+
   it("returns 404 for an unknown match id", async () => {
-    const res = await supertest(makeApp()).post("/api/replay/ghost/analysis");
+    const res = await supertest(makeApp())
+      .post("/api/replay/ghost/analysis")
+      .send({ auth: auth1, payload: {} });
     expect(res.status).toBe(404);
     expect(res.body).toMatchObject({ error: expect.any(String) });
   });
 
-  it("attaches engineMove when a deploymentId is given", async () => {
-    const record: MatchRecord = {
-      gameId: "game-nim-1",
-      gameKey: "nim",
-      rated: true,
-      participants: [
-        { id: "u-a", type: "human", displayName: "Alice" },
-        { id: "u-b", type: "human", displayName: "Bob" },
-      ],
-      moves: [{ actor: "u-a", move: 3, timestamp: "2026-06-09T00:00:00.000Z" }],
-      result: { outcome: "win", winnerId: "u-b" },
-      initialState: { remaining: 21, nextPlayer: 0 },
-      createdAt: "2026-06-09T00:10:00.000Z",
-      completedAt: "2026-06-09T00:10:00.000Z",
-    };
-    await MatchRepo.set("ctrl-nim-engine", record);
+  it("attaches engineMove for a deployment the authenticated user owns", async () => {
+    const user1 = (await getUserByUsername("user1"))!;
+    await MatchRepo.set("ctrl-nim-engine", nimRecord());
     await DeploymentRepo.set("dep-1", {
       modelId: "model-1",
-      userId: "u-owner",
+      userId: user1.userId,
       gameKey: "nim",
       displayName: "Test Model",
       status: "active",
@@ -314,9 +332,9 @@ describe("POST /api/replay/:matchId/analysis", () => {
 
     setInferenceClientForTests({ requestMove: () => Promise.resolve({ move: 1 }) });
     try {
-      const res = await supertest(makeApp()).post(
-        "/api/replay/ctrl-nim-engine/analysis?deploymentId=dep-1&userId=u-owner",
-      );
+      const res = await supertest(makeApp())
+        .post("/api/replay/ctrl-nim-engine/analysis")
+        .send({ auth: auth1, payload: { deploymentId: "dep-1" } });
 
       expect(res.status).toBe(200);
       expect(res.body.perMove[0]).toMatchObject({ engineMove: 1 });
@@ -326,18 +344,19 @@ describe("POST /api/replay/:matchId/analysis", () => {
   });
 
   it("returns 404 when deploymentId doesn't reference a real deployment", async () => {
-    const res = await supertest(makeApp()).post(
-      "/api/replay/ghost/analysis?deploymentId=no-such-deployment&userId=u-owner",
-    );
+    const res = await supertest(makeApp())
+      .post("/api/replay/ghost/analysis")
+      .send({ auth: auth1, payload: { deploymentId: "no-such-deployment" } });
 
     expect(res.status).toBe(404);
     expect(res.body).toMatchObject({ error: expect.any(String) });
   });
 
-  it("returns 403 when userId doesn't own the deployment", async () => {
+  it("returns 403 when the authenticated user doesn't own the deployment", async () => {
+    const user0 = (await getUserByUsername("user0"))!;
     await DeploymentRepo.set("dep-2", {
       modelId: "model-2",
-      userId: "u-owner",
+      userId: user0.userId,
       gameKey: "nim",
       displayName: "Test Model",
       status: "active",
@@ -345,9 +364,9 @@ describe("POST /api/replay/:matchId/analysis", () => {
       updatedAt: "2026-06-09T00:00:00.000Z",
     });
 
-    const res = await supertest(makeApp()).post(
-      "/api/replay/ghost/analysis?deploymentId=dep-2&userId=u-someone-else",
-    );
+    const res = await supertest(makeApp())
+      .post("/api/replay/ghost/analysis")
+      .send({ auth: auth1, payload: { deploymentId: "dep-2" } });
 
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ error: expect.any(String) });

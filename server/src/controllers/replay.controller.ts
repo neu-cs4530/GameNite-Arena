@@ -13,7 +13,7 @@ import type {
   ReplayListPage,
   ReplayWatchCountResponse,
 } from "@gamenite/shared";
-import { enforceAuth } from "../services/auth.service.ts";
+import { checkAuth, enforceAuth } from "../services/auth.service.ts";
 import { analyzeReplay } from "../services/analysis.service.ts";
 import { DeploymentRepo } from "../repository.ts";
 import { getReplay, listReplays, recordWatch } from "../services/replay.service.ts";
@@ -120,27 +120,34 @@ export const postView: RestAPI<ReplayWatchCountResponse, { matchId: string }> = 
   res.send(updated);
 };
 
-const zAnalysisQuery = z.object({
-  deploymentId: z.string().optional(),
-  userId: z.string().optional(),
-});
+// Authed body for the analysis endpoint. The caller picks which of THEIR
+// deployed models runs the engine; their userId is resolved server-side from
+// credentials (the client never holds a raw userId), so ownership can't be
+// spoofed by passing someone else's id.
+const zAnalysisBody = withAuth(z.object({ deploymentId: z.string().optional() }));
 
 /** POST /api/replay/:matchId/analysis — runs the move-quality engine over a finished match. */
 export const postAnalysis: RestAPI<AnalysisResult, { matchId: string }> = async (req, res) => {
-  const query = zAnalysisQuery.safeParse(req.query);
-  if (!query.success) {
-    res.status(400).send({ error: "Invalid query parameters" });
+  const body = zAnalysisBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).send({ error: "Poorly-formed request" });
     return;
   }
-  const { deploymentId, userId } = query.data;
 
+  const user = await checkAuth(body.data.auth);
+  if (!user) {
+    res.status(403).send({ error: "Invalid credentials" });
+    return;
+  }
+
+  const { deploymentId } = body.data.payload;
   if (deploymentId) {
     const deployment = await DeploymentRepo.find(deploymentId);
     if (!deployment) {
       res.status(404).send({ error: "Deployment not found" });
       return;
     }
-    if (deployment.userId !== userId) {
+    if (deployment.userId !== user.userId) {
       res.status(403).send({ error: "User does not own this deployment" });
       return;
     }

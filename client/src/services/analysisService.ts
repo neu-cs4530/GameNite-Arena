@@ -24,6 +24,7 @@
  * mirroring the proposed server caching.
  */
 
+import type { UserAuth } from "@gamenite/shared";
 import type { AnalysisMoveResult, AnalysisResult } from "../util/types.ts";
 import { api } from "./api.ts";
 import { getReplay } from "./replayService.ts";
@@ -33,15 +34,41 @@ import { mockAnalysis } from "../__mocks__/replays.ts";
 /** Mock latency so the loading state on "Analyze" is visible. */
 const MOCK_LATENCY_MS = 600;
 
+/** Options for {@link analyzeReplay}. */
+export interface AnalyzeReplayOptions {
+  /**
+   * Credentials of the requesting user. The endpoint is authed like the rest
+   * of the API and resolves the caller's userId server-side, so without auth
+   * we skip the real call and go straight to the fallback engine (matching the
+   * annotation service's real-first-when-authed convention).
+   */
+  auth?: UserAuth;
+  /**
+   * Which of the user's deployed models should run the engine. Omitted → the
+   * server's built-in heuristic analysis. The server validates ownership.
+   */
+  deploymentId?: string;
+}
+
 /**
- * Runs analysis on the match's moves (real-first; see contract above).
+ * Runs analysis on the match's moves (real-first; see contract above). When a
+ * `deploymentId` is supplied the user's deployed model is used as the engine;
+ * otherwise the server's built-in heuristic produces the per-move flags.
  */
-export async function analyzeReplay(matchId: string): Promise<AnalysisResult> {
-  try {
-    const res = await api.post<AnalysisResult>(`/api/replay/${matchId}/analysis`);
-    return res.data;
-  } catch (err) {
-    if (!isFallbackEligible(err)) throw err;
+export async function analyzeReplay(
+  matchId: string,
+  opts: AnalyzeReplayOptions = {},
+): Promise<AnalysisResult> {
+  if (opts.auth) {
+    try {
+      const res = await api.post<AnalysisResult>(`/api/replay/${matchId}/analysis`, {
+        auth: opts.auth,
+        payload: { deploymentId: opts.deploymentId },
+      });
+      return res.data;
+    } catch (err) {
+      if (!isFallbackEligible(err)) throw err;
+    }
   }
   return mockAnalyzeReplay(matchId);
 }
