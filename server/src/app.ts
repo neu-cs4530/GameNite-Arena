@@ -19,6 +19,7 @@ import * as rating from "./controllers/rating.controller.ts";
 import * as replay from "./controllers/replay.controller.ts";
 import * as annotation from "./controllers/annotation.controller.ts";
 import * as broadcast from "./controllers/broadcast.controller.ts";
+import * as broadcastChat from "./controllers/broadcastChat.controller.ts";
 import * as training from "./controllers/training.controller.ts";
 import * as deployment from "./controllers/deployment.controller.ts";
 import { type GameServer } from "./types.ts";
@@ -112,7 +113,8 @@ app.use(
         .post("/create", broadcast.postCreate)
         .get("/list", broadcast.getList)
         .get("/:id", broadcast.getById)
-        .post("/:id/end", broadcast.postEnd),
+        .post("/:id/end", broadcast.postEnd)
+        .post("/:id/slowmode", broadcastChat.postSlowMode),
     )
     .use("/training", training.trainingRouter())
     .use("/deployment", deployment.deploymentRouter()),
@@ -146,6 +148,7 @@ io.on("connection", (socket) => {
 
   socket.on("broadcastWatch", broadcast.socketBroadcastWatch(socket, io));
   socket.on("broadcastLeave", broadcast.socketBroadcastLeave(socket, io));
+  socket.on("broadcastChatSend", broadcastChat.socketBroadcastChatSend(socket, io));
 
   socket.onAny((name, payload) => {
     // The training progress bridge's events carry a bare { jobId } payload by

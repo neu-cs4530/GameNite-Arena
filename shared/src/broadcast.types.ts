@@ -40,3 +40,26 @@ export interface BroadcastStateUpdatePayload {
 export interface BroadcastEndedPayload {
   broadcastId: string;
 }
+
+/** Request to post a message to a broadcast's chat. (Story 3.8) */
+export interface BroadcastChatSendPayload {
+  broadcastId: string;
+  text: string;
+}
+
+/**
+ * Sent only to the author when a broadcast chat message is blocked by the
+ * channel's moderation (rate limit or slow mode). (Story 3.8)
+ */
+export interface BroadcastChatRejectedPayload {
+  broadcastId: string;
+  reason: "rate-limit" | "slow-mode";
+  /** Milliseconds until the author may post again. */
+  retryAfterMs: number;
+}
+
+/** Broadcaster request to set a broadcast chat's slow-mode interval. (Story 3.8) */
+export interface SetSlowModePayload {
+  /** Seconds a user must wait between messages; 0 disables slow mode. */
+  seconds: number;
+}
