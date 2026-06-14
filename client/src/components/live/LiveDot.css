@@ -1,0 +1,36 @@
+.ga-livedot {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-micro);
+  color: var(--color-danger);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: var(--weight-semibold);
+}
+
+.ga-livedot__dot {
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-danger);
+  animation: ga-livedot-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes ga-livedot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.7);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ga-livedot__dot {
+    animation: none;
+  }
+}
