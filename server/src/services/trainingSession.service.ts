@@ -104,6 +104,8 @@ async function populateSessionInfo(jobId: string): Promise<TrainingSessionInfo> 
     error: job.error,
     hasArtifact: Boolean(model?.artifactRef),
     artifactMeta: model?.artifactMeta,
+    // CoS 2.10: expose the checkpoint job id so the local trainer can download it.
+    checkpointJobId: job.config.extra?.checkpointJobId as string | undefined,
     createdAt: job.createdAt,
     completedAt: job.completedAt,
   };
@@ -144,6 +146,46 @@ async function refreshForWrite(jobId: string): Promise<TrainingJobRecord | null>
 // Service functions
 
 /**
+ * Resolve a checkpoint model to the jobId of its most recent completed session.
+ * Returns { checkpointJobId: string } to merge into the job's extra config,
+ * or {} if no checkpoint was requested or none is available.
+ * CoS 2.10.
+ */
+async function resolveCheckpointJobId(
+  user: UserWithId,
+  checkpointModelId: string | undefined,
+): Promise<Record<string, string>> {
+  if (!checkpointModelId) return {};
+
+  const model = await ModelRepo.find(checkpointModelId);
+  if (!model) throw new Error(`Checkpoint model ${checkpointModelId} not found`);
+  if (model.userId !== user.userId) {
+    throw new Error(`User does not own checkpoint model ${checkpointModelId}`);
+  }
+  if (!model.artifactRef) {
+    throw new Error(`Checkpoint model ${checkpointModelId} has no trained artifact yet`);
+  }
+
+  const allKeys = await TrainingJobRepo.getAllKeys();
+  const jobsWithKeys: Array<{ k: string; j: TrainingJobRecord }> = [];
+  for (const k of allKeys) {
+    const j = await TrainingJobRepo.find(k);
+    if (j && j.modelId === checkpointModelId && j.status === "completed") {
+      jobsWithKeys.push({ k, j });
+    }
+  }
+
+  if (jobsWithKeys.length === 0) {
+    throw new Error(
+      `No completed training session found for checkpoint model ${checkpointModelId}`,
+    );
+  }
+
+  jobsWithKeys.sort((a, b) => Date.parse(b.j.createdAt) - Date.parse(a.j.createdAt));
+  return { checkpointJobId: jobsWithKeys[0].k };
+}
+
+/**
  * Register a new local training session. Creates the TrainingJobRecord in
  * "queued" state — the first progress report flips it to "running". When no
  * modelId is given a fresh private ModelRecord is created; its sourceRef is
@@ -175,6 +217,9 @@ export async function startTrainingSession(
     });
   }
 
+  // CoS 2.10: resolve checkpoint if requested
+  const checkpointExtra = await resolveCheckpointJobId(user, payload.checkpointModelId);
+
   const jobId = await TrainingJobRepo.add({
     modelId,
     userId: user.userId,
@@ -182,7 +227,7 @@ export async function startTrainingSession(
     config: {
       episodes: payload.config.episodes,
       learningRate: payload.config.learningRate,
-      extra: payload.config.extra,
+      extra: { ...payload.config.extra, ...checkpointExtra },
     },
     status: "queued",
     progress: { episodes: 0, meanReward: 0, winRate: 0, updatedAt: now },
