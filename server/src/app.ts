@@ -12,6 +12,7 @@ import * as matchmaker from "./controllers/matchmaker.controller.ts";
 import * as user from "./controllers/user.controller.ts";
 import * as model from "./controllers/model.controller.ts";
 import * as thread from "./controllers/thread.controller.ts";
+import * as profile from "./controllers/profile.controller.ts";
 import * as puzzle from "./controllers/puzzle.controller.ts";
 import * as rating from "./controllers/rating.controller.ts";
 import * as replay from "./controllers/replay.controller.ts";
@@ -69,12 +70,16 @@ app.use(
     )
     .use("/leaderboard", express.Router().get("/:gameKey", leaderboard.getByGame))
     .use("/matchmaker", express.Router().get("/queue", matchmaker.getQueueStatus))
+    .use("/profile", express.Router().get("/:username", profile.getProfileSummary))
     .use(
       "/puzzle",
       express
         .Router()
+        // NOTE: registered before "/:gameKey" or that param route shadows it.
+        .get("/leaderboard", puzzle.getLeaderboard)
         .get("/:gameKey", puzzle.getToday)
-        .post("/:gameKey/attempt", puzzle.postAttempt),
+        .post("/:gameKey/attempt", puzzle.postAttempt)
+        .post("/:gameKey/hint", puzzle.postHint),
     )
     .use("/rating", rating.ratingRouter())
     .use(

@@ -13,6 +13,7 @@ import type {
   MigrationLogRecord,
   ModelRecord,
   PuzzleAttemptRecord,
+  PuzzleHintRecord,
   PuzzleRecord,
   RatingRecord,
   ThreadRecord,
@@ -39,6 +40,7 @@ export const MatchRepo = createRepo<MatchRecord>("match");
 export const ModelRepo = createRepo<ModelRecord>("model");
 export const PuzzleRepo = createRepo<PuzzleRecord>("puzzle");
 export const PuzzleAttemptRepo = createRepo<PuzzleAttemptRecord>("puzzleAttempt");
+export const PuzzleHintRepo = createRepo<PuzzleHintRecord>("puzzleHint");
 export const RatingRepo = createRepo<RatingRecord>("rating");
 export const TrainingJobRepo = createRepo<TrainingJobRecord>("trainingJob");
 export const TrainingTokenRepo = createRepo<TrainingTokenRecord>("trainingToken");

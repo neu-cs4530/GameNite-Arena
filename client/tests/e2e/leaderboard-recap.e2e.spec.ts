@@ -34,13 +34,11 @@ test.afterEach(async () => {
 async function queueRankedNim(page: Page): Promise<void> {
   await page.goto("/games");
   await page.getByTestId("game-tile-nim").click();
-  await page
-    .getByTestId("mode-chooser")
-    .getByRole("radio", { name: /ranked/i })
-    .click();
-  // The rating preview loads before Play arms — wait on the portal's own ids.
-  await page.getByTestId("portal-rating").waitFor();
-  await page.getByTestId("play-button").click();
+  await page.waitForURL("/games/nim");
+  // The Ranked CTA carries the player's rating emblem once loaded.
+  await expect(page.getByTestId("play-ranked-rating")).toBeVisible();
+  await page.getByTestId("play-ranked").click();
+  await page.waitForURL("/games/queue/nim?rated=true");
 }
 
 /**

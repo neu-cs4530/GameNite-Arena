@@ -64,6 +64,13 @@ export interface GameServicer {
    * hook or the payload does not parse
    */
   parseMove: (movePayload: unknown) => unknown;
+
+  /**
+   * Evaluate whether a move keeps the mover on a winning line (puzzle
+   * pipeline). Returns null when the game has no `isWinningMove` hook —
+   * such games are not puzzle-eligible.
+   */
+  isWinningMove: (state: any, movePayload: unknown) => boolean | null;
 }
 
 export class GameService<State, View> implements GameServicer {
@@ -116,6 +123,10 @@ export class GameService<State, View> implements GameServicer {
 
   parseMove(move: unknown) {
     return this._logic.parseMove ? this._logic.parseMove(move) : null;
+  }
+
+  isWinningMove(state: any, move: unknown) {
+    return this._logic.isWinningMove ? this._logic.isWinningMove(state, move) : null;
   }
 
   view(state: any, playerIndex: number) {

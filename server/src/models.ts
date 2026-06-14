@@ -134,7 +134,8 @@ export interface ThreadRecord {
  * - `username`: Text username (a non-random key for looking up Auth records)
  * - `display`: A display name
  * - `createdAt`: when this user registered.
- * - `puzzleRating`: Glicko 2 puzzle rating, distinct from per-game match ratings (Story 1.8)
+ * - `puzzleRatings`: per-game Glicko 2 puzzle ratings, distinct from match ratings (Story 1.8).
+ *               Keyed by GameKey; a game appears once the user's first rated attempt lands.
  * - `puzzleStreak`: current and best historical daily puzzle solve streak (Story 1.8)
  * - `puzzleLastRatedAt`: per-game UTC date (YYYY-MM-DD) of the last RATED daily-puzzle
  *               attempt. Gates the rated-attempt economy: only the first unhinted
@@ -148,7 +149,7 @@ export interface UserRecord {
   username: string; // References Auth records
   display: string;
   createdAt: DateISO;
-  puzzleRating: GlickoRating; // Story 1.8
+  puzzleRatings: Partial<Record<GameKey, GlickoRating>>; // Story 1.8
   puzzleStreak: PuzzleStreak; // Story 1.8
   puzzleLastRatedAt?: Partial<Record<GameKey, DateISO>>; // Story 1.7/1.12 rated economy
   following: RecordId[]; // References User records (Story 3.9)
@@ -491,6 +492,10 @@ export interface PuzzleAttemptRecord {
   puzzleId: RecordId; // References Puzzle records
   attemptedBy: PuzzleAttempter;
   success: boolean;
+  /** Whether this attempt moved the user's puzzle rating. Optional because
+   * records written before the profile rework lack it — readers fall back
+   * to `eloDelta !== 0`. */
+  rated?: boolean;
   timeMs: number;
   hintsUsed: number;
   eloDelta: number;
@@ -500,6 +505,22 @@ export interface PuzzleAttemptRecord {
 export interface PuzzleAttempter {
   id: RecordId; // userId or modelId
   type: "human" | "ai";
+}
+
+/**
+ * A server-side record that a user was shown the hint for a puzzle. The
+ * rated economy keys off this (a hinted puzzle can never be a rated solve),
+ * so hint state cannot live client-side. Keyed by `puzzleHintKey()`.
+ */
+export interface PuzzleHintRecord {
+  userId: RecordId;
+  puzzleId: RecordId; // "<gameKey>:<YYYY-MM-DD>"
+  grantedAt: DateISO;
+}
+
+/** Deterministic key for a hint grant: one per user per puzzle. */
+export function puzzleHintKey(userId: RecordId, puzzleId: RecordId): string {
+  return `${userId}|${puzzleId}`;
 }
 
 /**

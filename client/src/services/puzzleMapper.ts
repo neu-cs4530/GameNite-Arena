@@ -1,36 +1,36 @@
-import type { GameKey, GuessView, NimView } from "@gamenite/shared";
+import type {
+  GameKey,
+  GuessView,
+  NimView,
+  PuzzleView,
+  PuzzleViewerAttempt,
+} from "@gamenite/shared";
 import { notateNimMove } from "../games/replay/nimReducer.ts";
 
 /**
- * The PuzzleRecord exactly as the server sends it. `position` and the
- * solution moves are per-game shapes the server types as unknown; this
- * mapper is the single place that narrows them for the UI.
+ * Narrowing layer between the wire `PuzzleView` (shared type; `position` is
+ * per-game and typed unknown) and the typed view-model the puzzle surfaces
+ * render from.
  *
- * ⚠️ The solution rides along with the GET — the puzzle page must NEVER
- * render `solutionMoves`/`explanation` before the user has attempted (the
- * one sanctioned pre-attempt peek is the single-move hint). That discipline
- * is client-side by design; see the puzzle card component.
+ * The GET deliberately carries NO solution — that leak is closed. The
+ * solution move and explanation only ever arrive on the attempt response
+ * (`PuzzleAttemptResult`), and the hint comes from the authed hint endpoint
+ * which forfeits the rated slot server-side.
  */
-export interface PuzzleRecordWire {
-  gameKey: GameKey;
-  date: string;
-  position: unknown;
-  solution: { moves: unknown[]; explanation?: string };
-  sourceMatchId?: string;
-  createdAt: string;
-}
 
 /** Per-game puzzle position, discriminated for the board dispatch. */
 export type PuzzlePosition = { kind: "nim"; view: NimView } | { kind: "guess"; view: GuessView };
 
-/** The narrowed view-model the puzzles page renders from. */
+/** The narrowed view-model the puzzle surfaces render from. */
 export interface DailyPuzzle {
   gameKey: GameKey;
+  /** YYYY-MM-DD — MUST be echoed on attempt and hint payloads. */
   date: string;
   position: PuzzlePosition;
-  solutionMoves: unknown[];
-  explanation?: string;
   sourceMatchId?: string;
+  /** The signed-in viewer's standing against this puzzle (from `?for=`),
+   * or null on an anonymous fetch / unknown user. */
+  viewerAttempt: PuzzleViewerAttempt | null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -66,26 +66,24 @@ const positionParsers: { [key in GameKey]: (position: unknown) => PuzzlePosition
 };
 
 /**
- * Narrows a wire PuzzleRecord into the typed view-model, or null when the
+ * Narrows a wire PuzzleView into the typed view-model, or null when the
  * payload doesn't match the game's expected position shape (e.g. a record
  * written by an older generator) — the page shows one well-defined error
  * instead of crashing inside a board component.
  *
- * @param record - The PuzzleRecord as received from GET /api/puzzle/:gameKey.
+ * @param view - The PuzzleView as received from GET /api/puzzle/:gameKey.
  * @returns The narrowed DailyPuzzle, or null when malformed.
  */
-export function mapPuzzleRecord(record: PuzzleRecordWire): DailyPuzzle | null {
-  const position = positionParsers[record.gameKey](record.position);
+export function mapPuzzleView(view: PuzzleView): DailyPuzzle | null {
+  const position = positionParsers[view.gameKey](view.position);
   if (position === null) return null;
-  if (record.solution.moves.length === 0) return null;
 
   return {
-    gameKey: record.gameKey,
-    date: record.date,
+    gameKey: view.gameKey,
+    date: view.date,
     position,
-    solutionMoves: record.solution.moves,
-    explanation: record.solution.explanation,
-    sourceMatchId: record.sourceMatchId,
+    sourceMatchId: view.sourceMatchId,
+    viewerAttempt: view.viewerAttempt ?? null,
   };
 }
 

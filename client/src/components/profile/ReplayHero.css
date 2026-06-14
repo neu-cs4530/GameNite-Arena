@@ -1,0 +1,65 @@
+.ga-replay-hero {
+  gap: var(--space-3);
+}
+
+.ga-replay-hero__eyebrow {
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-fg-subtle);
+  font-weight: var(--weight-semibold);
+}
+
+.ga-replay-hero__main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.ga-replay-hero__icon {
+  display: grid;
+  place-items: center;
+  width: var(--space-10);
+  height: var(--space-10);
+  flex: none;
+  border-radius: var(--radius-md);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: var(--text-h2);
+}
+
+.ga-replay-hero__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.ga-replay-hero__link {
+  font-size: var(--text-h3);
+  font-weight: var(--weight-bold);
+  color: var(--color-fg);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ga-replay-hero__link:hover {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.ga-replay-hero__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}
+
+.ga-replay-hero__watches {
+  font-variant-numeric: tabular-nums;
+}
