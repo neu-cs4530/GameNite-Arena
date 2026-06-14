@@ -82,12 +82,20 @@ export type TrainingSessionConfig = z.infer<typeof zTrainingSessionConfig>;
  * starts. With `modelId` the run continues an existing owned model;
  * without it a fresh private model is created (named `modelDisplayName`,
  * or a per-game default).
+ *
+ * `checkpointModelId` — optional. When provided the session service resolves
+ * that model's stored artifact and includes its download URL in the session
+ * config `extra.checkpointJobId`. The local trainer calls
+ * GET /api/training/:checkpointJobId/artifact to fetch it before training.
+ * CoS 2.10: resume training from a saved checkpoint.
  */
 export const zStartTrainingSession = z.object({
   gameKey: zTrainerGameKey,
   modelId: z.string().max(128).optional(),
   modelDisplayName: z.string().max(120).optional(),
   config: zTrainingSessionConfig,
+  /** Model whose stored .pth should be used as a starting checkpoint. */
+  checkpointModelId: z.string().max(128).optional(),
 });
 export type StartTrainingSessionPayload = z.infer<typeof zStartTrainingSession>;
 
@@ -140,6 +148,12 @@ export interface TrainingSessionInfo {
   hasArtifact: boolean;
   /** Integrity metadata recorded when the artifact was stored. */
   artifactMeta?: { bytes: number; sha256: string; uploadedAt: string };
+  /**
+   * When the session was started with checkpointModelId, this is the jobId
+   * whose artifact the local trainer should download before training.
+   * CoS 2.10.
+   */
+  checkpointJobId?: string;
   createdAt: string;
   completedAt?: string;
 }

@@ -30,6 +30,16 @@ export const nimLogic: GameLogic<NimState, NimView> = {
     const move = zNimMove.safeParse(payload);
     return move.success ? move.data : null;
   },
+  // Misère nim theory: positions with remaining ≡ 1 (mod 4) are LOST for the
+  // player to move (they will be forced to take the last object). A winning
+  // move is therefore exactly one that leaves the opponent on such a
+  // position. From a lost position this returns false for every legal move,
+  // which keeps unsound positions out of the daily-puzzle pool.
+  isWinningMove: ({ remaining }, payload) => {
+    const move = zNimMove.safeParse(payload);
+    if (move.error || move.data > remaining) return false;
+    return (remaining - move.data) % 4 === 1;
+  },
 };
 
 export const nimGameService = new GameService<NimState, NimView>(nimLogic);

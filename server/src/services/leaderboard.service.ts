@@ -1,10 +1,29 @@
 import type { GameKey } from "@gamenite/shared";
 import { isProvisional } from "./glicko2.service.ts";
-import { ModelRepo, RatingRepo, UserRepo } from "../repository.ts";
+import { ratingKey } from "../models.ts";
+import { MatchRepo, ModelRepo, RatingRepo, UserRepo } from "../repository.ts";
 import { createRedisConnection } from "./redis.ts";
 
 // 5 minutes — fresh enough for a leaderboard, stale enough to not hammer the DB
 const LEADERBOARD_CACHE_SECONDS = 300;
+
+// Empty in production. Spec workers each set a process-unique namespace so
+// parallel vitest workers — which share ONE real Redis but have per-worker
+// in-memory repos — can't clobber each other's cached leaderboards.
+let cacheNamespace = "";
+
+/**
+ * Namespaces all leaderboard cache keys. Test hook — never call in
+ * production code (tests/setup.ts sets a per-process namespace).
+ */
+export function setLeaderboardCacheNamespaceForTests(namespace: string): void {
+  cacheNamespace = namespace;
+}
+
+/** The Redis key caching one game's sorted board for one entity filter. */
+export function leaderboardCacheKey(gameKey: GameKey, entityType: "human" | "ai" | "all"): string {
+  return `${cacheNamespace}leaderboard:${gameKey}:${entityType}`;
+}
 
 // spec calls for top 100 per game
 const MAX_LEADERBOARD_ENTRIES = 100;
@@ -14,35 +33,70 @@ export interface LeaderboardEntry {
   entityId: string;
   entityType: "human" | "ai";
   displayName: string;
+  /** Present for humans only — lets clients link to /profile/:username. */
+  username?: string;
   rating: number;
   rd: number;
   gamesPlayed: number;
   provisional: boolean;
+  /** Rated wins in this game, counted from the match archive. */
+  wins: number;
+  /** wins / gamesPlayed as a 0..1 fraction; 0 when no games played. */
+  winRate: number;
+  /** Daily period only: sum of today's rating changes. */
+  ratingDelta?: number;
+  /** Daily period only: rated games completed today. */
+  gamesPlayedToday?: number;
 }
 
 export interface LeaderboardPage {
   gameKey: GameKey;
   entityType: "human" | "ai" | "all";
+  period: "alltime" | "daily";
   page: number;
   limit: number;
   total: number;
   entries: LeaderboardEntry[];
 }
 
-// looks up the display name for one entry; falls back to the raw id if the record is gone
-async function resolveDisplayName(entityId: string, entityType: "human" | "ai"): Promise<string> {
+// looks up the display name (and, for humans, the profile-linkable username)
+// for one entry; falls back to the raw id if the record is gone
+async function resolveIdentity(
+  entityId: string,
+  entityType: "human" | "ai",
+): Promise<{ displayName: string; username?: string }> {
   try {
     if (entityType === "human") {
       const user = await UserRepo.get(entityId);
-      return user.display;
+      return { displayName: user.display, username: user.username };
     } else {
       const model = await ModelRepo.get(entityId);
-      return model.displayName;
+      return { displayName: model.displayName };
     }
   } catch {
     // entity deleted after its rating was written
-    return entityId;
+    return { displayName: entityId };
   }
+}
+
+/**
+ * Counts rated wins per entity for one game by scanning the match archive.
+ * A scan per cache fill is fine: this only runs when the (5-minute) cached
+ * leaderboard is rebuilt, never per request.
+ */
+async function countRatedWins(gameKey: GameKey): Promise<Map<string, number>> {
+  const wins = new Map<string, number>();
+  const keys = await MatchRepo.getAllKeys();
+  if (keys.length === 0) return wins;
+
+  const matches = await MatchRepo.getMany(keys);
+  for (const match of matches) {
+    if (match.gameKey !== gameKey || !match.rated) continue;
+    const { winnerId, outcome } = match.result;
+    if (outcome !== "win" || !winnerId) continue;
+    wins.set(winnerId, (wins.get(winnerId) ?? 0) + 1);
+  }
+  return wins;
 }
 
 // builds the sorted list once and stores it in Redis; subsequent calls within the
@@ -50,13 +104,18 @@ async function resolveDisplayName(entityId: string, entityType: "human" | "ai"):
 async function fetchSortedEntries(
   gameKey: GameKey,
   entityType: "human" | "ai" | "all",
+  fresh: boolean,
 ): Promise<LeaderboardEntry[]> {
   const redis = createRedisConnection();
-  const cacheKey = `leaderboard:${gameKey}:${entityType}`;
+  const cacheKey = leaderboardCacheKey(gameKey, entityType);
 
   try {
-    const cached = await redis.get(cacheKey);
-    if (cached) return JSON.parse(cached) as LeaderboardEntry[];
+    // fresh=true skips the cache READ (post-match recaps need post-update
+    // ratings immediately) but still writes below, re-warming the cache.
+    if (!fresh) {
+      const cached = await redis.get(cacheKey);
+      if (cached) return JSON.parse(cached) as LeaderboardEntry[];
+    }
 
     // RatingRecord keys are stored as  <entityType>:<entityId>:<gameKey>
     const allKeys = await RatingRepo.getAllKeys();
@@ -74,22 +133,30 @@ async function fetchSortedEntries(
     }
 
     const records = await RatingRepo.getMany(matchingKeys);
+    const winsByEntity = await countRatedWins(gameKey);
 
     const entries: LeaderboardEntry[] = await Promise.all(
-      records.map(async (record, index) => ({
-        rank: index + 1, // will be overwritten after sorting
-        entityId: record.entityId,
-        entityType: record.entityType,
-        displayName: await resolveDisplayName(record.entityId, record.entityType),
-        rating: record.rating,
-        rd: record.rd,
-        gamesPlayed: record.gamesPlayed,
-        provisional: isProvisional({
+      records.map(async (record, index) => {
+        const identity = await resolveIdentity(record.entityId, record.entityType);
+        const wins = winsByEntity.get(record.entityId) ?? 0;
+        return {
+          rank: index + 1, // will be overwritten after sorting
+          entityId: record.entityId,
+          entityType: record.entityType,
+          displayName: identity.displayName,
+          username: identity.username,
           rating: record.rating,
           rd: record.rd,
-          volatility: record.vol,
-        }),
-      })),
+          gamesPlayed: record.gamesPlayed,
+          provisional: isProvisional({
+            rating: record.rating,
+            rd: record.rd,
+            volatility: record.vol,
+          }),
+          wins,
+          winRate: record.gamesPlayed > 0 ? wins / record.gamesPlayed : 0,
+        };
+      }),
     );
 
     entries.sort((a, b) => b.rating - a.rating);
@@ -105,26 +172,116 @@ async function fetchSortedEntries(
   }
 }
 
+// "today" = since UTC midnight; not cached, unlike the all-time board.
+async function fetchDailyEntries(
+  gameKey: GameKey,
+  entityType: "human" | "ai" | "all",
+  now: Date,
+): Promise<LeaderboardEntry[]> {
+  const startOfDay = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  ).toISOString();
+
+  const keys = await MatchRepo.getAllKeys();
+  const matches = keys.length > 0 ? await MatchRepo.getMany(keys) : [];
+
+  // accumulate today's rating change, games played, and wins per entity
+  const byEntity = new Map<
+    string,
+    { entityType: "human" | "ai"; ratingDelta: number; gamesPlayedToday: number; wins: number }
+  >();
+
+  for (const match of matches) {
+    if (match.gameKey !== gameKey || !match.rated || match.completedAt < startOfDay) continue;
+
+    for (const change of match.result.ratingChanges ?? []) {
+      const participant = match.participants.find((p) => p.id === change.entityId);
+      if (!participant) continue;
+      if (entityType !== "all" && participant.type !== entityType) continue;
+
+      const acc = byEntity.get(change.entityId) ?? {
+        entityType: participant.type,
+        ratingDelta: 0,
+        gamesPlayedToday: 0,
+        wins: 0,
+      };
+      acc.ratingDelta += change.delta;
+      acc.gamesPlayedToday += 1;
+      if (match.result.outcome === "win" && match.result.winnerId === change.entityId) {
+        acc.wins += 1;
+      }
+      byEntity.set(change.entityId, acc);
+    }
+  }
+
+  const entries: LeaderboardEntry[] = [];
+  for (const [entityId, acc] of byEntity) {
+    const rating = await RatingRepo.find(
+      ratingKey({ entityType: acc.entityType, entityId, gameKey }),
+    );
+    const identity = await resolveIdentity(entityId, acc.entityType);
+    const currentRating = rating?.rating ?? 1500;
+    const currentRd = rating?.rd ?? 350;
+
+    entries.push({
+      rank: 0, // will be overwritten after sorting
+      entityId,
+      entityType: acc.entityType,
+      displayName: identity.displayName,
+      username: identity.username,
+      rating: currentRating,
+      rd: currentRd,
+      gamesPlayed: rating?.gamesPlayed ?? acc.gamesPlayedToday,
+      provisional: isProvisional({
+        rating: currentRating,
+        rd: currentRd,
+        volatility: rating?.vol ?? 0.06,
+      }),
+      wins: acc.wins,
+      winRate: acc.gamesPlayedToday > 0 ? acc.wins / acc.gamesPlayedToday : 0,
+      ratingDelta: acc.ratingDelta,
+      gamesPlayedToday: acc.gamesPlayedToday,
+    });
+  }
+
+  entries.sort((a, b) => (b.ratingDelta ?? 0) - (a.ratingDelta ?? 0));
+  entries.forEach((entry, index) => {
+    entry.rank = index + 1;
+  });
+  return entries;
+}
+
 /**
  * Returns a paginated leaderboard for one game.
  *
  * @param args.gameKey - Which game to query.
  * @param args.entityType - "human", "ai", or "all" (default "all").
+ * @param args.period - "alltime" (default) or "daily" (rating gained since UTC midnight).
  * @param args.page - 1-indexed page number (default 1).
  * @param args.limit - Entries per page, max 100 (default 50).
+ * @param args.fresh - When true, bypass the cache read and rebuild from the
+ * repos (the rebuild still re-warms the cache). Default false.
+ * @param args.now - Overrides "now" for the daily cutoff (for tests).
  * @returns A LeaderboardPage with ranked entries and pagination metadata.
  */
 export async function getLeaderboard(args: {
   gameKey: GameKey;
   entityType?: "human" | "ai" | "all";
+  period?: "alltime" | "daily";
   page?: number;
   limit?: number;
+  fresh?: boolean;
+  now?: Date;
 }): Promise<LeaderboardPage> {
   const entityType = args.entityType ?? "all";
+  const period = args.period ?? "alltime";
   const page = Math.max(1, args.page ?? 1);
   const limit = Math.min(100, Math.max(1, args.limit ?? 50));
 
-  const sortedEntries = await fetchSortedEntries(args.gameKey, entityType);
+  const sortedEntries =
+    period === "daily"
+      ? await fetchDailyEntries(args.gameKey, entityType, args.now ?? new Date())
+      : await fetchSortedEntries(args.gameKey, entityType, args.fresh ?? false);
   const startIndex = (page - 1) * limit;
 
   return {
@@ -134,6 +291,7 @@ export async function getLeaderboard(args: {
     limit,
     total: sortedEntries.length,
     entries: sortedEntries.slice(startIndex, startIndex + limit),
+    period,
   };
 }
 
@@ -147,9 +305,9 @@ export async function invalidateLeaderboardCache(gameKey: GameKey): Promise<void
   const redis = createRedisConnection();
   try {
     await redis.del(
-      `leaderboard:${gameKey}:all`,
-      `leaderboard:${gameKey}:human`,
-      `leaderboard:${gameKey}:ai`,
+      leaderboardCacheKey(gameKey, "all"),
+      leaderboardCacheKey(gameKey, "human"),
+      leaderboardCacheKey(gameKey, "ai"),
     );
   } finally {
     await redis.quit();

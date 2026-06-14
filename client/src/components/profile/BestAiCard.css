@@ -1,0 +1,55 @@
+.ga-best-ai {
+  gap: var(--space-3);
+}
+
+.ga-best-ai__title {
+  margin: 0;
+  font-size: var(--text-h3);
+  font-weight: var(--weight-semibold);
+}
+
+.ga-best-ai__name-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.ga-best-ai__name {
+  font-size: var(--text-h3);
+  font-weight: var(--weight-bold);
+  color: var(--color-fg);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ga-best-ai__name:hover {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.ga-best-ai__stats {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.ga-best-ai__record {
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ga-best-ai__wins {
+  color: var(--color-success);
+  font-weight: var(--weight-semibold);
+}
+
+.ga-best-ai__losses {
+  color: var(--color-danger);
+  font-weight: var(--weight-semibold);
+}

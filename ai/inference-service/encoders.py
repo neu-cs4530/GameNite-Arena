@@ -9,13 +9,16 @@ output into a move. Those encode/decode functions live HERE, server-side and
 trusted, instead of being pulled from the user's file.
 
 INVARIANT: these encoders must produce EXACTLY the same observation layout that
-`base_adapter.py` used during training. If you change an encoding in the adapter,
-change it here too, and bump ADAPTER_VERSION in both places. The obs sizes below
-mirror the Sprint 0 contract:
+`base_adapter.py` (and the example adapters) used during training. If you change
+an encoding in the adapter, change it here too, and bump ADAPTER_VERSION in both
+places. OBS_SIZES maps each game to its ALLOWED sizes — a game grows a new entry
+when its observation contract evolves, and the artifact's recorded
+metadata.obs_size picks the layout at serve time:
     tictactoe   = 9
     connect4    = 42   (6 x 7, flattened)
     checkers    = 160  (32 dark squares x 5 one-hot: empty/R/B/RK/BK)
-    nim         = 1
+    nim         = 5    v2 contract: [pile/21, onehot4(pile % 4)]
+                  1    legacy artifacts: [pile/21] — normalized, NEVER raw
     numguesser  = 2
 
 Action spaces:
@@ -28,13 +31,20 @@ Action spaces:
 
 import numpy as np
 
+# Allowed observation sizes per game (tuple). The LAST entry is the current
+# training contract; earlier entries are legacy layouts still servable for
+# already-uploaded artifacts.
 OBS_SIZES = {
-    "tictactoe": 9,
-    "connect4": 42,
-    "checkers": 160,
-    "nim": 1,
-    "numguesser": 2,
+    "tictactoe": (9,),
+    "connect4": (42,),
+    "checkers": (160,),
+    "nim": (1, 5),
+    "numguesser": (2,),
 }
+
+# The arena's nim game always starts at 21 — the constant every nim model
+# normalized by during training (NimEnv starting_pile).
+NIM_STARTING_PILE = 21
 
 # Fixed-size action spaces. "checkers" is intentionally absent: it is dynamic.
 ACTION_SPACES = {
@@ -50,6 +60,36 @@ CHECKERS_PIECES = {"empty": 0, "R": 1, "B": 2, "RK": 3, "BK": 4}
 
 class EncodingError(ValueError):
     """Raised when a state payload does not match the expected shape."""
+
+
+def legal_action_mask(game: str, state: "dict | None", n: int) -> "list[bool]":
+    """
+    A boolean mask (length n) of which discrete actions are legal in `state`.
+
+    Fixed-action games (connect4/tictactoe/nim) have action spaces that are
+    NOT always fully legal — a full connect4 column or an occupied tictactoe
+    cell is a well-formed-but-illegal move the model can still pick. Masking
+    the policy to legal actions before argmax stops the model from repeatedly
+    choosing an illegal move and freezing the game. Games we can't constrain
+    from state alone return an all-true mask (no masking).
+    """
+    mask = [True] * n
+    if not isinstance(state, dict):
+        return mask
+    if game == "connect4":
+        board = state.get("board")
+        if isinstance(board, list) and board and isinstance(board[0], list):
+            top = board[0]  # a column is legal iff its top cell is empty (0)
+            return [bool(c < len(top) and top[c] == 0) for c in range(n)]
+    elif game == "tictactoe":
+        board = state.get("board")
+        if isinstance(board, list) and len(board) >= n:
+            return [board[i] == 0 for i in range(n)]
+    elif game == "nim":
+        remaining = state.get("remaining")
+        if isinstance(remaining, int):
+            return [(k + 1) <= remaining for k in range(n)]  # action k -> take k+1
+    return mask
 
 
 # tic-tac-toe
@@ -75,12 +115,26 @@ def encode_connect4(state: dict) -> np.ndarray:
 
 # nim
 
-def encode_nim(state: dict) -> np.ndarray:
-    """state = {"remaining": int}. Single scalar observation."""
+def encode_nim(state: dict, obs_size: int = 5) -> np.ndarray:
+    """
+    state = {"remaining": int} (the Node side sends the raw pile count;
+    normalization is THIS encoder's job — training always normalized).
+
+    obs_size 5 (v2, default): [remaining/21, onehot4(remaining % 4)]
+    obs_size 1 (legacy)     : [remaining/21]
+    """
     remaining = state.get("remaining")
     if not isinstance(remaining, int):
         raise EncodingError("nim state must include integer 'remaining'")
-    return np.asarray([remaining], dtype=np.float32)
+    normalized = remaining / NIM_STARTING_PILE
+    if obs_size == 1:
+        return np.asarray([normalized], dtype=np.float32)
+    if obs_size == 5:
+        obs = np.zeros(5, dtype=np.float32)
+        obs[0] = normalized
+        obs[1 + remaining % 4] = 1.0
+        return obs
+    raise EncodingError(f"nim has no obs_size={obs_size} layout (allowed: 1, 5)")
 
 
 # number guesser
@@ -125,21 +179,35 @@ _ENCODERS = {
 }
 
 
-def encode_state(game: str, state: dict) -> np.ndarray:
-    """Dispatch to the right encoder and verify the resulting size."""
+def encode_state(game: str, state: dict, obs_size: int | None = None) -> np.ndarray:
+    """
+    Dispatch to the right encoder and verify the resulting size.
+
+    obs_size is the LOADED artifact's metadata.obs_size; it selects the
+    layout for games with more than one (nim). None means the game's
+    current training contract (the last allowed size).
+    """
     enc = _ENCODERS.get(game)
     if enc is None:
         raise EncodingError(f"Unknown game: {game}")
-    obs = enc(state)
-    expected = OBS_SIZES[game]
-    if obs.shape[0] != expected:
+    allowed = OBS_SIZES[game]
+    if obs_size is None:
+        obs_size = allowed[-1]
+    if obs_size not in allowed:
         raise EncodingError(
-            f"{game} encoder produced {obs.shape[0]} features, expected {expected}"
+            f"{game} has no obs_size={obs_size} layout (allowed: {allowed})"
+        )
+    obs = enc(state, obs_size) if game == "nim" else enc(state)
+    if obs.shape[0] != obs_size:
+        raise EncodingError(
+            f"{game} encoder produced {obs.shape[0]} features, expected {obs_size}"
         )
     return obs
 
 
-def decode_action(game: str, raw_action: int, legal_moves: list | None) -> object:
+def decode_action(
+    game: str, raw_action: int, legal_moves: list | None, state: dict | None = None
+) -> object:
     """
     Turn the model's integer output into a concrete move.
 
@@ -147,6 +215,9 @@ def decode_action(game: str, raw_action: int, legal_moves: list | None) -> objec
     For checkers (dynamic), raw_action indexes into legal_moves supplied by the
     caller; we clamp to the legal range so an out-of-range head still returns a
     legal move (the rule engine remains the final authority — see CoS 2.8).
+    For nim, when the request carries the position we clamp the take to what
+    is actually on the pile — at remaining=1 the only legal move is take 1,
+    whatever the policy head prefers.
     """
     if game == "checkers":
         if not legal_moves:
@@ -156,7 +227,11 @@ def decode_action(game: str, raw_action: int, legal_moves: list | None) -> objec
     if game == "tictactoe" or game == "connect4":
         return int(raw_action)          # cell / column index
     if game == "nim":
-        return int(raw_action) + 1       # action 0/1/2 -> take 1/2/3
+        take = int(raw_action) + 1
+        remaining = state.get("remaining") if isinstance(state, dict) else None
+        if isinstance(remaining, int) and remaining >= 1:
+            take = min(take, min(3, remaining))
+        return take
     if game == "numguesser":
         return int(raw_action) + 1       # action 0..99 -> guess 1..100
     raise EncodingError(f"Unknown game: {game}")

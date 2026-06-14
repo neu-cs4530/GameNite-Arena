@@ -1,5 +1,15 @@
 import { invalidateLeaderboardCache } from "./leaderboard.service.ts";
-import { type GameKey, type GuessState, type NimState } from "@gamenite/shared";
+import {
+  type GameKey,
+  type GuessState,
+  type NimState,
+  type TicTacToeState,
+  type Connect4State,
+  type CheckersState,
+} from "@gamenite/shared";
+import { ticTacToeLogic } from "../games/tictactoe.ts";
+import { connect4Logic } from "../games/connect4.ts";
+import { checkersLogic } from "../games/checkers.ts";
 import { ratingKey, type GameRecord, type MatchResult } from "../models.ts";
 import { MatchRepo, RatingRepo } from "../repository.ts";
 import {
@@ -17,6 +27,16 @@ export interface RatingSummary {
   rd: number;
   gamesPlayed: number;
   provisional: boolean;
+}
+
+/**
+ * The entity a rating belongs to: a human (keyed by user id) or a trained
+ * model (keyed by MODEL id, not deployment id — the model is the thing with
+ * skill; deployments are runtime slots).
+ */
+export interface RatingEntity {
+  type: "human" | "ai";
+  id: string;
 }
 
 /**
@@ -38,6 +58,25 @@ export async function getRatingSummary(entityId: string, gameKey: GameKey): Prom
 }
 
 /**
+ * Looks up an entity's current rating for a game, or a fresh default rating
+ * (1500/350/0.06) if it hasn't played a rated game yet.
+ *
+ * @param entity - The rated entity (human user or AI model).
+ * @param gameKey - Which game's rating to look up.
+ * @returns The entity's current Glicko-2 rating.
+ */
+export async function getRatingForEntity(
+  entity: RatingEntity,
+  gameKey: GameKey,
+): Promise<Glicko2Rating> {
+  const record = await RatingRepo.find(
+    ratingKey({ entityType: entity.type, entityId: entity.id, gameKey }),
+  );
+  if (!record) return newRating();
+  return { rating: record.rating, rd: record.rd, volatility: record.vol };
+}
+
+/**
  * Looks up a player's current rating for a game, or a fresh default rating
  * (1500/350/0.06) if they haven't played a rated game yet.
  *
@@ -45,30 +84,28 @@ export async function getRatingSummary(entityId: string, gameKey: GameKey): Prom
  * @param gameKey - Which game's rating to look up.
  * @returns The player's current Glicko-2 rating.
  */
-export async function getRating(entityId: string, gameKey: GameKey): Promise<Glicko2Rating> {
-  const record = await RatingRepo.find(ratingKey({ entityType: "human", entityId, gameKey }));
-  if (!record) return newRating();
-  return { rating: record.rating, rd: record.rd, volatility: record.vol };
+export function getRating(entityId: string, gameKey: GameKey): Promise<Glicko2Rating> {
+  return getRatingForEntity({ type: "human", id: entityId }, gameKey);
 }
 
 /**
- * Saves a player's updated rating and bumps their games-played count.
+ * Saves an entity's updated rating and bumps its games-played count.
  *
- * @param entityId - The player's user id.
+ * @param entity - The rated entity (human user or AI model).
  * @param gameKey - Which game this rating is for.
  * @param rating - The new rating to store.
  */
-async function saveRating(
-  entityId: string,
+async function saveRatingForEntity(
+  entity: RatingEntity,
   gameKey: GameKey,
   rating: Glicko2Rating,
 ): Promise<void> {
-  const key = ratingKey({ entityType: "human", entityId, gameKey });
+  const key = ratingKey({ entityType: entity.type, entityId: entity.id, gameKey });
   const existing = await RatingRepo.find(key);
 
   await RatingRepo.set(key, {
-    entityId,
-    entityType: "human",
+    entityId: entity.id,
+    entityType: entity.type,
     gameKey,
     rating: rating.rating,
     rd: rating.rd,
@@ -93,6 +130,23 @@ function getWinnerId(gameKey: GameKey, state: unknown, players: string[]): strin
     return players[nextPlayer];
   }
 
+  // Board games delegate to their own winnerIndex hook — the single source
+  // of truth for who won — rather than re-deriving the rule here (the trap
+  // this used to fall into: scoring every non-nim game with the guess
+  // algorithm).
+  if (gameKey === "tictactoe") {
+    const idx = ticTacToeLogic.winnerIndex?.(state as TicTacToeState);
+    return idx === null || idx === undefined ? undefined : players[idx];
+  }
+  if (gameKey === "connect4") {
+    const idx = connect4Logic.winnerIndex?.(state as Connect4State);
+    return idx === null || idx === undefined ? undefined : players[idx];
+  }
+  if (gameKey === "checkers") {
+    const idx = checkersLogic.winnerIndex?.(state as CheckersState);
+    return idx === null || idx === undefined ? undefined : players[idx];
+  }
+
   // guess: closest to the secret wins; an exact tie is a draw
   const { secret, guesses } = state as GuessState;
   const diffs = guesses.map((guess) => Math.abs((guess ?? 0) - secret));
@@ -103,27 +157,51 @@ function getWinnerId(gameKey: GameKey, state: unknown, players: string[]): strin
 }
 
 /**
+ * The seat's rated identity: the model behind an AI seat, otherwise the
+ * human user occupying it. AI ratings are keyed by MODEL id so a model's
+ * skill follows it across deployments.
+ */
+function entityForSeat(game: GameRecord, seatIndex: number): RatingEntity {
+  const aiParticipant = game.aiPlayers?.[seatIndex];
+  if (aiParticipant) return { type: "ai", id: aiParticipant.modelId };
+  return { type: "human", id: game.players[seatIndex] };
+}
+
+/**
  * Updates both players' Glicko-2 ratings after a rated game finishes, and
  * records the result on the game's MatchRecord. Only 1v1 games are rated, so
  * this does nothing unless `game.players` has exactly two entries.
  *
+ * Each seat is rated as its underlying entity: AI seats write under
+ * `ai:<modelId>` (which is what populates the AI leaderboard), human seats
+ * under `human:<userId>`. The returned winnerId is always the SEAT id from
+ * `game.players` (a deployment id for AI seats); ratingChanges carry the
+ * entity ids.
+ *
  * @param game - The finished GameRecord (state and done already updated).
  * @param gameId - The id `game` is stored under (also the MatchRecord's id).
+ * @param forced - When the game was decided off the board (an AI forfeit,
+ * CoS 2.8), the winner and outcome to apply instead of reading the final
+ * state for a winner.
  * @returns the match result (winner, outcome, rating changes), or undefined
  * if the game wasn't a ratable 1v1.
  */
 export async function updateRatingsForGame(
   game: GameRecord,
   gameId: string,
+  forced?: { winnerId: string; outcome: "forfeit" },
 ): Promise<MatchResult | undefined> {
   if (game.players.length !== 2) return undefined;
 
-  const [playerA, playerB] = game.players;
-  const winnerId = getWinnerId(game.type, game.state, game.players);
+  const [playerA] = game.players;
+  const winnerId = forced ? forced.winnerId : getWinnerId(game.type, game.state, game.players);
   const scoreA = winnerId === undefined ? 0.5 : winnerId === playerA ? 1 : 0;
 
-  const ratingA = await getRating(playerA, game.type);
-  const ratingB = await getRating(playerB, game.type);
+  const entityA = entityForSeat(game, 0);
+  const entityB = entityForSeat(game, 1);
+
+  const ratingA = await getRatingForEntity(entityA, game.type);
+  const ratingB = await getRatingForEntity(entityB, game.type);
 
   const newRatingA = updateRating(ratingA, [
     { opponentRating: ratingB.rating, opponentRd: ratingB.rd, score: scoreA },
@@ -132,8 +210,8 @@ export async function updateRatingsForGame(
     { opponentRating: ratingA.rating, opponentRd: ratingA.rd, score: 1 - scoreA },
   ]);
 
-  await saveRating(playerA, game.type, newRatingA);
-  await saveRating(playerB, game.type, newRatingB);
+  await saveRatingForEntity(entityA, game.type, newRatingA);
+  await saveRatingForEntity(entityB, game.type, newRatingB);
 
   // The cached leaderboard now disagrees with the stored ratings — drop it
   // so the next board read (e.g. the recap's) rebuilds from fresh data.
@@ -141,10 +219,10 @@ export async function updateRatingsForGame(
 
   const matchResult: MatchResult = {
     winnerId,
-    outcome: winnerId === undefined ? "draw" : "win",
+    outcome: forced ? forced.outcome : winnerId === undefined ? "draw" : "win",
     ratingChanges: [
-      { entityId: playerA, delta: newRatingA.rating - ratingA.rating },
-      { entityId: playerB, delta: newRatingB.rating - ratingB.rating },
+      { entityId: entityA.id, delta: newRatingA.rating - ratingA.rating },
+      { entityId: entityB.id, delta: newRatingB.rating - ratingB.rating },
     ],
   };
 

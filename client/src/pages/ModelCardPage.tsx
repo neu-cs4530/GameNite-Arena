@@ -1,75 +1,67 @@
 import "./ModelCardPage.css";
-import { useEffect, useMemo, useState, type JSX } from "react";
+import { useCallback, useState, type JSX } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Avatar from "../components/ui/Avatar.tsx";
 import Badge from "../components/ui/Badge.tsx";
 import Button from "../components/ui/Button.tsx";
-import Card from "../components/ui/Card.tsx";
 import ErrorState from "../components/ui/ErrorState.tsx";
 import Section from "../components/ui/Section.tsx";
 import Skeleton from "../components/ui/Skeleton.tsx";
+import StatTile from "../components/ui/StatTile.tsx";
 import TimeAgo from "../components/ui/TimeAgo.tsx";
-import MatchCard from "../components/replay/MatchCard.tsx";
-import TierBadge from "../components/replay/TierBadge.tsx";
-import {
-  DeploymentCard,
-  ForkButton,
-  ModelLineageTree,
-  TrainingJobCard,
-} from "../components/trainer/index.ts";
+import { ForkButton, SlotCapacityIndicator, TrainingJobCard } from "../components/trainer/index.ts";
 import { trainerGameNames } from "../components/trainer/trainerConsts.ts";
+import useAsync from "../hooks/useAsync.ts";
+import useAuth from "../hooks/useAuth.ts";
 import useLoginContext from "../hooks/useLoginContext.ts";
 import useModel from "../hooks/useModel.ts";
-import useModelCard from "../hooks/useModelCard.ts";
-import { getModelLineage } from "../services/modelService.ts";
+import { createDeployment } from "../services/deploymentService.ts";
+import { listSessionsFor } from "../services/trainingService.ts";
 import {
-  countActiveDeploymentsForGame,
-  findMockDeployment,
-  findMockJob,
-  MOCK_DEPLOYMENTS,
-  MOCK_JOBS,
-} from "../__mocks__/training.ts";
-import { MOCK_REPLAYS } from "../__mocks__/replays.ts";
-import type { DeploymentDetail, ModelSummary, TrainingJobDetail } from "../util/types.ts";
+  countActiveForGame,
+  DEPLOYMENT_CAP_PER_GAME,
+  listDeploymentViews,
+} from "../services/trainerViewService.ts";
 
+/**
+ * The public card for one model — every number on it is real: the model
+ * record itself, the training sessions that produced it, and its live
+ * deployment slots (with their actual arena ratings when rated games have
+ * been played). What the platform does not track yet simply is not shown.
+ */
 export default function ModelCardPage(): JSX.Element {
   const { modelId } = useParams();
   const navigate = useNavigate();
   const { user } = useLoginContext();
+  const auth = useAuth();
   const { model, loading, error, refetch } = useModel(modelId);
-  const { stats } = useModelCard(modelId);
-  const [lineage, setLineage] = useState<{
-    ancestors: ModelSummary[];
-    descendants: ModelSummary[];
-  } | null>(null);
 
-  useEffect(() => {
-    if (!modelId) return;
-    void getModelLineage(modelId)
-      .then((res) => setLineage(res))
-      .catch(() => setLineage({ ancestors: [], descendants: [] }));
-  }, [modelId]);
+  const ownerUsername = model?.owner.username;
 
-  const trainingHistory = useMemo<TrainingJobDetail[]>(() => {
-    if (!model) return [];
-    return model.jobIds.length > 0
-      ? model.jobIds.map((id) => findMockJob(id)).filter((j): j is TrainingJobDetail => !!j)
-      : MOCK_JOBS.filter((j) => j.modelId === model.id);
-  }, [model]);
+  /* Real training history: the owner's sessions, filtered to this model. */
+  const sessions = useAsync(
+    useCallback(
+      () => (ownerUsername ? listSessionsFor(ownerUsername) : Promise.resolve([])),
+      [ownerUsername],
+    ),
+    [ownerUsername],
+  );
+  const trainingHistory = (sessions.data ?? []).filter((job) => job.modelId === model?.id);
 
-  const deployments = useMemo<DeploymentDetail[]>(() => {
-    if (!model) return [];
-    return model.deploymentIds.length > 0
-      ? model.deploymentIds
-          .map((id) => findMockDeployment(id))
-          .filter((d): d is DeploymentDetail => !!d)
-      : MOCK_DEPLOYMENTS.filter((d) => d.modelId === model.id);
-  }, [model]);
+  /* Real deployments: the owner's slots, filtered to this model. */
+  const deploymentsResult = useAsync(
+    useCallback(
+      () => (ownerUsername ? listDeploymentViews(ownerUsername) : Promise.resolve([])),
+      [ownerUsername],
+    ),
+    [ownerUsername],
+  );
+  const allOwnerDeployments = deploymentsResult.data ?? [];
+  const deployments = allOwnerDeployments.filter((d) => d.modelId === model?.id);
+  const bestRating = deployments.find((d) => d.rating)?.rating;
 
-  const recentMatches = useMemo(() => {
-    if (!model) return [];
-    return MOCK_REPLAYS.filter((r) => r.gameKey === model.gameKey).slice(0, 4);
-  }, [model]);
+  const [deployBusy, setDeployBusy] = useState(false);
+  const [deployError, setDeployError] = useState<string | null>(null);
 
   if (loading) {
     return (
@@ -89,16 +81,28 @@ export default function ModelCardPage(): JSX.Element {
           body={error?.message ?? "We couldn't find that model."}
           retry={() => refetch()}
         />
-        <Button variant="secondary" onClick={() => refetch()}>
-          Retry
-        </Button>
       </div>
     );
   }
 
   const isOwner = model.owner.username === user.username;
-  const slotUsed = countActiveDeploymentsForGame(user.username, model.gameKey);
-  const capFull = slotUsed >= 3;
+  const slotsUsed = countActiveForGame(allOwnerDeployments, model.gameKey);
+  const capFull = slotsUsed >= DEPLOYMENT_CAP_PER_GAME;
+  const hasArtifact = model.sourceRef !== "";
+
+  async function handleDeploy() {
+    if (!model) return;
+    setDeployBusy(true);
+    setDeployError(null);
+    try {
+      const dep = await createDeployment(model.id, { displayName: model.displayName }, auth);
+      void navigate(`/trainer?tab=deployments#${dep.id}`);
+    } catch (err) {
+      setDeployError(err instanceof Error ? err.message : "Deploy failed");
+    } finally {
+      setDeployBusy(false);
+    }
+  }
 
   return (
     <div className="ga-model-page" data-testid="model-card-page">
@@ -109,7 +113,11 @@ export default function ModelCardPage(): JSX.Element {
             <Badge variant={model.visibility === "public" ? "info" : "default"}>
               {model.visibility === "public" ? "Public" : "Private"}
             </Badge>
-            {model.isStarterTemplate && <Badge variant="success">Starter</Badge>}
+            {!hasArtifact && (
+              <Badge variant="warning" title="No trained .pth stored yet">
+                No artifact
+              </Badge>
+            )}
           </div>
           <h1>{model.displayName}</h1>
           <div className="ga-model-page__owner">
@@ -121,19 +129,19 @@ export default function ModelCardPage(): JSX.Element {
           </div>
         </div>
         <div className="ga-model-page__header-actions">
-          <span data-testid="fork-count">
-            {model.forkCount} fork{model.forkCount === 1 ? "" : "s"}
-          </span>
           {model.visibility === "public" && <ForkButton model={model} />}
           {isOwner && (
             <Button
               variant="primary"
-              onClick={() => void navigate(`/trainer/jobs/new?modelId=${model.id}#deploy`)}
-              disabled={capFull}
+              loading={deployBusy}
+              onClick={() => void handleDeploy()}
+              disabled={capFull || !hasArtifact}
               title={
                 capFull
-                  ? `You already have 3 active deployments in ${trainerGameNames[model.gameKey]}.`
-                  : undefined
+                  ? `You already have ${DEPLOYMENT_CAP_PER_GAME} active deployments in ${trainerGameNames[model.gameKey]}.`
+                  : !hasArtifact
+                    ? "Train this model first — there is no artifact to deploy."
+                    : undefined
               }
               data-testid="model-card-deploy"
             >
@@ -150,72 +158,78 @@ export default function ModelCardPage(): JSX.Element {
         </div>
         {capFull && isOwner && (
           <div className="ga-model-page__cap-warning" role="alert">
-            You already have 3 active deployments in {trainerGameNames[model.gameKey]}.
+            You already have {DEPLOYMENT_CAP_PER_GAME} active deployments in{" "}
+            {trainerGameNames[model.gameKey]}.
             <Link to="/trainer?tab=deployments">Manage deployments</Link>
           </div>
         )}
+        {deployError && (
+          <p className="ga-model-page__deploy-error" role="alert" data-testid="deploy-error">
+            {deployError}
+          </p>
+        )}
       </header>
 
-      <Section title="Stats" testId="model-card-stats">
+      <Section title="At a glance" testId="model-card-stats">
         <div className="ga-model-page__stats">
-          <Card density="compact" testId="stat-winrate">
-            <div className="ga-stat__label">Win rate</div>
-            <div className="ga-stat__value">
-              {((stats?.winRate ?? model.winRate) * 100).toFixed(1)}%
-            </div>
-          </Card>
-          <Card density="compact" testId="stat-avg-latency">
-            <div className="ga-stat__label">Avg move latency</div>
-            <div className="ga-stat__value">{stats?.averageMoveLatencyMs ?? "—"} ms</div>
-          </Card>
-          <Card density="compact" testId="stat-elo-per-game">
-            <div className="ga-stat__label">Elo per game</div>
-            <div className="ga-stat__value-row">
-              {(stats?.perGameElo ?? [{ gameKey: model.gameKey, elo: model.elo }]).map((e) => (
-                <span key={e.gameKey}>
-                  <span>{trainerGameNames[e.gameKey]}:</span> <strong>{e.elo}</strong>{" "}
-                  <TierBadge rating={e.elo} />
-                </span>
-              ))}
-            </div>
-          </Card>
-          <Card density="compact" testId="stat-matches-total">
-            <div className="ga-stat__label">Total matches</div>
-            <div className="ga-stat__value">
-              {(stats?.totalMatchesPlayed ?? model.matchesPlayed).toLocaleString()}
-            </div>
-          </Card>
-          <Card density="compact" testId="stat-days-since-training">
-            <div className="ga-stat__label">Days since last training</div>
-            <div className="ga-stat__value">{stats?.daysSinceLastTraining ?? 0}</div>
-          </Card>
+          <StatTile
+            label="Arena rating"
+            value={bestRating ? Math.round(bestRating.rating) : "Unrated"}
+            sub={bestRating ? `${bestRating.gamesPlayed} rated games` : "no rated games yet"}
+            testId="stat-rating"
+          />
+          <StatTile
+            label="Deployments"
+            value={deployments.length}
+            sub={`${deployments.filter((d) => d.status === "active").length} active`}
+            testId="stat-deployments"
+          />
+          <StatTile
+            label="Training runs"
+            value={sessions.data === null ? "…" : trainingHistory.length}
+            testId="stat-training-runs"
+          />
+          <StatTile
+            label="Last updated"
+            value={<TimeAgo date={model.lastTrainedAt} />}
+            testId="stat-last-updated"
+          />
         </div>
+        {isOwner && (
+          <SlotCapacityIndicator
+            gameKey={model.gameKey}
+            used={slotsUsed}
+            cap={DEPLOYMENT_CAP_PER_GAME}
+            testId="model-slot-usage"
+          />
+        )}
       </Section>
-
-      {model.forkedFrom && (
-        <Section title="Lineage" testId="model-lineage">
-          <div data-testid="model-lineage-tree">
-            <ModelLineageTree
-              self={{ id: model.id, displayName: model.displayName }}
-              ancestors={lineage?.ancestors ?? []}
-              descendants={lineage?.descendants ?? []}
-            />
-          </div>
-          <ForkedFromLink modelId={model.forkedFrom} />
-        </Section>
-      )}
 
       <Section
         title="Training history"
-        subtitle="Past runs that produced this model."
+        subtitle="The sessions that produced this model."
         testId="model-training-history"
       >
-        {trainingHistory.length === 0 ? (
-          <div className="ga-model-page__empty">No training runs found for this model.</div>
+        {sessions.error ? (
+          <ErrorState
+            title="Could not load training history"
+            body={sessions.error.message}
+            retry={sessions.refetch}
+          />
+        ) : sessions.data === null ? (
+          <Skeleton variant="rect" width="100%" height={120} />
+        ) : trainingHistory.length === 0 ? (
+          <div className="ga-model-page__empty" data-testid="history-empty">
+            No training runs recorded for this model.
+          </div>
         ) : (
           <div className="ga-model-page__grid">
-            {trainingHistory.map((j) => (
-              <TrainingJobCard key={j.id} job={j} />
+            {trainingHistory.map((job) => (
+              <TrainingJobCard
+                key={job.id}
+                job={job}
+                onClick={() => void navigate(`/trainer/jobs/${job.id}`)}
+              />
             ))}
           </div>
         )}
@@ -223,51 +237,51 @@ export default function ModelCardPage(): JSX.Element {
 
       <Section
         title="Deployments"
-        subtitle="Past or current runtime slots for this model."
+        subtitle="Runtime slots holding this model."
         testId="model-deployments"
       >
-        {deployments.length === 0 ? (
-          <div className="ga-model-page__empty">No deployments for this model yet.</div>
+        {deploymentsResult.error ? (
+          <ErrorState
+            title="Could not load deployments"
+            body={deploymentsResult.error.message}
+            retry={deploymentsResult.refetch}
+          />
+        ) : deploymentsResult.data === null ? (
+          <Skeleton variant="rect" width="100%" height={80} />
+        ) : deployments.length === 0 ? (
+          <div className="ga-model-page__empty" data-testid="deployments-empty">
+            No deployments for this model yet.
+          </div>
         ) : (
-          <div className="ga-model-page__grid">
+          <div className="ga-model-page__deployments" data-testid="model-deployment-list">
             {deployments.map((d) => (
-              <DeploymentCard key={d.id} deployment={d} />
+              <div key={d.deploymentId} className="ga-model-page__deployment">
+                <Badge
+                  variant={
+                    d.status === "active"
+                      ? "success"
+                      : d.status === "paused"
+                        ? "warning"
+                        : "default"
+                  }
+                >
+                  {d.status}
+                </Badge>
+                <span className="ga-model-page__deployment-name">{d.displayName}</span>
+                {d.rating ? (
+                  <span className="ga-model-page__deployment-rating">
+                    {Math.round(d.rating.rating)} · {d.rating.gamesPlayed} rated games
+                  </span>
+                ) : (
+                  <span className="ga-model-page__deployment-rating">unrated</span>
+                )}
+                <span className="ga-model-page__deployment-spacer" />
+                <TimeAgo date={d.createdAt} />
+              </div>
             ))}
           </div>
         )}
-      </Section>
-
-      <Section
-        title="Recent match performance"
-        subtitle="The last ranked matches this model played."
-        testId="model-recent-matches"
-      >
-        {recentMatches.length === 0 ? (
-          <div className="ga-model-page__empty">No recent matches yet.</div>
-        ) : (
-          <div className="ga-model-page__grid">
-            {recentMatches.map((m) => (
-              <MatchCard key={m.matchId} match={m} />
-            ))}
-          </div>
-        )}
-      </Section>
-
-      <Section title="Last trained" testId="model-last-trained">
-        <TimeAgo date={model.lastTrainedAt} />
       </Section>
     </div>
-  );
-}
-
-function ForkedFromLink({ modelId }: { modelId: string }): JSX.Element {
-  return (
-    <Link
-      to={`/models/${modelId}`}
-      data-testid="lineage-node-current"
-      className="ga-model-page__forked-from"
-    >
-      <span data-testid="lineage-node">Forked from {modelId}</span>
-    </Link>
   );
 }

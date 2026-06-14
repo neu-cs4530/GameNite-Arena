@@ -1,0 +1,91 @@
+/* Tic-Tac-Toe board.
+ *
+ * Responsive by construction: a square wrapper whose width is capped at
+ * `--board-max` but never exceeds its container, with a 3x3 fractional grid
+ * inside. Cells get their height from the wrapper's `aspect-ratio`, so the
+ * board scales down cleanly in a narrow / half-width column without clipping.
+ * `container-type: inline-size` lets cell marks size against the board width
+ * (cqw) rather than the viewport. No fixed-px cell sizes anywhere. */
+
+.ttt-board {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2);
+  width: min(100%, var(--board-max, 30rem));
+  aspect-ratio: 1 / 1;
+  padding: var(--space-2);
+  background: var(--color-surface-2);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  container-type: inline-size;
+  box-sizing: border-box;
+}
+
+.ttt-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Square, fractional cell — height follows the aspect-ratio'd wrapper. */
+  min-width: 0;
+  min-height: 0;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  line-height: 1;
+}
+
+/* Playable cells are buttons: reset button chrome, keep them square. */
+button.ttt-cell {
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+button.ttt-cell:hover {
+  background: var(--color-primary-soft);
+  border-color: var(--color-primary);
+}
+
+button.ttt-cell:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.ttt-mark {
+  /* Sized against the board width, not the viewport, so marks never overflow
+     their cell as the board shrinks. */
+  font-size: clamp(1.5rem, 12cqw, 4rem);
+  font-weight: var(--weight-bold);
+  user-select: none;
+}
+
+.ttt-mark--o {
+  color: var(--color-info);
+}
+
+.ttt-mark--x {
+  color: var(--color-danger);
+}
+
+/* The faint preview mark inside a playable empty cell. */
+.ttt-mark--ghost {
+  color: transparent;
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+
+button.ttt-cell:hover .ttt-mark--ghost,
+button.ttt-cell:focus-visible .ttt-mark--ghost {
+  color: var(--color-fg-subtle);
+}
+
+/* Winning line. */
+.ttt-cell--winner {
+  background: var(--color-success-soft);
+  border-color: var(--color-success);
+}
+
+.ttt-cell--winner .ttt-mark {
+  color: var(--color-success);
+}

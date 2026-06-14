@@ -151,19 +151,7 @@ export class MatchRecorder {
 
     let entry = this._inProgress.get(gameId);
     if (!entry) {
-      entry = {
-        gameKey: game.type,
-        rated: game.rated,
-        humanIds: [...game.players],
-        aiParticipants: game.aiPlayers.map((p) => ({
-          id: p.modelId,
-          displayName: p.displayName,
-        })),
-        moves: [],
-        initialState: stateBeforeMove,
-        createdAt: nowIso,
-        lastMoveAt: now,
-      };
+      entry = this._startTracking(game, stateBeforeMove, now);
       this._inProgress.set(gameId, entry);
     }
 
@@ -176,6 +164,20 @@ export class MatchRecorder {
       // corrupting the buffer.
       await this._finalize(gameId, entry, this._buildResult(winnerId));
     }
+  }
+
+  /**
+   * Finalizes a game as a forfeit (CoS 2.8): persists the buffered moves
+   * with result `{ outcome: "forfeit", winnerId }`. If the game had no
+   * captured moves yet (a model striking out on its opening move), an entry
+   * is synthesized from the game record so the forfeit still archives.
+   * No-op for already-finalized games.
+   */
+  async finalizeAsForfeit(game: GameRecord, gameId: string, winnerId: string): Promise<void> {
+    if (this._finalized.has(gameId)) return;
+    const entry =
+      this._inProgress.get(gameId) ?? this._startTracking(game, game.state, this._getCurrentTime());
+    await this._finalize(gameId, entry, { outcome: "forfeit", winnerId });
   }
 
   /**
@@ -200,6 +202,27 @@ export class MatchRecorder {
     for (const gameId of this._collectIdleIds(maxIdleMs, skipGameId)) {
       await this.finalizeAsAbandoned(gameId);
     }
+  }
+
+  /**
+   * Builds the in-progress entry for a game the recorder hasn't seen yet.
+   * AI seats sit in `game.players` under their deployment ids (positional
+   * with `game.aiPlayers`), so they're excluded from the human side and
+   * archived from the AIParticipant snapshot instead.
+   */
+  private _startTracking(game: GameRecord, initialState: unknown, now: number): InProgressMatch {
+    const aiParticipants = game.aiPlayers.filter((p) => p !== null && p !== undefined);
+    const aiSeatIds = new Set(aiParticipants.map((p) => p.deploymentId));
+    return {
+      gameKey: game.type,
+      rated: game.rated,
+      humanIds: game.players.filter((id) => !aiSeatIds.has(id)),
+      aiParticipants: aiParticipants.map((p) => ({ id: p.modelId, displayName: p.displayName })),
+      moves: [],
+      initialState,
+      createdAt: new Date(now).toISOString(),
+      lastMoveAt: now,
+    };
   }
 
   /** Ids of tracked games whose last move is older than `maxIdleMs`. */

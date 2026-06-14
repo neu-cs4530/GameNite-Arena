@@ -32,17 +32,32 @@ Two producer paths coexist by design:
 ## Getting the kit (users and teammates)
 
 The platform distributes its own training kit — never copy files out of the
-repo by hand. One line fetches everything into `./gamenite-training-kit/`:
+repo by hand. One line fetches everything into `./gamenite-training-kit/`,
+creates a `.venv`, and installs the pinned requirements:
 
 ```bash
 curl -fsSL http://localhost:8000/api/training/kit/install.sh | sh
 ```
 
+With a job registered on the web form, the same line hands off straight into
+the attached run (the job page shows this exact command):
+
+```bash
+curl -fsSL http://localhost:8000/api/training/kit/install.sh | sh -s -- --job-id <id> --token <tkn>
+```
+
 (or click **Get the local training kit** on the AI Trainer dashboard, or fetch
 individual files from `GET /api/training/kit/<name>` — the manifest is at
-`GET /api/training/kit`). The kit contains `session_reporter.py`, the adapter
-SDK (`base_adapter.py` + per-game examples), `requirements.txt`, and the
-`demo_local_session.py` smoke harness.
+`GET /api/training/kit`). The kit contains:
+
+- `train.py` — the trainer CLI (the kit **entrypoint**): real chunked SB3 PPO,
+  real rollout evaluation, live reporting, artifact upload.
+- `session_reporter.py` — the stdlib HTTP client (use it directly from your
+  own loop if you outgrow `train.py`).
+- `base_adapter.py` + the per-game example adapters.
+- `requirements.txt` — **pinned exactly** to the stack the platform verified
+  real learning on (torch 2.11.0, stable-baselines3 2.8.0, gymnasium 1.2.3,
+  numpy 2.2.3).
 
 ## Security model
 
@@ -132,17 +147,54 @@ trained-model files. The contract:
 Migration `001_canonical_artifact_refs` rewrites legacy absolute-path refs
 into this shape (`npm run -w server migrate`).
 
-## The real thing
+## The trainer CLI
 
-`ai/example_local_training_nim.py` is the canonical full workflow with nothing
-faked: chunked SB3 PPO training through the adapter SDK, real rollout
-evaluation per chunk, live reporting, artifact upload, and a round-trip check
-that rebuilds the platform-stored `.pth` the way the inference service does.
-Verified end to end (a 30k-step run reaches the optimal Nim policy):
+`ai/train.py` is the canonical workflow with nothing faked: chunked SB3 PPO
+through the adapter SDK, real rollout evaluation per chunk, live reporting,
+and artifact upload (the platform validates and stores it — bytes + sha256
+appear on the job page). Two modes:
 
 ```bash
-python3 ai/example_local_training_nim.py --username user0 --password pwd0000
+# Attach to a run registered on the web form — the job carries the game,
+# episodes, learning rate, and the heuristics you picked there:
+.venv/bin/python train.py --base-url http://localhost:8000 --job-id <id> --token <tkn>
+
+# Or self-register from the CLI (game defaults apply):
+.venv/bin/python train.py --base-url http://localhost:8000 --game nim \
+    --username user0 --password pwd0000
 ```
+
+`--token` also reads env `GAMENITE_TOKEN` and `--job-id` reads
+`GAMENITE_JOB_ID`, which is how the install.sh hand-off works. Only **nim**
+has a local trainer today; the other adapters are reference implementations —
+`train.py` exits with a clear message for any other game. Cancel from the web
+UI stops the loop on the next report.
+
+### Training heuristics
+
+The new-run form exposes per-game training choices (catalog:
+`shared/src/trainingHeuristics.ts`). They ride in `config.extra.heuristics` on
+the job; `train.py` reads them back after attaching (public
+`GET /api/training/:jobId`) and maps them onto env parameters. Missing or
+invalid values fall back to the defaults per key. For nim:
+
+| Heuristic       | Options (default first)                                    | Env effect                                                                                                                       |
+| --------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `opponentStyle` | `misere-blunder-25`, `misere-blunder-15`, `uniform-random` | misère-optimal opponent with 25%/15% blunders, or a uniform random mover                                                         |
+| `startingPile`  | `random-8-21`, `fixed-21`                                  | random pile in [8, 21] per episode, or always the arena's 21                                                                     |
+| `rewardShaping` | `none`, `potential-mod4`                                   | optional potential-based mod-4 shaping (φ(terminal)=0, never changes the optimal policy); win-rate evals always run **unshaped** |
+
+### The nim v2 observation (and legacy artifacts)
+
+Training and serving share one observation contract per game
+(`ai/inference-service/encoders.py` mirrors the adapters). For nim the v2
+contract is a `(5,)` vector: `[pile/21, onehot4(pile % 4)]` — proven
+necessary: with only the normalized scalar, on-policy PPO cannot learn nim at
+all (collapses to a best-constant ~0.30 win rate); with the mod-4 one-hot it
+reaches the theoretical optimum. The serving encoder normalizes (the Node side
+sends the raw `{remaining}`) and dispatches on the **loaded artifact's**
+recorded `obs_size`: legacy `(1,)` artifacts keep working and now receive the
+normalized `[pile/21]` they were actually trained on.
 
 ## The trainer UI is real data, full stop
 
@@ -181,22 +233,23 @@ derived from MatchRepo, is the next block.
 
 3. Log in (e.g. `user0` / `pwd0000`) and open **AI Trainer** — a fresh user
    sees the two-step quickstart (kit one-liner + run command).
-4. Start a fake local run (synthetic metrics, no real training):
+4. Start a real local run (everything in the pipeline is live data — there is
+   no synthetic-metrics mode):
 
    ```bash
-   python3 ai/demo_local_session.py --username user0 --password pwd0000 \
-       --game nim --episodes 40 --steps 20 --step-delay 1.5
+   python3 ai/train.py --game nim --username user0 --password pwd0000
    ```
 
    …or register from the web form first and attach with the shown `--job-id`
-   command.
+   command (or let the install.sh one-liner do the whole hand-off).
 
 5. Open the printed `/trainer/jobs/<id>` URL: the queued handoff card yields
-   to the live chart on the first report, and the metrics update with each.
-6. Optional beats: click **Cancel** in the UI and watch the script log
-   `server says canceled — stopping the local loop`; re-run with
-   `--upload-artifact` to light up Download/Deploy and the sha-256 in the
-   Advanced panel.
+   to the live chart on the first report, and the metrics update with each
+   chunk (~2k steps per report).
+6. Optional beats: click **Cancel** in the UI and watch the trainer log
+   `canceled from the web UI - stopping`; a completed run uploads its artifact
+   automatically, lighting up Download/Deploy and the sha-256 in the Advanced
+   panel.
 
 ### Known limitations (accepted, documented)
 

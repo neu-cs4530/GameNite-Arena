@@ -1,0 +1,48 @@
+.ga-home-puzzle {
+  gap: var(--space-3);
+}
+
+.ga-home-puzzle__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.ga-home-puzzle__title {
+  margin: 0;
+  font-size: var(--text-h3);
+  font-weight: var(--weight-semibold);
+}
+
+.ga-home-puzzle__sub {
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}
+
+.ga-home-puzzle__games {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ga-home-puzzle__game {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elevated);
+}
+
+.ga-home-puzzle__game-name {
+  font-weight: var(--weight-medium);
+}
+
+.ga-home-puzzle__cta {
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  align-self: flex-start;
+}

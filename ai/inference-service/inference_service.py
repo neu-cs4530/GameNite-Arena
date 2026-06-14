@@ -48,11 +48,15 @@ app = FastAPI(title="GameNite Arena Inference Service")
 class _Deployment:
     """A loaded model occupying a runtime slot."""
 
-    def __init__(self, deployment_id: str, game: str, model: Any, artifact_ref: str):
+    def __init__(self, deployment_id: str, game: str, model: Any, artifact_ref: str,
+                 obs_size: int):
         self.deployment_id = deployment_id
         self.game = game
         self.model = model
         self.artifact_ref = artifact_ref
+        # The artifact's recorded observation size — picks the encoder layout
+        # for games whose contract evolved (nim: 1 legacy, 5 v2).
+        self.obs_size = obs_size
         self.consecutive_invalid = 0
 
 
@@ -63,6 +67,8 @@ _LOCK = threading.Lock()
 def _load_policy(local_path: str):
     """
     Load a trained policy from a .pth artifact produced by base_adapter.save().
+    Returns (policy, obs_size) — obs_size is the artifact's recorded
+    observation size, which drives encoder-layout dispatch per deployment.
 
     Artifact schema:
         {
@@ -95,7 +101,7 @@ def _load_policy(local_path: str):
     )
     policy.load_state_dict(artifact["sb3_state"])
     policy.set_training_mode(False)
-    return policy
+    return policy, obs_size
 
 
 # request / response models
@@ -142,13 +148,21 @@ def load(req: LoadRequest):
         raise HTTPException(404, f"Artifact not found: {req.model_id}.pth")
 
     try:
-        model = _load_policy(artifact_path)
+        model, obs_size = _load_policy(artifact_path)
     except Exception as e:
         raise HTTPException(422, f"Failed to load model: {e}")
 
+    allowed = encoders.OBS_SIZES[req.game]
+    if obs_size not in allowed:
+        raise HTTPException(
+            422,
+            f"Artifact obs_size={obs_size} is not servable for {req.game} "
+            f"(allowed: {allowed})",
+        )
+
     with _LOCK:
         _REGISTRY[req.deployment_id] = _Deployment(
-            req.deployment_id, req.game, model, req.model_id
+            req.deployment_id, req.game, model, req.model_id, obs_size
         )
     return {"status": "loaded", "deployment_id": req.deployment_id, "game": req.game}
 
@@ -172,9 +186,15 @@ def move(req: MoveRequest):
         raise HTTPException(404, f"No such deployment: {req.deployment_id}")
 
     try:
-        obs = encoders.encode_state(dep.game, req.state)
-        raw_action = _predict(dep, obs)
-        chosen = encoders.decode_action(dep.game, raw_action, req.legal_moves)
+        obs = encoders.encode_state(dep.game, req.state, obs_size=dep.obs_size)
+        action_n = encoders.ACTION_SPACES.get(dep.game)
+        mask = (
+            encoders.legal_action_mask(dep.game, req.state, action_n)
+            if isinstance(action_n, int)
+            else None
+        )
+        raw_action = _predict(dep, obs, mask)
+        chosen = encoders.decode_action(dep.game, raw_action, req.legal_moves, state=req.state)
     except encoders.EncodingError as e:
         with _LOCK:
             dep.consecutive_invalid += 1
@@ -194,9 +214,35 @@ def move(req: MoveRequest):
     return {"deployment_id": req.deployment_id, "move": chosen}
 
 
-def _predict(dep: _Deployment, obs: np.ndarray) -> int:
+def _predict(dep: _Deployment, obs: np.ndarray, mask: "list[bool] | None" = None) -> int:
     model = dep.model
-    if hasattr(model, "predict"):
+    if not hasattr(model, "predict"):
+        raise HTTPException(500, "Loaded artifact has no predict().")
+
+    # No mask (or every action legal) → the model's deterministic argmax.
+    if mask is None or all(mask):
         action, _ = model.predict(obs, deterministic=True)
         return int(np.asarray(action).item())
-    raise HTTPException(500, "Loaded artifact has no predict().")
+
+    # Masked: rank the policy's action probabilities and take the best LEGAL
+    # one, so a full column / occupied cell can never be returned. Falls back
+    # to plain predict if probabilities can't be extracted.
+    try:
+        import torch
+
+        obs_t, _ = model.policy.obs_to_tensor(obs)
+        with torch.no_grad():
+            dist = model.policy.get_distribution(obs_t)
+        probs = np.asarray(dist.distribution.probs.cpu().numpy()).reshape(-1)
+    except Exception:
+        action, _ = model.predict(obs, deterministic=True)
+        idx = int(np.asarray(action).item())
+        return idx if (idx < len(mask) and mask[idx]) else next(
+            (i for i, ok in enumerate(mask) if ok), idx
+        )
+
+    legal = [p if (i < len(mask) and mask[i]) else -1.0 for i, p in enumerate(probs)]
+    if max(legal) < 0:  # nothing legal (shouldn't happen mid-game) — let predict decide
+        action, _ = model.predict(obs, deterministic=True)
+        return int(np.asarray(action).item())
+    return int(np.argmax(legal))

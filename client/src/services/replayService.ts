@@ -93,12 +93,21 @@ export async function listReplays(filters: ReplayFilters): Promise<ReplayListPag
   }
 }
 
-/** Convenience wrapper: shares the list endpoint, scoped to one username. */
+/**
+ * Per-user replay list for the profile — REAL data only, NO mock fallback.
+ * The reworked profile must never silently substitute fixture replays (the
+ * no-mock mandate), so a server/network failure propagates and the page
+ * renders its error state. The shared `listReplays` fallback exists for the
+ * discovery feed, which has different degradation goals.
+ */
 export async function listReplaysForUser(
   username: string,
   filters: ReplayFilters,
 ): Promise<ReplayListPage> {
-  return listReplays({ ...filters, forUser: username });
+  const res = await api.get<ReplayListPage>("/api/replay/list", {
+    params: filtersToQuery({ ...filters, forUser: username }),
+  });
+  return res.data;
 }
 
 /** POST /api/replay/:matchId/view — bumps the watch counter and returns it. */

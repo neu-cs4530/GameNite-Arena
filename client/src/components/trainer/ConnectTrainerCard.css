@@ -22,3 +22,15 @@
   padding: 0 var(--space-1);
   border-radius: var(--radius-xs);
 }
+
+.ga-connect-trainer__minting {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ga-connect-trainer__fallback {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}

@@ -21,3 +21,6 @@ export * from "./trainingQueue.types.ts";
 export * from "./trainingProgress.types.ts";
 export * from "./trainingSession.types.ts";
 export * from "./deployment.types.ts";
+export * from "./puzzle.types.ts";
+export * from "./profile.types.ts";
+export * from "./trainingHeuristics.ts";

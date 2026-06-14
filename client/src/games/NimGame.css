@@ -1,0 +1,20 @@
+/* The button the model "pressed": a quick press animation plus a green
+   border for the flash window, so an AI move is something you can SEE
+   rather than an instant board change. */
+.ai-picked {
+  border: 2px solid var(--color-success) !important;
+  box-shadow: 0 0 0 3px var(--color-success-soft);
+  animation: ai-press var(--duration-base, 200ms) var(--ease-out, ease-out);
+}
+
+@keyframes ai-press {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(0.93);
+  }
+  100% {
+    transform: scale(1);
+  }
+}

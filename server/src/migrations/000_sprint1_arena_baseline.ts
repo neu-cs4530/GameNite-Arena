@@ -1,6 +1,6 @@
 import type { Migration } from "./MigrationRunner.ts";
 import { GameRepo, UserRepo } from "../repository.ts";
-import type { GameRecord, GlickoRating, PuzzleStreak, UserRecord } from "../models.ts";
+import type { GameRecord, PuzzleStreak, UserRecord } from "../models.ts";
 
 /**
  * Sprint 1 baseline migration. Adds all GameNite Arena fields to existing
@@ -14,7 +14,6 @@ import type { GameRecord, GlickoRating, PuzzleStreak, UserRecord } from "../mode
  * running this twice is a no-op on the second run.
  */
 
-const defaultPuzzleRating: GlickoRating = { rating: 1500, rd: 350, vol: 0.06 };
 const defaultPuzzleStreak: PuzzleStreak = { current: 0, best: 0 };
 
 export const migration: Migration = {
@@ -31,14 +30,14 @@ export const migration: Migration = {
       const u = (await UserRepo.find(key)) as Partial<UserRecord> | null;
       if (!u) continue;
       const needsUpdate =
-        u.puzzleRating === undefined || u.puzzleStreak === undefined || u.following === undefined;
+        u.puzzleRatings === undefined || u.puzzleStreak === undefined || u.following === undefined;
       if (!needsUpdate) continue;
 
       const updated: UserRecord = {
         username: u.username!,
         display: u.display!,
         createdAt: u.createdAt!,
-        puzzleRating: u.puzzleRating ?? { ...defaultPuzzleRating },
+        puzzleRatings: u.puzzleRatings ?? {},
         puzzleStreak: u.puzzleStreak ?? { ...defaultPuzzleStreak },
         following: u.following ?? [],
         emailPrefs: u.emailPrefs,

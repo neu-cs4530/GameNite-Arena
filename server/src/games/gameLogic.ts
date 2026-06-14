@@ -22,6 +22,11 @@ import { type TaggedGameView } from "@gamenite/shared";
  *    game's zod schema), returning the parsed value or null when the payload
  *    is invalid. Used so the match archive stores the schema-normalized move
  *    rather than the raw pre-validation payload.
+ *  - `isWinningMove` (optional): true when playing `movePayload` from `state`
+ *    keeps the mover on a winning line under perfect play. Powers the daily
+ *    puzzle pipeline: mining only accepts positions where the archived move
+ *    was genuinely winning, and grading accepts ANY winning move rather than
+ *    just the archived one. Games without this hook are not puzzle-eligible.
  */
 export interface GameLogic<GameState, GameView> {
   minPlayers: number;
@@ -35,4 +40,5 @@ export interface GameLogic<GameState, GameView> {
   // Returns the parsed move, or null when the payload is invalid. (Typed as
   // bare `unknown` because `unknown | null` is a redundant union.)
   parseMove?: (payload: unknown) => unknown;
+  isWinningMove?: (state: GameState, movePayload: unknown) => boolean;
 }

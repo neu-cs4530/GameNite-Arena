@@ -221,32 +221,58 @@ export interface AnalysisResult {
 
 /* --- Profile -------------------------------------------------------- */
 
-export interface ProfileGameStats {
-  gameKey: ReplayGameKey;
-  rating: number;
-  wins: number;
-  losses: number;
-  draws: number;
-}
-
-export interface ProfileDetail {
-  user: SafeUserInfo;
-  joinedAt: string;
-  overallElo: number;
-  totalMatches: number;
-  wins: number;
-  losses: number;
-  draws: number;
-  currentStreak: number;
-  perGame: ProfileGameStats[];
-  /** True if the requested profile exists and is loaded. */
-  exists: boolean;
-}
+/* The old client-composed ProfileDetail/ProfileGameStats shapes are gone:
+ * the profile page now renders the server's `ProfileSummary` aggregate
+ * (shared/src/profile.types.ts) fetched by services/profileService.ts. */
 
 export type ReplayGameKeyOrAll = ReplayGameKey | "all";
 
 /** Re-export for convenience: `GameKey` is the shared subset of `ReplayGameKey`. */
 export type SharedGameKey = GameKey;
+
+/* --- Leaderboards ------------------------------------------------------ */
+
+/** One ranked row from GET /api/leaderboard/:gameKey (client mirror). */
+export interface LeaderboardEntry {
+  rank: number;
+  entityId: string;
+  entityType: "human" | "ai";
+  displayName: string;
+  /** Present for humans only — links to /profile/:username. */
+  username?: string;
+  rating: number;
+  rd: number;
+  gamesPlayed: number;
+  provisional: boolean;
+  /** Rated wins in this game. */
+  wins: number;
+  /** wins / gamesPlayed as a 0..1 fraction; 0 when no games played. */
+  winRate: number;
+  /** Daily period only: sum of today's rating changes. */
+  ratingDelta?: number;
+  /** Daily period only: rated games completed today. */
+  gamesPlayedToday?: number;
+}
+
+/** Paginated leaderboard response (client mirror). */
+export interface LeaderboardPage {
+  gameKey: GameKey;
+  entityType: "human" | "ai" | "all";
+  period: LeaderboardPeriod;
+  page: number;
+  limit: number;
+  total: number;
+  entries: LeaderboardEntry[];
+}
+
+/** Sort keys offered on the leaderboards tab. "rating" is the server order. */
+export type LeaderboardSort = "rating" | "winRate" | "wins" | "gamesPlayed";
+
+/** Entity-type filter — maps straight onto the API's `type` param. */
+export type LeaderboardEntityFilter = "all" | "human" | "ai";
+
+/** "alltime" is the cached Glicko ranking; "daily" is today's rating gains. */
+export type LeaderboardPeriod = "alltime" | "daily";
 
 /* ============================================================================
  * Trainer types (Models, Training Jobs, Deployments)
@@ -299,27 +325,8 @@ export interface TrainingHyperparameters {
   extraConfig?: Record<string, unknown>;
 }
 
-/** Cost estimator output. */
-export interface TrainingCostEstimate {
-  estimatedMinutes: number;
-  estimatedCreditsPerHour: number;
-  totalCredits: number;
-  /** Whether the user has enough credits to run this job. */
-  withinBudget: boolean;
-}
-
 /** Hyperparameter preset name. */
 export type HyperparamPreset = "aggressive" | "balanced" | "conservative";
-
-/** Model card stats (Story 2.11). */
-export interface ModelCardStats {
-  modelId: string;
-  winRate: number;
-  averageMoveLatencyMs: number;
-  perGameElo: ModelEloEntry[];
-  totalMatchesPlayed: number;
-  daysSinceLastTraining: number;
-}
 
 /** Model summary used in list views. */
 export interface ModelSummary {
@@ -353,13 +360,6 @@ export interface ModelDetail extends ModelSummary {
   deploymentIds: string[];
   /** Mock source ref pointing at object storage. */
   sourceRef: string;
-}
-
-export interface ModelListPage {
-  models: ModelSummary[];
-  total: number;
-  page: number;
-  pageSize: number;
 }
 
 /**
@@ -421,13 +421,6 @@ export interface TrainingJobDetail extends TrainingJobSummary {
   views: number;
 }
 
-export interface JobListPage {
-  jobs: TrainingJobSummary[];
-  total: number;
-  page: number;
-  pageSize: number;
-}
-
 /** Recent match summary surfaced on a deployment card. */
 export interface DeploymentRecentMatch {
   matchId: string;
@@ -470,132 +463,6 @@ export interface DeploymentDetail extends DeploymentSummary {
   activitySeries: DeploymentActivitySample[];
 }
 
-export interface DeploymentListPage {
-  deployments: DeploymentSummary[];
-  total: number;
-  page: number;
-  pageSize: number;
-}
-
-/* --- Trainer Filters -------------------------------------------------- */
-
-export type ModelSort =
-  | "newest"
-  | "oldest"
-  | "highest-elo"
-  | "lowest-elo"
-  | "most-forked"
-  | "best-win-rate"
-  | "worst-win-rate"
-  | "most-matches"
-  | "recently-trained";
-
-export type ModelVisibilityFilter = "all" | "public" | "private";
-export type ModelOwnershipFilter = "all" | "yours" | "others" | "forked-from-yours";
-export type TrainerTier = "bronze" | "silver" | "gold" | "platinum" | "diamond";
-
-export interface ModelFilters {
-  sort: ModelSort;
-  games: TrainerGameKey[];
-  visibility: ModelVisibilityFilter;
-  ownership: ModelOwnershipFilter;
-  deployedOnly: boolean;
-  forkedOnly: boolean;
-  tiers: TrainerTier[];
-  minElo: number;
-  maxElo: number;
-  minWinRate: number;
-  maxWinRate: number;
-  date: DateRangePreset;
-  dateFrom?: string;
-  dateTo?: string;
-  ownerSearch: string;
-  hasCheckpoint: boolean;
-  page: number;
-  pageSize: number;
-  /** Viewing-user username (for "yours" / "forked-from-yours" filters). */
-  viewerUsername?: string;
-}
-
-export const defaultModelFilters: ModelFilters = {
-  sort: "newest",
-  games: [],
-  visibility: "all",
-  ownership: "all",
-  deployedOnly: false,
-  forkedOnly: false,
-  tiers: [],
-  minElo: 800,
-  maxElo: 2400,
-  minWinRate: 0,
-  maxWinRate: 100,
-  date: "all",
-  ownerSearch: "",
-  hasCheckpoint: false,
-  page: 1,
-  pageSize: 24,
-};
-
-export type JobSort =
-  | "newest"
-  | "oldest"
-  | "longest-running"
-  | "shortest-completed"
-  | "highest-reward"
-  | "lowest-reward";
-
-export interface JobFilters {
-  sort: JobSort;
-  statuses: JobStatus[];
-  games: TrainerGameKey[];
-  hasCheckpoint: boolean;
-  date: DateRangePreset;
-  dateFrom?: string;
-  dateTo?: string;
-  page: number;
-  pageSize: number;
-  viewerUsername?: string;
-}
-
-export const defaultJobFilters: JobFilters = {
-  sort: "newest",
-  statuses: [],
-  games: [],
-  hasCheckpoint: false,
-  date: "all",
-  page: 1,
-  pageSize: 12,
-};
-
-export type DeploymentSort =
-  | "newest"
-  | "oldest"
-  | "most-matches"
-  | "highest-elo"
-  | "recent-forfeits";
-
-export interface DeploymentFilters {
-  sort: DeploymentSort;
-  statuses: DeploymentStatus[];
-  games: TrainerGameKey[];
-  recentForfeits: boolean;
-  page: number;
-  pageSize: number;
-  viewerUsername?: string;
-}
-
-export const defaultDeploymentFilters: DeploymentFilters = {
-  sort: "newest",
-  statuses: [],
-  games: [],
-  recentForfeits: false,
-  page: 1,
-  pageSize: 24,
-};
-
-/** Featured strip names for `ModelsBrowse`. */
-export type ModelFeaturedStrip = "top-per-game" | "recently-forked" | "starter-templates";
-
 /** Payload passed to `submitJob`. */
 export interface SubmitJobPayload {
   modelId?: string;
@@ -608,57 +475,7 @@ export interface SubmitJobPayload {
   notifyOnComplete?: boolean;
 }
 
-/** Payload passed to `uploadHeuristic`. */
-export interface UploadHeuristicPayload {
-  displayName: string;
-  gameKey: TrainerGameKey;
-  visibility: ModelVisibility;
-}
-
 /** Payload passed to `createDeployment`. */
 export interface CreateDeploymentPayload {
   displayName: string;
-}
-
-/** Payload passed to `forkModel`. */
-export interface ForkModelPayload {
-  displayName: string;
-  visibility: ModelVisibility;
-}
-
-/** Error thrown when a deployment hits the per-game cap (Story 2.7). */
-export class DeploymentCapExceededError extends Error {
-  public readonly gameKey: TrainerGameKey;
-  public readonly cap: number;
-  public readonly used: number;
-  constructor(gameKey: TrainerGameKey, cap: number, used: number) {
-    const label = replayGameNamesLazy(gameKey);
-    super(
-      `You already have ${used} active deployments in ${label}. ` +
-        `Pause or retire one to free a slot.`,
-    );
-    this.name = "DeploymentCapExceededError";
-    this.gameKey = gameKey;
-    this.cap = cap;
-    this.used = used;
-  }
-}
-
-/**
- * Lazily resolves a game key to its display name without circular-importing
- * the consts file from types. Mirrors `replayGameNames`.
- */
-function replayGameNamesLazy(gameKey: TrainerGameKey): string {
-  switch (gameKey) {
-    case "nim":
-      return "Nim";
-    case "guess":
-      return "Number Guesser";
-    case "checkers":
-      return "Checkers";
-    case "connect4":
-      return "Connect 4";
-    case "tictactoe":
-      return "Tic-Tac-Toe";
-  }
 }

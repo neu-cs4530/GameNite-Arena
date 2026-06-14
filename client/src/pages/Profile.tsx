@@ -1,7 +1,8 @@
 import "./Profile.css";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import useProfile from "../hooks/useProfile.ts";
+import type { ProfileSummary } from "@gamenite/shared";
+import useAsync from "../hooks/useAsync.ts";
 import useReplaysForUser from "../hooks/useReplaysForUser.ts";
 import useReplayFilters from "../hooks/useReplayFilters.ts";
 import useWatchLater from "../hooks/useWatchLater.ts";
@@ -22,9 +23,21 @@ import ReplayFilterBar from "../components/filters/ReplayFilterBar.tsx";
 import MatchGrid from "../components/replay/MatchGrid.tsx";
 import TierBadge from "../components/replay/TierBadge.tsx";
 import ActivityHeatmap from "../components/replay/ActivityHeatmap.tsx";
+import BestAiCard from "../components/profile/BestAiCard.tsx";
+import PuzzleStatsPanel from "../components/profile/PuzzleStatsPanel.tsx";
+import ReplayHero from "../components/profile/ReplayHero.tsx";
+import ScopePills from "../components/profile/ScopePills.tsx";
+import ScopeStatPanel from "../components/profile/ScopeStatPanel.tsx";
+import {
+  isGameScope,
+  parseProfileScope,
+  SCOPE_PARAM,
+  type ProfileScope,
+} from "../components/profile/scopes.ts";
 import { replayGameNames } from "../util/consts.ts";
 
 import EditProfileSettings from "./EditProfileSettings.tsx";
+import { getProfileSummary, ProfileNotFoundError } from "../services/profileService.ts";
 import { getReplay, listReplaysForUser } from "../services/replayService.ts";
 import type { ReplaySummary } from "../util/types.ts";
 
@@ -40,9 +53,21 @@ export default function Profile() {
   const tabParam = searchParams.get("tab");
   const tab: ProfileTab =
     tabParam === "settings" || tabParam === "watch-later" ? tabParam : "matches";
+  const scope = parseProfileScope(searchParams.get(SCOPE_PARAM));
 
-  const { profile, loading: profileLoading, error: profileError } = useProfile(username);
-  const { filters, setFilter, setFilters, clearFilters } = useReplayFilters({
+  // ONE real fetch powers every scope; pill switches are client-side only.
+  const producer = useCallback(() => {
+    if (!username) return Promise.reject(new Error("No username provided"));
+    return getProfileSummary(username);
+  }, [username]);
+  const {
+    data: summary,
+    loading: profileLoading,
+    error: profileError,
+    refetch,
+  } = useAsync<ProfileSummary>(producer, [username]);
+
+  const { filters, setFilter, setFilters } = useReplayFilters({
     pageSize: PROFILE_MATCHES_PER_PAGE,
     forUser: username,
   });
@@ -72,6 +97,60 @@ export default function Profile() {
     [searchParams, setSearchParams],
   );
 
+  // Tracks which game scope last pinned the game filter, so entering a game
+  // scope preselects it exactly once and the user stays free to change the
+  // filters afterwards.
+  const gamePinnedRef = useRef<ProfileScope | null>(null);
+
+  const setScope = useCallback(
+    (next: ProfileScope) => {
+      const params = new URLSearchParams(searchParams);
+      if (next === "general") params.delete(SCOPE_PARAM);
+      else params.set(SCOPE_PARAM, next);
+      // Scope changes re-baseline the replay area: a game scope preselects
+      // its game (written through the same `?game=` the filter state reads),
+      // General returns to all-games; both keep the newest-first baseline.
+      params.delete("page");
+      params.delete("sort");
+      if (isGameScope(next)) {
+        params.set("game", next);
+        gamePinnedRef.current = next;
+      } else {
+        params.delete("game");
+      }
+      setSearchParams(params);
+    },
+    [searchParams, setSearchParams],
+  );
+
+  // Deep links (`?scope=nim` with no explicit `game=`) preselect the scoped
+  // game in the filter area too. An explicit `game=` in the URL wins, and we
+  // pin at most once per scope entry so chip removal isn't fought.
+  useEffect(() => {
+    if (!isGameScope(scope) || gamePinnedRef.current === scope) return;
+    gamePinnedRef.current = scope;
+    if (searchParams.has("game")) return;
+    const params = new URLSearchParams(searchParams);
+    params.set("game", scope);
+    params.delete("sort");
+    setSearchParams(params, { replace: true });
+  }, [scope, searchParams, setSearchParams]);
+
+  // "Clear filters" must clear ONLY the replay filters — not the profile's
+  // own navigation params. The hook's clearFilters wipes the whole query
+  // string, which would silently knock the page back to the General scope
+  // (and lose the active tab). Preserve scope + tab, and the game
+  // preselection when we're inside a game scope.
+  const clearProfileFilters = useCallback(() => {
+    const preserved = new URLSearchParams();
+    const scopeVal = searchParams.get(SCOPE_PARAM);
+    const tabVal = searchParams.get("tab");
+    if (scopeVal) preserved.set(SCOPE_PARAM, scopeVal);
+    if (tabVal) preserved.set("tab", tabVal);
+    if (isGameScope(scope)) preserved.set("game", scope);
+    setSearchParams(preserved);
+  }, [searchParams, scope, setSearchParams]);
+
   const replaysToShow = useMemo<ReplaySummary[]>(() => {
     return [...(page?.replays ?? []), ...extraReplays];
   }, [page, extraReplays]);
@@ -86,9 +165,21 @@ export default function Profile() {
   }, [username, filters, loadedPages]);
 
   if (profileError) {
+    // 404 means the user genuinely doesn't exist; anything else is a
+    // transport/server failure and gets the standard retryable error state.
+    if (profileError instanceof ProfileNotFoundError) {
+      return (
+        <div className="ga-profile">
+          <ErrorState
+            title="User not found"
+            body={`We couldn't find a user named "${username}".`}
+          />
+        </div>
+      );
+    }
     return (
       <div className="ga-profile">
-        <ErrorState title="User not found" body={`We couldn't find a user named "${username}".`} />
+        <ErrorState retry={refetch} />
       </div>
     );
   }
@@ -96,7 +187,7 @@ export default function Profile() {
   return (
     <div className="ga-profile">
       <ProfileHeader
-        profile={profile}
+        summary={summary}
         loading={profileLoading}
         isOwner={isOwner}
         onTabChange={setTab}
@@ -119,48 +210,60 @@ export default function Profile() {
 
       {tab === "matches" && (
         <>
-          <ProfileStats profile={profile} loading={profileLoading} />
+          <ScopePills scope={scope} onChange={setScope} />
 
-          <ActivityHeatmap username={username} />
+          {profileLoading || !summary ? (
+            <Card className="ga-profile-scope-skeleton" testId="profile-stats-skeleton">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} variant="rect" height={60} />
+              ))}
+            </Card>
+          ) : scope === "puzzles" ? (
+            <PuzzleStatsPanel stats={summary.puzzles} />
+          ) : (
+            <ScopedOverview summary={summary} scope={scope} />
+          )}
 
-          <Section
-            title="Recent matches"
-            subtitle="Filter and browse this user's replays."
-            testId="profile-recent-matches"
-          >
-            <ReplayFilterBar
-              filters={filters}
-              setFilter={setFilter}
-              setFilters={setFilters}
-              onClear={clearFilters}
-              showPresets
-            />
-
-            {matchesLoading && replaysToShow.length === 0 ? (
-              <MatchGrid replays={[]} loading skeletonCount={6} />
-            ) : replaysToShow.length === 0 ? (
-              <EmptyState
-                icon="?"
-                title="No replays match these filters"
-                body="Try widening your Elo range or clearing a filter."
-                action={<Button onClick={clearFilters}>Clear filters</Button>}
+          {scope !== "puzzles" && (
+            <Section
+              title="Recent matches"
+              subtitle="Filter and browse this user's replays."
+              testId="profile-recent-matches"
+            >
+              <ReplayFilterBar
+                filters={filters}
+                setFilter={setFilter}
+                setFilters={setFilters}
+                onClear={clearProfileFilters}
+                showPresets
               />
-            ) : (
-              <>
-                <MatchGrid
-                  replays={replaysToShow}
-                  viewerUsername={username}
-                  loading={matchesLoading}
+
+              {matchesLoading && replaysToShow.length === 0 ? (
+                <MatchGrid replays={[]} loading skeletonCount={6} />
+              ) : replaysToShow.length === 0 ? (
+                <EmptyState
+                  icon="?"
+                  title="No replays match these filters"
+                  body="Try widening your Elo range or clearing a filter."
+                  action={<Button onClick={clearProfileFilters}>Clear filters</Button>}
                 />
-                {replaysToShow.length < totalAvailable && (
-                  <LoadMoreButton
-                    remaining={totalAvailable - replaysToShow.length}
-                    onClick={() => void loadMore()}
+              ) : (
+                <>
+                  <MatchGrid
+                    replays={replaysToShow}
+                    viewerUsername={username}
+                    loading={matchesLoading}
                   />
-                )}
-              </>
-            )}
-          </Section>
+                  {replaysToShow.length < totalAvailable && (
+                    <LoadMoreButton
+                      remaining={totalAvailable - replaysToShow.length}
+                      onClick={() => void loadMore()}
+                    />
+                  )}
+                </>
+              )}
+            </Section>
+          )}
         </>
       )}
 
@@ -171,16 +274,74 @@ export default function Profile() {
   );
 }
 
+/**
+ * Heatmap + stat tiles + hero (+ best-AI on General) for one non-puzzle
+ * scope, all read from the matching slice of the single ProfileSummary.
+ */
+function ScopedOverview({
+  summary,
+  scope,
+}: {
+  summary: ProfileSummary;
+  scope: Exclude<ProfileScope, "puzzles">;
+}) {
+  if (scope === "general") {
+    const { general } = summary;
+    return (
+      <>
+        <ActivityHeatmap grid={general.heatmap} />
+        <ScopeStatPanel
+          record={general.record}
+          elo={{ peak: general.peakElo, average: general.averageElo }}
+        />
+        <div className="ga-profile-duo">
+          <BestAiCard bestAi={general.bestAi} />
+          <ReplayHero replay={general.mostViewed} />
+        </div>
+      </>
+    );
+  }
+
+  const game = summary.perGame.find((g) => g.gameKey === scope);
+  if (!game) {
+    return (
+      <EmptyState
+        icon="?"
+        title={`No ${replayGameNames[scope]} matches yet`}
+        body="Stats for this game appear after the first match is archived."
+        testId="profile-scope-empty"
+      />
+    );
+  }
+  return (
+    <>
+      <ActivityHeatmap
+        grid={game.heatmap}
+        subtitle={`${replayGameNames[scope]} matches per weekday / hour (UTC)`}
+      />
+      <ScopeStatPanel
+        record={game.record}
+        elo={{
+          current: game.rating.current,
+          peak: game.rating.peak,
+          average: game.rating.average,
+        }}
+      />
+      <ReplayHero replay={game.mostViewed} />
+    </>
+  );
+}
+
 interface ProfileHeaderProps {
-  profile: ReturnType<typeof useProfile>["profile"];
+  summary: ProfileSummary | null;
   loading: boolean;
   isOwner: boolean;
   activeTab: ProfileTab;
   onTabChange: (next: ProfileTab) => void;
 }
 
-function ProfileHeader({ profile, loading, isOwner, activeTab, onTabChange }: ProfileHeaderProps) {
-  if (loading || !profile) {
+function ProfileHeader({ summary, loading, isOwner, activeTab, onTabChange }: ProfileHeaderProps) {
+  if (loading || !summary) {
     return (
       <Card className="ga-profile-header" testId="profile-header-skeleton">
         <div className="ga-profile-header__main">
@@ -198,7 +359,13 @@ function ProfileHeader({ profile, loading, isOwner, activeTab, onTabChange }: Pr
     );
   }
 
-  const { user, perGame, overallElo, joinedAt } = profile;
+  const { user, general, perGame, puzzles } = summary;
+  // The headline figure is the user's General standing: peak across all
+  // games, falling back to the mean of current ratings, honest "Unrated"
+  // when neither exists.
+  const overallElo = general.peakElo ?? general.averageElo;
+  const ratedGames = perGame.filter((g) => g.rating.current !== null);
+  const hasPuzzleData = puzzles.perGame.length > 0 || puzzles.overallRating !== null;
   return (
     <Card className="ga-profile-header" testId="profile-header">
       <div className="ga-profile-header__main">
@@ -209,19 +376,27 @@ function ProfileHeader({ profile, loading, isOwner, activeTab, onTabChange }: Pr
             <span className="ga-profile-header__handle">@{user.username}</span>
           </div>
           <div className="ga-profile-header__since">
-            Joined <TimeAgo date={joinedAt} />
+            Joined <TimeAgo date={new Date(user.createdAt)} />
           </div>
           <div className="ga-profile-header__chips" data-testid="profile-elo-chips">
             <div className="ga-profile-header__overall" data-testid="overall-elo">
-              <span className="ga-profile-header__overall-num">{overallElo}</span>
+              <span className="ga-profile-header__overall-num">
+                {overallElo === null ? "Unrated" : Math.round(overallElo)}
+              </span>
               <span className="ga-profile-header__overall-label">overall Elo</span>
             </div>
-            <TierBadge rating={overallElo} withRating />
-            {perGame.map((g) => (
+            {overallElo !== null && <TierBadge rating={Math.round(overallElo)} withRating />}
+            {ratedGames.map((g) => (
               <Badge variant="default" testId="elo-chip" key={g.gameKey}>
-                {replayGameNames[g.gameKey]} - {g.rating}
+                {replayGameNames[g.gameKey]} - {Math.round(g.rating.current ?? 0)}
               </Badge>
             ))}
+            {hasPuzzleData && (
+              <Badge variant="info" testId="elo-chip">
+                Puzzles -{" "}
+                {puzzles.overallRating === null ? "Unrated" : Math.round(puzzles.overallRating)}
+              </Badge>
+            )}
           </div>
         </div>
       </div>
@@ -232,7 +407,7 @@ function ProfileHeader({ profile, loading, isOwner, activeTab, onTabChange }: Pr
           aria-pressed={activeTab === "matches"}
           role="tab"
         >
-          Matches
+          Overview
         </Button>
         {isOwner && (
           <Button
@@ -256,52 +431,6 @@ function ProfileHeader({ profile, loading, isOwner, activeTab, onTabChange }: Pr
         )}
       </div>
     </Card>
-  );
-}
-
-interface ProfileStatsProps {
-  profile: ReturnType<typeof useProfile>["profile"];
-  loading: boolean;
-}
-
-function ProfileStats({ profile, loading }: ProfileStatsProps) {
-  if (loading || !profile) {
-    return (
-      <Card className="ga-profile-stats" testId="profile-stats-skeleton">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Skeleton key={i} variant="rect" height={60} />
-        ))}
-      </Card>
-    );
-  }
-  const { totalMatches, wins, losses, draws, currentStreak } = profile;
-  const winRate = totalMatches > 0 ? Math.round((wins / totalMatches) * 100) : 0;
-  return (
-    <Card className="ga-profile-stats" testId="profile-stats">
-      <Stat label="Matches" value={totalMatches} />
-      <Stat label="Wins" value={wins} variant="success" />
-      <Stat label="Losses" value={losses} variant="danger" />
-      <Stat label="Draws" value={draws} />
-      <Stat label="Win rate" value={`${winRate}%`} variant="info" />
-      <Stat label="Win streak" value={currentStreak} variant="accent" />
-    </Card>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  variant,
-}: {
-  label: string;
-  value: number | string;
-  variant?: "success" | "danger" | "info" | "accent";
-}) {
-  return (
-    <div className={`ga-stat ga-stat--${variant ?? "default"}`}>
-      <div className="ga-stat__value">{value}</div>
-      <div className="ga-stat__label">{label}</div>
-    </div>
   );
 }
 

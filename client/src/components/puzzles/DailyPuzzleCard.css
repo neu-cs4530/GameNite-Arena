@@ -1,0 +1,80 @@
+.ga-puzzle-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.ga-puzzle-card__header {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.ga-puzzle-card__title {
+  margin: 0;
+  font-size: var(--text-h3);
+  font-weight: var(--weight-semibold);
+}
+
+.ga-puzzle-card__header-meta {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.ga-puzzle-card__date {
+  font-size: var(--text-small);
+  color: var(--color-fg-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.ga-puzzle-card__board-skeleton {
+  width: 100%;
+  margin-bottom: var(--space-3);
+}
+
+.ga-puzzle-card__attempt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ga-puzzle-card__submit-error {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--color-danger);
+}
+
+.ga-puzzle-card__hint-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+/* The granted hint IS the answer — it gets the warning treatment so it
+   reads as "you spent something for this", not as ordinary helper text. */
+.ga-puzzle-card__hint-reveal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-warning);
+  background: var(--color-warning-soft);
+}
+
+.ga-puzzle-card__hint-move {
+  margin: 0;
+}
+
+.ga-puzzle-card__fine-print {
+  margin: 0;
+  font-size: var(--text-micro);
+  color: var(--color-fg-subtle);
+}

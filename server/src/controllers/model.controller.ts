@@ -24,6 +24,7 @@ import { type RestAPI } from "../types.ts";
 import { checkAuth } from "../services/auth.service.ts";
 import {
   uploadModel,
+  forkModel,
   getModelById,
   getModelsByUser,
   deployModel,
@@ -84,6 +85,12 @@ const zDeployBody = withAuth(
 );
 
 const zStatusBody = withAuth(z.enum(["active", "paused", "retired"]));
+
+const zForkBody = withAuth(
+  z.object({
+    displayName: z.string().max(120).optional(),
+  }),
+);
 
 // Controllers
 
@@ -188,6 +195,31 @@ export const postDeploy: RestAPI<DeploymentInfo, { id: string }> = async (req, r
     const msg = err instanceof Error ? err.message : "Deploy failed";
     const status = msg.includes("not found") ? 404 : msg.includes("not own") ? 403 : 422;
     res.status(status).send({ error: msg });
+  }
+};
+
+/**
+ * POST /api/model/:modelId/fork
+ * Copies a visible model into a NEW private record owned by the caller
+ * (Story 2.13). No artifact is copied — forks retrain from scratch.
+ */
+export const postFork: RestAPI<ModelInfo, { modelId: string }> = async (req, res) => {
+  const body = zForkBody.safeParse(req.body);
+  if (body.error) {
+    res.status(400).send({ error: "Poorly-formed request" });
+    return;
+  }
+  const user = await checkAuth(body.data.auth);
+  if (!user) {
+    res.status(403).send({ error: "Invalid credentials" });
+    return;
+  }
+  try {
+    const model = await forkModel(user, req.params.modelId, body.data.payload.displayName);
+    res.status(201).send(model);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Fork failed";
+    res.status(msg.includes("not found") ? 404 : 422).send({ error: msg });
   }
 };
 

@@ -79,14 +79,23 @@ class GameNiteSession:
             else None
         )
         self._token = token
+        self._checkpoint_job_id: str | None = None
 
     # -- lifecycle ----------------------------------------------------------
 
     def start(self, game_key: str, *, episodes: int, learning_rate: float,
               model_display_name: str | None = None,
               model_id: str | None = None,
+              checkpoint_model_id: str | None = None,
               extra: dict[str, Any] | None = None) -> str:
-        """Register the session. Returns (and remembers) the job id."""
+        """
+        Register the session. Returns (and remembers) the job id.
+
+        checkpoint_model_id (CoS 2.10): when provided, the server resolves
+        that model's latest artifact and includes a checkpointJobId in the
+        session info. Call download_checkpoint(dest_path) after start() to
+        fetch the .pth, then pass it to adapter.train(checkpoint_path=...).
+        """
         config: dict[str, Any] = {"episodes": episodes, "learningRate": learning_rate}
         if extra:
             config["extra"] = extra
@@ -97,8 +106,12 @@ class GameNiteSession:
         elif model_display_name is not None:
             payload["modelDisplayName"] = model_display_name
 
+        if checkpoint_model_id is not None:
+            payload["checkpointModelId"] = checkpoint_model_id
+
         info = self._post_json("/api/training/submit", payload)
         self.job_id = info["jobId"]
+        self._checkpoint_job_id = info.get("checkpointJobId")
         return self.job_id
 
     def attach(self, job_id: str) -> str:
@@ -106,10 +119,23 @@ class GameNiteSession:
         Adopt a session registered elsewhere — typically the web UI's
         "New training run" page, which registers a queued session and shows
         the command to run locally. Subsequent report()/complete()/fail()/
-        upload_artifact() calls post to that job. Makes no requests itself.
+        upload_artifact() calls post to that job. Makes no requests itself;
+        use get_job() to discover the job's game and config.
         """
         self.job_id = job_id
         return job_id
+
+    def get_job(self, job_id: str | None = None) -> dict[str, Any]:
+        """
+        Fetch a session's public info — plain GET /api/training/:jobId, no
+        auth needed. This is how an attached trainer discovers gameKey and
+        config (episodes, learningRate, extra.heuristics) for a run that
+        was registered on the web form. Defaults to the attached job.
+        """
+        target = job_id if job_id is not None else self.job_id
+        if target is None:
+            raise RuntimeError("get_job() needs a job id (pass one or attach() first)")
+        return self._request(f"/api/training/{target}", method="GET")
 
     def report(self, episodes: int, metrics: dict[str, float] | None = None,
                message: str | None = None) -> bool:
@@ -143,6 +169,38 @@ class GameNiteSession:
     def fail(self, error: str) -> dict[str, Any]:
         """Mark the session failed. The reason is PUBLICLY visible — summarize."""
         return self._post_json(self._job_path("fail"), {"error": error})
+
+    def download_checkpoint(self, dest_path: str) -> str | None:
+        """
+        Download the checkpoint artifact to dest_path.
+        Returns dest_path on success, or None if no checkpoint was requested.
+        CoS 2.10: call this after start() when checkpoint_model_id was given,
+        then pass the path to adapter.train(checkpoint_path=dest_path).
+
+        Example::
+
+            job_id = session.start("nim", episodes=50_000,
+                                   checkpoint_model_id="<model-id>")
+            ckpt = session.download_checkpoint("resume.pth")
+            adapter.train(total_episodes=50_000, checkpoint_path=ckpt)
+        """
+        if not self._checkpoint_job_id:
+            return None
+        url = f"{self.base_url}/api/training/{self._checkpoint_job_id}/artifact"
+        request = urllib.request.Request(url, method="GET")
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as resp:
+                Path(dest_path).write_bytes(resp.read())
+            return dest_path
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode(errors="replace")
+            raise GameNiteSessionError(
+                f"checkpoint download failed HTTP {exc.code}: {detail}", status=exc.code
+            ) from exc
+        except urllib.error.URLError as exc:
+            raise GameNiteSessionError(
+                f"checkpoint download failed: {exc.reason}"
+            ) from exc
 
     def upload_artifact(self, pth_path: str) -> dict[str, Any]:
         """Upload the trained .pth and bind it to the session's model."""
@@ -208,12 +266,14 @@ class GameNiteSession:
                 return self._request(path, body=body, content_type="application/json")
             raise
 
-    def _request(self, path: str, *, body: bytes, content_type: str) -> dict[str, Any]:
+    def _request(self, path: str, *, body: bytes | None = None,
+                 content_type: str | None = None,
+                 method: str | None = None) -> dict[str, Any]:
         request = urllib.request.Request(
             f"{self.base_url}{path}",
             data=body,
-            method="POST",
-            headers={"Content-Type": content_type},
+            method=method or "POST",
+            headers={"Content-Type": content_type} if content_type else {},
         )
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:

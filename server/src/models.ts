@@ -60,11 +60,16 @@ export interface CommentRecord {
  * - `state`: absent if the game hasn't started, or the id for the game's state
  * - `done`: whether the game has finished
  * - `chat`: id for the game's chat
- * - `players`: human players for the game (Story 1, 3)
- * - `aiPlayers`: deployed AI participants in the game (Story 2.6)
+ * - `players`: seat ids for the game, in seat order: user ids for human
+ *              seats, deployment ids for AI seats (Story 1, 3, 2.6)
+ * - `aiPlayers`: deployed AI participants in the game, POSITIONAL with
+ *               `players` — `aiPlayers[i]` describes the AI in seat i, and is
+ *               null/absent for human seats (Story 2.6)
  * - `rated`: whether this game contributes to Glicko 2 ratings (Story 1.2)
  * - `delaySec`: broadcaster-configured live broadcast delay in seconds (Story 3.7)
- * - `invalidMoveStreaks`: per-AI count of consecutive invalid moves; AI forfeits at 3 (Story 2.8)
+ * - `invalidMoveStreaks`: per-seat (keyed by seat index) count of an AI's
+ *               consecutive invalid moves, mirrored from the inference
+ *               service's 422 counter; the AI forfeits at 3 (Story 2.8)
  * - `matchId`: set when game completes and a MatchRecord is created (Story 3.1)
  * - `createdAt`: when the game was created
  * - `createdBy`: user id of the person who created the game
@@ -75,10 +80,10 @@ export interface GameRecord {
   done: boolean;
   chat: RecordId; // References Chat records
   players: RecordId[]; // References User records
-  aiPlayers: AIParticipant[]; // References Deployment records (Story 2.6)
+  aiPlayers: (AIParticipant | null)[]; // References Deployment records (Story 2.6)
   rated: boolean; // Story 1.2
   delaySec?: number; // Story 3.7
-  invalidMoveStreaks?: { [modelId: string]: number }; // Story 2.8
+  invalidMoveStreaks?: { [seatIndex: string]: number }; // Story 2.8
   matchId?: RecordId; // References Match records, set on completion (Story 3.1)
   createdAt: DateISO;
   createdBy: RecordId; // References User records
@@ -129,8 +134,13 @@ export interface ThreadRecord {
  * - `username`: Text username (a non-random key for looking up Auth records)
  * - `display`: A display name
  * - `createdAt`: when this user registered.
- * - `puzzleRating`: Glicko 2 puzzle rating, distinct from per-game match ratings (Story 1.8)
+ * - `puzzleRatings`: per-game Glicko 2 puzzle ratings, distinct from match ratings (Story 1.8).
+ *               Keyed by GameKey; a game appears once the user's first rated attempt lands.
  * - `puzzleStreak`: current and best historical daily puzzle solve streak (Story 1.8)
+ * - `puzzleLastRatedAt`: per-game UTC date (YYYY-MM-DD) of the last RATED daily-puzzle
+ *               attempt. Gates the rated-attempt economy: only the first unhinted
+ *               attempt of the day per game moves rating/streak; practice attempts
+ *               never touch this map. Optional — records predating the economy lack it.
  * - `following`: user ids this user follows (Story 3.9). Lives here rather than in a
  *               separate FollowRepo because reads are always per-user.
  * - `emailPrefs`: optional email subscription preferences (Story 1.13 extension)
@@ -139,8 +149,9 @@ export interface UserRecord {
   username: string; // References Auth records
   display: string;
   createdAt: DateISO;
-  puzzleRating: GlickoRating; // Story 1.8
+  puzzleRatings: Partial<Record<GameKey, GlickoRating>>; // Story 1.8
   puzzleStreak: PuzzleStreak; // Story 1.8
+  puzzleLastRatedAt?: Partial<Record<GameKey, DateISO>>; // Story 1.7/1.12 rated economy
   following: RecordId[]; // References User records (Story 3.9)
   emailPrefs?: EmailPrefs; // Story 1.13 (Extension)
 }
@@ -472,14 +483,19 @@ export function dailyPuzzleKey(args: { gameKey: GameKey; date: Date }): string {
  * - `attemptedBy`: who solved it (with human/AI discriminator)
  * - `success`: pass/fail
  * - `timeMs`: how long the attempt took (used for the daily fastest-solvers list)
- * - `hintsUsed`: count of hints revealed (each one applies a small puzzle Elo penalty, Story 1.12)
- * - `eloDelta`: change applied to the entity's puzzle rating
+ * - `hintsUsed`: count of hints revealed; any hint makes the attempt practice —
+ *                the hint shows the winning move, so it can never gain rating (Story 1.12)
+ * - `eloDelta`: change applied to the entity's puzzle rating (always 0 for practice attempts)
  * - `createdAt`: when the attempt was submitted
  */
 export interface PuzzleAttemptRecord {
   puzzleId: RecordId; // References Puzzle records
   attemptedBy: PuzzleAttempter;
   success: boolean;
+  /** Whether this attempt moved the user's puzzle rating. Optional because
+   * records written before the profile rework lack it — readers fall back
+   * to `eloDelta !== 0`. */
+  rated?: boolean;
   timeMs: number;
   hintsUsed: number;
   eloDelta: number;
@@ -489,6 +505,22 @@ export interface PuzzleAttemptRecord {
 export interface PuzzleAttempter {
   id: RecordId; // userId or modelId
   type: "human" | "ai";
+}
+
+/**
+ * A server-side record that a user was shown the hint for a puzzle. The
+ * rated economy keys off this (a hinted puzzle can never be a rated solve),
+ * so hint state cannot live client-side. Keyed by `puzzleHintKey()`.
+ */
+export interface PuzzleHintRecord {
+  userId: RecordId;
+  puzzleId: RecordId; // "<gameKey>:<YYYY-MM-DD>"
+  grantedAt: DateISO;
+}
+
+/** Deterministic key for a hint grant: one per user per puzzle. */
+export function puzzleHintKey(userId: RecordId, puzzleId: RecordId): string {
+  return `${userId}|${puzzleId}`;
 }
 
 /**

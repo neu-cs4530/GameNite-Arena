@@ -13,6 +13,7 @@ import type { GameSocket } from "./util/types.ts";
 import LoggedInRoute from "./components/LoggedInRoute.tsx";
 import Game from "./pages/Game.tsx";
 import GamesPortal from "./pages/GamesPortal.tsx";
+import GameSection from "./pages/GameSection.tsx";
 import MatchmakingQueue from "./pages/MatchmakingQueue.tsx";
 import ThreadPage from "./pages/ThreadPage.tsx";
 import { ErrorBoundary } from "react-error-boundary";
@@ -28,6 +29,8 @@ import TrainingJobLive from "./pages/TrainingJobLive.tsx";
 import ModelsBrowse from "./pages/ModelsBrowse.tsx";
 import ModelCardPage from "./pages/ModelCardPage.tsx";
 import ForkModelPage from "./pages/ForkModelPage.tsx";
+import Puzzles from "./pages/Puzzles.tsx";
+import Leaderboards from "./pages/Leaderboards.tsx";
 
 /** If `true`, all incoming socket messages will be logged */
 const DEBUG_SOCKETS = false;
@@ -131,9 +134,14 @@ export default function App() {
             <Route path="/forum/post/new" element={<NewThread />} />
             <Route path="/forum/post/:threadId" element={<ThreadPage />} />
             <Route path="/games" element={<GamesPortal />} />
+            {/* The static "queue" segment must stay ahead of the dynamic
+                :gameKey section route so /games/queue/nim is the queue. */}
             <Route path="/games/queue/:gameKey" element={<MatchmakingQueue />} />
+            <Route path="/games/:gameKey" element={<GameSection />} />
+            <Route path="/leaderboards" element={<Leaderboards />} />
             <Route path="/game/:gameId" element={<Game />} />
             <Route path="/profile/:username" element={<Profile />} />
+            <Route path="/puzzles" element={<Puzzles />} />
             <Route path="/replays" element={<ReplaysDiscovery />} />
             <Route path="/replays/:matchId" element={<ReplayViewer />} />
             <Route path="/study/:shareToken" element={<StudyView />} />

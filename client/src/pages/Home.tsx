@@ -3,6 +3,7 @@ import ThreadSummaryView from "../components/ThreadSummaryView.tsx";
 import { useNavigate } from "react-router-dom";
 import useGameList from "../hooks/useGameList.ts";
 import GameSummaryView from "../components/GameSummaryView.tsx";
+import { HomePuzzleCard } from "../components/puzzles/index.ts";
 
 export default function Home() {
   const threadList = useThreadList(4);
@@ -11,6 +12,8 @@ export default function Home() {
 
   return (
     <div className="content">
+      {/* Renders nothing while loading / on outage — Home never breaks on puzzles. */}
+      <HomePuzzleCard />
       <div className="spacedSection">
         <h2>Recent games</h2>
         {"message" in gameList ? (
