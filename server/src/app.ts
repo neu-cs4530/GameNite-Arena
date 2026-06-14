@@ -84,7 +84,8 @@ app.use(
         .get("/list", replay.getList)
         .get("/:matchId/download", replay.getDownload)
         .get("/:matchId", replay.getById)
-        .post("/:matchId/view", replay.postView),
+        .post("/:matchId/view", replay.postView)
+        .post("/:matchId/analysis", replay.postAnalysis),
     )
     .use(
       "/annotation",
