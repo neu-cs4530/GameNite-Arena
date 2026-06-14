@@ -4,6 +4,9 @@ import type { ReplayGameKey } from "./types.ts";
 export const gameNames: { [key in GameKey]: string } = {
   nim: "Nim",
   guess: "Number Guesser",
+  tictactoe: "Tic-Tac-Toe",
+  connect4: "Connect 4",
+  checkers: "Checkers",
 };
 
 /**

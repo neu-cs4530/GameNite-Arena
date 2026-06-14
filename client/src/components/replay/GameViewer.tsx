@@ -35,7 +35,16 @@ export default function GameViewer({ view, replay }: GameViewerProps): JSX.Eleme
   if (view?.type === "guess") {
     return <GuessReplayView view={view.view} participants={participants} />;
   }
-  // Game keys that don't have a live shared view type yet.
+  if (view?.type === "tictactoe") {
+    return <TicTacToeReplayView view={view.view} participants={participants} />;
+  }
+  if (view?.type === "connect4") {
+    return <Connect4ReplayView view={view.view} participants={participants} />;
+  }
+  if (view?.type === "checkers") {
+    return <CheckersReplayView view={view.view} participants={participants} />;
+  }
+  // No derived view (older replay without per-move reduction): explain via stub.
   return renderStubFor(replay.gameKey, participants);
 }
 
@@ -45,14 +54,5 @@ function extractStartingPile(replay: ReplayDetail): number | undefined {
 }
 
 function renderStubFor(key: ReplayGameKey, _participants: MatchParticipantView[]): JSX.Element {
-  switch (key) {
-    case "checkers":
-      return <CheckersReplayView />;
-    case "connect4":
-      return <Connect4ReplayView />;
-    case "tictactoe":
-      return <TicTacToeReplayView />;
-    default:
-      return <StubReplayView gameLabel={replayGameNames[key]} />;
-  }
+  return <StubReplayView gameLabel={replayGameNames[key]} />;
 }

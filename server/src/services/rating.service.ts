@@ -1,5 +1,15 @@
 import { invalidateLeaderboardCache } from "./leaderboard.service.ts";
-import { type GameKey, type GuessState, type NimState } from "@gamenite/shared";
+import {
+  type GameKey,
+  type GuessState,
+  type NimState,
+  type TicTacToeState,
+  type Connect4State,
+  type CheckersState,
+} from "@gamenite/shared";
+import { ticTacToeLogic } from "../games/tictactoe.ts";
+import { connect4Logic } from "../games/connect4.ts";
+import { checkersLogic } from "../games/checkers.ts";
 import { ratingKey, type GameRecord, type MatchResult } from "../models.ts";
 import { MatchRepo, RatingRepo } from "../repository.ts";
 import {
@@ -118,6 +128,23 @@ function getWinnerId(gameKey: GameKey, state: unknown, players: string[]): strin
     // misere nim: the player who didn't take the last object wins
     const { nextPlayer } = state as NimState;
     return players[nextPlayer];
+  }
+
+  // Board games delegate to their own winnerIndex hook — the single source
+  // of truth for who won — rather than re-deriving the rule here (the trap
+  // this used to fall into: scoring every non-nim game with the guess
+  // algorithm).
+  if (gameKey === "tictactoe") {
+    const idx = ticTacToeLogic.winnerIndex?.(state as TicTacToeState);
+    return idx === null || idx === undefined ? undefined : players[idx];
+  }
+  if (gameKey === "connect4") {
+    const idx = connect4Logic.winnerIndex?.(state as Connect4State);
+    return idx === null || idx === undefined ? undefined : players[idx];
+  }
+  if (gameKey === "checkers") {
+    const idx = checkersLogic.winnerIndex?.(state as CheckersState);
+    return idx === null || idx === undefined ? undefined : players[idx];
   }
 
   // guess: closest to the secret wins; an exact tie is a draw

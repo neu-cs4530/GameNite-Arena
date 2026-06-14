@@ -15,6 +15,12 @@ export function sectionLede(gameKey: GameKey): string {
       return "Take 1–3 from the pile — whoever takes the last object loses.";
     case "guess":
       return "Pick a secret number, then out-guess your opponent.";
+    case "tictactoe":
+      return "Line up three in a row before your opponent does.";
+    case "connect4":
+      return "Drop discs to connect four in a row — across, down, or diagonally.";
+    case "checkers":
+      return "Capture every enemy piece, or leave them with no move.";
   }
 }
 

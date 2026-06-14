@@ -83,6 +83,12 @@
   --space-6: 1.5rem; /* 24px */
   --space-8: 2rem; /* 32px */
   --space-10: 2.5rem; /* 40px */
+
+  /* Max size of a game board (tictactoe/connect4/checkers); boards are
+     aspect-ratio squares sized width: min(100%, var(--board-max)). Capped by
+     viewport height too (62vh) so a tall board never eats the whole screen
+     and pushes the post-game recap out of view on a laptop. */
+  --board-max: min(34rem, 62vh);
   --space-12: 3rem; /* 48px */
   --space-16: 4rem; /* 64px */
   --space-20: 5rem; /* 80px */

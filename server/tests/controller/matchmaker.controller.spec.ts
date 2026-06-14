@@ -593,6 +593,9 @@ describe("getQueueStatus", () => {
     expect(send).toHaveBeenCalledExactlyOnceWith({
       nim: { rated: 0, unrated: 0 },
       guess: { rated: 0, unrated: 0 },
+      tictactoe: { rated: 0, unrated: 0 },
+      connect4: { rated: 0, unrated: 0 },
+      checkers: { rated: 0, unrated: 0 },
     });
   });
 });

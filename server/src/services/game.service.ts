@@ -6,6 +6,9 @@ import { populateSafeUserInfo } from "./user.service.ts";
 import { type GameServicer } from "../games/gameServiceManager.ts";
 import { nimGameService } from "../games/nim.ts";
 import { guessGameService } from "../games/guess.ts";
+import { ticTacToeGameService } from "../games/tictactoe.ts";
+import { connect4GameService } from "../games/connect4.ts";
+import { checkersGameService } from "../games/checkers.ts";
 import { type GameViewUpdates, type UserWithId } from "../types.ts";
 import { type AIParticipant, type MatchResult } from "../models.ts";
 import { GameRepo } from "../repository.ts";
@@ -17,6 +20,9 @@ import * as inferenceClient from "./inferenceClient.ts";
 export const gameServices: { [key in GameKey]: GameServicer } = {
   nim: nimGameService,
   guess: guessGameService,
+  tictactoe: ticTacToeGameService,
+  connect4: connect4GameService,
+  checkers: checkersGameService,
 };
 
 /**
@@ -50,6 +56,32 @@ function encodeStateForInference(gameKey: GameKey, state: unknown): Record<strin
   }
   if (gameKey === "guess") {
     return { low: 1, high: 100 };
+  }
+  // Board games: encode player-relative (1 = side to move, -1 = opponent,
+  // 0 = empty), matching the Python encoders in ai/inference-service.
+  if (gameKey === "tictactoe") {
+    const s = state as { board: string[][]; nextPlayer: number };
+    const mine = s.nextPlayer === 0 ? "O" : "X";
+    const board = s.board.flat().map((c) => (c === "." ? 0 : c === mine ? 1 : -1));
+    return { board };
+  }
+  if (gameKey === "connect4") {
+    const s = state as { board: string[][]; nextPlayer: number };
+    const mine = s.nextPlayer === 0 ? "R" : "Y";
+    const board = s.board.map((row) => row.map((c) => (c === "." ? 0 : c === mine ? 1 : -1)));
+    return { board };
+  }
+  if (gameKey === "checkers") {
+    // The Python encoder one-hots the raw piece strings over the 32 dark
+    // squares (row-major, where row + col is odd) — not player-relative.
+    const s = state as { board: string[][] };
+    const squares: string[] = [];
+    for (let r = 0; r < 8; r += 1) {
+      for (let c = 0; c < 8; c += 1) {
+        if ((r + c) % 2 === 1) squares.push(s.board[r][c]);
+      }
+    }
+    return { squares };
   }
   return state as Record<string, unknown>;
 }

@@ -1,20 +1,33 @@
 .gamePanel {
   padding: 1rem;
   padding-right: 0;
-  display: grid;
-  grid-template-rows: max-content 1fr;
-  /* The post-match recap renders below the frame; let the column scroll. */
+  /* A natural top-to-bottom stack — roster, board, then the post-match recap
+     and requeue strip — that scrolls as one. It was a 2-row grid
+     (max-content 1fr) but renders four children: the 1fr board row ate all
+     free space and pushed the recap + requeue into overflowing rows below
+     the fold, where they were clipped instead of reachable. */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   overflow-y: auto;
+}
+
+/* Each section keeps its natural height — flex items shrink by default, which
+   squeezed the recap card below its content (and it clips), so the panel must
+   scroll instead of compressing its children. */
+.gamePanel > * {
+  flex-shrink: 0;
 }
 
 .gameRoster {
   position: relative;
 }
 
+/* Join/Start sit in normal flow below the roster, not absolutely pinned to
+   the top-right corner — at narrow column widths an absolute button overlaps
+   a wrapped game title ("Number Guesser", "Tic-Tac-Toe"). */
 .gameRoster button {
-  position: absolute;
-  right: 0;
-  top: 0;
+  margin-top: var(--space-3, 0.75rem);
 }
 
 .gameFrame {
@@ -25,4 +38,11 @@
 
 .gameFrame.waiting {
   background-color: var(--gray-background);
+}
+
+@media (max-width: 900px) {
+  .gamePanel {
+    overflow-y: visible;
+    padding-right: 1rem;
+  }
 }

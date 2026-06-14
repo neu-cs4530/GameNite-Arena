@@ -34,8 +34,12 @@ the game's defaults):
 Cancel works mid-run: hit Cancel on the job page and the next report
 stops the loop. Watch live at <client>/trainer/jobs/<job id>.
 
-Only nim has a local trainer today; the other adapters in this kit are
-reference implementations to build yours on.
+Local trainers exist for nim, connect4, and tictactoe — each trains a real
+PPO policy against a scripted opponent and uploads an artifact whose
+metadata.obs_size/action_space match the trusted serving encoders
+(ai/inference-service/encoders.py), so the model plays on the SAME
+observation it trained on. checkers is not yet trainable here: its action
+space is dynamic and the kit ships only a stub env (no rules engine).
 """
 
 from __future__ import annotations
@@ -179,10 +183,112 @@ def run_nim(session: GameNiteSession, *, user_id: str, episodes: int,
     return 0
 
 
-# Games with a real local trainer. The other adapters in the kit are
-# reference implementations — wire one up and register it here.
+# board games (connect4, tictactoe) — generic chunked PPO trainer
+
+def evaluate_board(model, env_cls) -> tuple[float, float]:
+    """
+    Real rollouts vs the env's built-in scripted opponent.
+
+    Returns (winRate, meanReward). A "win" is a strictly positive episode
+    return — for these single-reward envs that is exactly the +1 terminal
+    win (a draw is 0, a loss/illegal move is negative). The observation the
+    model is evaluated on is the SAME player-relative vector the trusted
+    serving encoders produce (see ai/tests/test_obs_parity.py), so this win
+    rate reflects real match strength, not a training-only artifact.
+    """
+    env = env_cls()
+    wins = 0
+    total_reward = 0.0
+    for episode in range(EVAL_EPISODES):
+        obs, _ = env.reset(seed=episode if episode == 0 else None)
+        done = False
+        episode_reward = 0.0
+        while not done:
+            action, _ = model.predict(obs, deterministic=True)
+            obs, reward, done, _, _ = env.step(int(action))
+            episode_reward += float(reward)
+        total_reward += episode_reward
+        if episode_reward > 0:
+            wins += 1
+    return wins / EVAL_EPISODES, total_reward / EVAL_EPISODES
+
+
+def make_board_runner(adapter_cls, env_cls):
+    """
+    Build a trainer function for a fixed-action board game (connect4,
+    tictactoe). Mirrors run_nim: chunked PPO with a per-chunk win-rate eval
+    vs the scripted opponent, live reporting, cancel handling, and artifact
+    upload. The adapter's save() stamps metadata.obs_size/action_space from
+    base_adapter's GAME_OBS_SIZES/GAME_ACTION_SPACES, which equal the serving
+    encoders' OBS_SIZES/ACTION_SPACES so /inference/load accepts the artifact.
+
+    heuristics is accepted (uniform signature with run_nim) but unused — these
+    envs ship one scripted (random) opponent; richer opponents are a future
+    knob, not a silent no-op on the existing nim heuristics.
+    """
+    def runner(session: GameNiteSession, *, user_id: str, episodes: int,
+               learning_rate: float, heuristics: Any, chunk_steps: int,
+               display_name: str) -> int:
+        from stable_baselines3 import PPO
+
+        adapter = adapter_cls(user_id=user_id)
+        env = adapter.build_env()
+        model = PPO("MlpPolicy", env, learning_rate=learning_rate,
+                    n_steps=PPO_N_STEPS, verbose=0)
+        adapter._model = model
+
+        n_chunks = plan_chunks(episodes, chunk_steps)
+        win_rate, mean_reward = 0.0, 0.0
+        for chunk in range(1, n_chunks + 1):
+            model.learn(total_timesteps=chunk_steps, reset_num_timesteps=False)
+            win_rate, mean_reward = evaluate_board(model, env_cls)
+            keep_going = session.report(
+                model.num_timesteps,
+                metrics={"winRate": round(win_rate, 4),
+                         "meanReward": round(mean_reward, 4)},
+                message=f"chunk {chunk}/{n_chunks} - winRate {win_rate:.2f}",
+            )
+            print(f"[train] {model.num_timesteps} steps  "
+                  f"winRate={win_rate:.2f}  meanReward={mean_reward:+.2f}")
+            if not keep_going:
+                print("[train] canceled from the web UI - stopping")
+                return 0
+
+        session.complete(final_metrics={"winRate": round(win_rate, 4),
+                                        "meanReward": round(mean_reward, 4)})
+
+        with tempfile.TemporaryDirectory() as tmp:
+            pth = Path(tmp) / f"{display_name}.pth"
+            adapter.save(str(pth))
+            info = session.upload_artifact(str(pth))
+        print(f"[train] artifact uploaded and verified by the platform "
+              f"(hasArtifact={info.get('hasArtifact')}) - done")
+        print(f"[train] final winRate {win_rate:.2f} over "
+              f"{model.num_timesteps} steps")
+        return 0
+
+    return runner
+
+
+def run_connect4(*args, **kwargs) -> int:
+    from example_connect4_adapter import Connect4Adapter, Connect4Env
+    return make_board_runner(Connect4Adapter, Connect4Env)(*args, **kwargs)
+
+
+def run_tictactoe(*args, **kwargs) -> int:
+    from example_tictactoe_adapter import TicTacToeAdapter, TicTacToeEnv
+    return make_board_runner(TicTacToeAdapter, TicTacToeEnv)(*args, **kwargs)
+
+
+# Games with a real local trainer. checkers is intentionally absent: its
+# action space is dynamic (index into per-position legal_moves) and the kit's
+# CheckersEnv is a one-step stub with no rules engine, so PPO has nothing real
+# to learn. Training it requires a full self-play rules engine — left out
+# rather than shipping a model that looks trained but plays at random.
 TRAINERS = {
     "nim": run_nim,
+    "connect4": run_connect4,
+    "tictactoe": run_tictactoe,
 }
 
 

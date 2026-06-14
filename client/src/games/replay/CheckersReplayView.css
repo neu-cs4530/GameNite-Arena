@@ -1,0 +1,128 @@
+/* ============================================================================
+ * Checkers — read-only replay board.
+ *
+ * Same fractional 8x8 grid as the live board: width caps at --board-max but
+ * shrinks to its column, with 1fr tracks so 64 cells never overflow a narrow
+ * replay panel. No selection/hover affordances — purely presentational.
+ * ============================================================================ */
+
+.ga-ch-replay {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+}
+
+.ga-ch-replay__meta {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.ga-ch-replay__players {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  font-weight: var(--weight-semibold);
+}
+
+.ga-ch-replay__player {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ga-ch-replay__vs {
+  color: var(--color-fg-muted);
+  font-weight: var(--weight-regular);
+  font-size: var(--text-small);
+}
+
+.ga-ch-replay__chip {
+  width: var(--space-4);
+  height: var(--space-4);
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow-sm);
+}
+
+.ga-ch-replay__chip--red {
+  background: radial-gradient(circle at 32% 28%, #ff6b6b, #c92a2a 78%);
+}
+
+.ga-ch-replay__chip--black {
+  background: radial-gradient(circle at 32% 28%, #4a4a4a, #111418 78%);
+}
+
+.ga-ch-replay__turn {
+  font-size: var(--text-body);
+  color: var(--color-fg-muted);
+}
+
+.ga-ch-replay__board-wrap {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.ga-ch-replay__board {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  grid-template-rows: repeat(8, 1fr);
+  width: min(100%, var(--board-max, 34rem));
+  aspect-ratio: 1 / 1;
+  border: 2px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-surface);
+  container-type: inline-size;
+}
+
+.ga-ch-replay__square {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+.ga-ch-replay__square--light {
+  background-color: var(--color-bg-elevated);
+}
+
+.ga-ch-replay__square--dark {
+  background-color: var(--color-surface-2);
+}
+
+.ga-ch-replay__piece {
+  width: 78%;
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  border: max(1px, 0.12rem) solid rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ga-ch-replay__piece--red {
+  background: radial-gradient(circle at 32% 28%, #ff6b6b, #c92a2a 78%);
+}
+
+.ga-ch-replay__piece--black {
+  background: radial-gradient(circle at 32% 28%, #4a4a4a, #111418 78%);
+}
+
+.ga-ch-replay__crown {
+  font-size: clamp(0.7rem, 4.5cqw, 1.6rem);
+  line-height: 1;
+  color: var(--color-tier-gold);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.6);
+}

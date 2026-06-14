@@ -63,6 +63,11 @@ const positionParsers: { [key in GameKey]: (position: unknown) => PuzzlePosition
     const view = parseGuessPosition(position);
     return view === null ? null : { kind: "guess", view };
   },
+  // The board games are not puzzle-eligible (not in PUZZLE_GAME_KEYS), so no
+  // position ever parses for them. Present only to satisfy the GameKey map.
+  tictactoe: () => null,
+  connect4: () => null,
+  checkers: () => null,
 };
 
 /**
