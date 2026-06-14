@@ -65,13 +65,13 @@ async function publishEvent(
 // Helpers
 
 /**
- * The trainer-facing schemas accept all five arena games, but the starter
- * codebase's GameKey union is still "nim" | "guess" and the record types in
- * models.ts use it. The upload path (model.service.ts) established this same
- * narrowing; keep it in ONE visible place until shared zGameKey is widened.
+ * Maps a trainer-facing game key to the stored GameKey. Now that zGameKey is
+ * widened to all five arena games, the two key sets are identical and no
+ * narrowing is needed — kept as a single named seam in case the trainer
+ * schema and GameKey ever diverge again.
  */
 function toStoredGameKey(key: StartTrainingSessionPayload["gameKey"]): GameKey {
-  return key as GameKey;
+  return key;
 }
 
 /**
