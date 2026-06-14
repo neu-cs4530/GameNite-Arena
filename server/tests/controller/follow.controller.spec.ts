@@ -1,0 +1,72 @@
+import { describe, expect, it } from "vitest";
+import express from "express";
+import supertest from "supertest";
+import * as follow from "../../src/controllers/follow.controller.ts";
+
+// setup.ts reseeds the user repo (user0/pwd0000 ...) before each test.
+const caster = { username: "user0", password: "pwd0000" };
+
+function makeApp(): express.Express {
+  const app = express();
+  app.use(express.json());
+  app.use(
+    "/api/follow",
+    express
+      .Router()
+      .post("/feed", follow.postFeed)
+      .post("/:username", follow.postFollow)
+      .post("/:username/unfollow", follow.postUnfollow),
+  );
+  return app;
+}
+
+describe("POST /api/follow/:username", () => {
+  it("follows a user and returns the updated following list (200)", async () => {
+    const res = await supertest(makeApp()).post("/api/follow/user1").send({ auth: caster });
+    expect(res.status).toBe(200);
+    expect((res.body as { username: string }[]).map((u) => u.username)).toContain("user1");
+  });
+
+  it("returns 404 for an unknown user", async () => {
+    const res = await supertest(makeApp()).post("/api/follow/ghost").send({ auth: caster });
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 403 for invalid credentials", async () => {
+    const res = await supertest(makeApp())
+      .post("/api/follow/user1")
+      .send({ auth: { username: "user0", password: "wrong" } });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("POST /api/follow/:username/unfollow", () => {
+  it("unfollows a user (200)", async () => {
+    await supertest(makeApp()).post("/api/follow/user1").send({ auth: caster });
+    const res = await supertest(makeApp())
+      .post("/api/follow/user1/unfollow")
+      .send({ auth: caster });
+    expect(res.status).toBe(200);
+    expect((res.body as { username: string }[]).map((u) => u.username)).not.toContain("user1");
+  });
+});
+
+describe("POST /api/follow/feed", () => {
+  it("returns the feed envelope for the authed user (200)", async () => {
+    await supertest(makeApp()).post("/api/follow/user1").send({ auth: caster });
+    const res = await supertest(makeApp()).post("/api/follow/feed").send({ auth: caster });
+    expect(res.status).toBe(200);
+    const feed = res.body as {
+      following: { user: { username: string } }[];
+      replays: unknown[];
+    };
+    expect(Array.isArray(feed.following)).toBe(true);
+    expect(Array.isArray(feed.replays)).toBe(true);
+    expect(feed.following.map((f) => f.user.username)).toContain("user1");
+  });
+
+  it("returns 403 without valid auth", async () => {
+    const res = await supertest(makeApp()).post("/api/follow/feed").send({});
+    expect(res.status).toBe(400);
+  });
+});
