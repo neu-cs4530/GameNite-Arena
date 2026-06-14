@@ -13,6 +13,7 @@ import * as user from "./controllers/user.controller.ts";
 import * as model from "./controllers/model.controller.ts";
 import * as thread from "./controllers/thread.controller.ts";
 import * as profile from "./controllers/profile.controller.ts";
+import * as follow from "./controllers/follow.controller.ts";
 import * as puzzle from "./controllers/puzzle.controller.ts";
 import * as rating from "./controllers/rating.controller.ts";
 import * as replay from "./controllers/replay.controller.ts";
@@ -71,6 +72,14 @@ app.use(
     .use("/leaderboard", express.Router().get("/:gameKey", leaderboard.getByGame))
     .use("/matchmaker", express.Router().get("/queue", matchmaker.getQueueStatus))
     .use("/profile", express.Router().get("/:username", profile.getProfileSummary))
+    .use(
+      "/follow",
+      express
+        .Router()
+        .post("/feed", follow.postFeed)
+        .post("/:username", follow.postFollow)
+        .post("/:username/unfollow", follow.postUnfollow),
+    )
     .use(
       "/puzzle",
       express
