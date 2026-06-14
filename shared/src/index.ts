@@ -17,6 +17,7 @@ export * from "./thread.types.ts";
 export * from "./user.types.ts";
 export * from "./replay.types.ts";
 export * from "./broadcast.types.ts";
+export * from "./follower.types.ts";
 export * from "./trainingQueue.types.ts";
 export * from "./trainingProgress.types.ts";
 export * from "./trainingSession.types.ts";
