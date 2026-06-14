@@ -7,8 +7,15 @@
 
 import { z } from "zod";
 import { withAuth } from "@gamenite/shared";
-import type { ReplayDetail, ReplayListPage, ReplayWatchCountResponse } from "@gamenite/shared";
+import type {
+  AnalysisResult,
+  ReplayDetail,
+  ReplayListPage,
+  ReplayWatchCountResponse,
+} from "@gamenite/shared";
 import { enforceAuth } from "../services/auth.service.ts";
+import { analyzeReplay } from "../services/analysis.service.ts";
+import { DeploymentRepo } from "../repository.ts";
 import { getReplay, listReplays, recordWatch } from "../services/replay.service.ts";
 import { logSocketError } from "./socket.controller.ts";
 import { type GameServer, type RestAPI, type SocketAPI } from "../types.ts";
@@ -111,6 +118,40 @@ export const postView: RestAPI<ReplayWatchCountResponse, { matchId: string }> = 
     return;
   }
   res.send(updated);
+};
+
+const zAnalysisQuery = z.object({
+  deploymentId: z.string().optional(),
+  userId: z.string().optional(),
+});
+
+/** POST /api/replay/:matchId/analysis — runs the move-quality engine over a finished match. */
+export const postAnalysis: RestAPI<AnalysisResult, { matchId: string }> = async (req, res) => {
+  const query = zAnalysisQuery.safeParse(req.query);
+  if (!query.success) {
+    res.status(400).send({ error: "Invalid query parameters" });
+    return;
+  }
+  const { deploymentId, userId } = query.data;
+
+  if (deploymentId) {
+    const deployment = await DeploymentRepo.find(deploymentId);
+    if (!deployment) {
+      res.status(404).send({ error: "Deployment not found" });
+      return;
+    }
+    if (deployment.userId !== userId) {
+      res.status(403).send({ error: "User does not own this deployment" });
+      return;
+    }
+  }
+
+  const result = await analyzeReplay(req.params.matchId, deploymentId);
+  if (!result) {
+    res.status(404).send({ error: "Replay not found" });
+    return;
+  }
+  res.send(result);
 };
 
 /* ----------------------------------------------------------------------------
