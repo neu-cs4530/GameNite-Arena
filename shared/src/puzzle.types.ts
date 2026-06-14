@@ -62,12 +62,15 @@ export type PuzzleAttemptPayload = z.infer<typeof zPuzzleAttemptPayload>;
 /** Body payload for `POST /api/puzzle/:gameKey/hint` (inside withAuth). */
 export const zPuzzleHintPayload = z.object({ date: zPuzzleDate });
 export type PuzzleHintPayload = z.infer<typeof zPuzzleHintPayload>;
+export const HINT_PENALTY = 5;
 
 /** What the hint endpoint returns. Requesting a hint forfeits the rated
  * slot for this puzzle (the hint IS the answer). */
 export interface PuzzleHintResult {
   hintMove: unknown;
   explanation?: string;
+  eloDelta: number; // -HINT_PENALTY
+  newRating: GlickoRatingView;
 }
 
 /** What `POST /api/puzzle/:gameKey/attempt` returns. The solution move and

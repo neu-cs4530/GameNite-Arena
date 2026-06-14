@@ -98,6 +98,8 @@ test.describe("Daily puzzles tab", () => {
     // solution disclosure still never renders before an attempt.
     await page.getByTestId("puzzle-hint").click();
     await expect(page.getByTestId("puzzle-hint-reveal")).toContainText(/Take [123]/);
+    // hints cost rating too
+    await expect(page.getByTestId("puzzle-hint-penalty")).toContainText(/-5/);
     await expect(page.getByTestId("puzzle-practice-note")).toBeVisible();
     await expect(page.getByTestId("puzzle-solution")).toHaveCount(0);
   });

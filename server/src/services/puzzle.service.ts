@@ -1,3 +1,4 @@
+import { HINT_PENALTY } from "@gamenite/shared";
 import type {
   GameKey,
   PuzzleAttemptResult,
@@ -391,8 +392,8 @@ export async function submitAttempt(
  * Reveals the archived solution move for the puzzle pinned by `date` and
  * records the grant in PuzzleHintRepo under `<userId>|<puzzleId>`. From this
  * point every attempt by this user on this puzzle is hinted: never rated,
- * never streak-advancing. Idempotent — a repeat request keeps the original
- * grant record.
+ * never streak-advancing. Also takes HINT_PENALTY points off the user's
+ * puzzle rating but only the first time. asking again is free.
  *
  * @param userId - The requesting user (already authenticated by the caller).
  * @param gameKey - Which game's daily puzzle the hint is for.
@@ -412,11 +413,31 @@ export async function grantHint(
 
   const key = puzzleHintKey(userId, puzzleId);
   const existing = await PuzzleHintRepo.find(key);
+
+  const userRecord = await UserRepo.get(userId);
+  const currentRating = userRecord.puzzleRatings[gameKey] ?? {
+    rating: DEFAULT_RATING,
+    rd: DEFAULT_RD,
+    vol: DEFAULT_VOLATILITY,
+  };
+
+  let newRating = currentRating;
   if (existing === null) {
     await PuzzleHintRepo.set(key, { userId, puzzleId, grantedAt: new Date().toISOString() });
+    newRating = { ...currentRating, rating: currentRating.rating - HINT_PENALTY };
+    await UserRepo.set(userId, {
+      ...userRecord,
+      puzzleRatings: { ...userRecord.puzzleRatings, [gameKey]: newRating },
+    });
+    await invalidatePuzzleLeaderboardCache(gameKey);
   }
 
-  return { hintMove: puzzle.solution.moves[0], explanation: puzzle.solution.explanation };
+  return {
+    hintMove: puzzle.solution.moves[0],
+    explanation: puzzle.solution.explanation,
+    eloDelta: -HINT_PENALTY,
+    newRating,
+  };
 }
 
 /**

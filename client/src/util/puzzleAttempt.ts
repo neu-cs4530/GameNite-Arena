@@ -1,4 +1,4 @@
-import type { PuzzleAttemptResult } from "@gamenite/shared";
+import type { GlickoRatingView, PuzzleAttemptResult } from "@gamenite/shared";
 
 /**
  * Pure state machine for the daily-puzzle attempt flow:
@@ -23,6 +23,9 @@ import type { PuzzleAttemptResult } from "@gamenite/shared";
 export interface PuzzleHintView {
   move: unknown;
   explanation?: string;
+  // cost of the hint and your rating after it. shown so the penalty isn't a surprise
+  eloDelta: number;
+  newRating: GlickoRatingView;
 }
 
 export type AttemptState =

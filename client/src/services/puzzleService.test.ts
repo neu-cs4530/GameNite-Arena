@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AxiosError, type AxiosResponse } from "axios";
-import type { PuzzleAttemptResult, PuzzleView, UserAuth } from "@gamenite/shared";
+import {
+  HINT_PENALTY,
+  type PuzzleAttemptResult,
+  type PuzzleView,
+  type UserAuth,
+} from "@gamenite/shared";
 import { api } from "./api.ts";
 import { fetchDailyPuzzle, requestPuzzleHint, submitPuzzleAttempt } from "./puzzleService.ts";
 
@@ -88,12 +93,18 @@ describe("submitPuzzleAttempt", () => {
 
 describe("requestPuzzleHint", () => {
   it("posts the pinned date with body auth and returns the revealed move", async () => {
-    mockedPost.mockResolvedValueOnce(asResponse({ hintMove: 3, explanation: "leave 5" }));
+    const hintResult = {
+      hintMove: 3,
+      explanation: "leave 5",
+      eloDelta: -HINT_PENALTY,
+      newRating: { rating: 1495, rd: 350, vol: 0.06 },
+    };
+    mockedPost.mockResolvedValueOnce(asResponse(hintResult));
     const hint = await requestPuzzleHint("nim", AUTH, "2026-06-11");
     expect(mockedPost).toHaveBeenCalledWith("/api/puzzle/nim/hint", {
       auth: AUTH,
       payload: { date: "2026-06-11" },
     });
-    expect(hint).toStrictEqual({ hintMove: 3, explanation: "leave 5" });
+    expect(hint).toStrictEqual(hintResult);
   });
 });

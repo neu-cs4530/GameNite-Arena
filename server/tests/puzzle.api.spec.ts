@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import supertest, { type Response } from "supertest";
+import { HINT_PENALTY } from "@gamenite/shared";
 import { app } from "../src/app.ts";
 import { dailyPuzzleKey, type MatchRecord } from "../src/models.ts";
 import {
@@ -10,6 +11,7 @@ import {
   UserRepo,
 } from "../src/repository.ts";
 import { getUserByUsername } from "../src/services/auth.service.ts";
+import { DEFAULT_RATING, DEFAULT_RD, DEFAULT_VOLATILITY } from "../src/services/glicko2.service.ts";
 import { invalidatePuzzleLeaderboardCache } from "../src/services/puzzleLeaderboard.service.ts";
 import { dayBefore } from "../src/services/puzzleStreak.util.ts";
 
@@ -379,7 +381,12 @@ describe("POST /api/puzzle/:gameKey/hint", () => {
       .send({ auth: auth1, payload: { date: today() } });
 
     expect(response.status).toBe(200);
-    expect(response.body).toStrictEqual({ hintMove: 1, explanation: "seeded by test" });
+    expect(response.body).toStrictEqual({
+      hintMove: 1,
+      explanation: "seeded by test",
+      eloDelta: -HINT_PENALTY,
+      newRating: { rating: DEFAULT_RATING - HINT_PENALTY, rd: DEFAULT_RD, vol: DEFAULT_VOLATILITY },
+    });
 
     // the hinted solve is graded but can never rate or advance the streak
     response = await supertest(app)

@@ -40,7 +40,12 @@ const practiceResult: PuzzleAttemptResult = {
   eloDelta: 0,
 };
 
-const HINT = { move: 3, explanation: "Leave a multiple of four plus one." };
+const HINT = {
+  move: 3,
+  explanation: "Leave a multiple of four plus one.",
+  eloDelta: -5,
+  newRating: { rating: 1495, rd: 350, vol: 0.06 },
+};
 
 function viewingAt(now: number): AttemptState {
   return attemptReducer(initialAttemptState, { type: "puzzleLoaded", now });
