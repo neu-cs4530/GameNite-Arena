@@ -114,3 +114,25 @@ export interface ReplayWatchersPayload {
   matchId: string;
   count: number;
 }
+
+/**
+ * Per-move server-side engine evaluation (#63). Unlike `AnnotationMarker`
+ * (user-authored), `flag` is computed by comparing the actual move to the
+ * engine's preferred move at that position.
+ */
+export interface AnalysisMoveResult {
+  moveIndex: number;
+  flag: "best" | "blunder" | "inaccuracy" | "neutral";
+  confidence: number;
+  notes?: string;
+  /** What the engine would have played instead, if different from actual. */
+  suggestedMove?: unknown;
+  /** What a loaded inference model played here, if a deploymentId was supplied. */
+  engineMove?: unknown;
+}
+
+export interface AnalysisResult {
+  matchId: string;
+  generatedAt: string;
+  perMove: AnalysisMoveResult[];
+}
