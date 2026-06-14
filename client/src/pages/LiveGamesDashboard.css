@@ -1,0 +1,29 @@
+.ga-live-dash {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: var(--space-4);
+}
+
+.ga-live-dash__hero h1 {
+  margin: 0;
+}
+
+.ga-live-dash__hero p {
+  margin: var(--space-1) 0 0;
+  color: var(--color-fg-muted);
+}
+
+.ga-live-dash__meta {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}
+
+.ga-live-dash__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: var(--space-4);
+}

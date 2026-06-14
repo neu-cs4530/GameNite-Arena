@@ -33,6 +33,12 @@ export default function SideBarNav() {
       <NavLink to="/replays" className={navClass}>
         Replays
       </NavLink>
+      <NavLink to="/live" className={navClass}>
+        Live Games
+      </NavLink>
+      <NavLink to="/following" className={navClass}>
+        Following
+      </NavLink>
       <NavLink to="/trainer" className={navClass}>
         Trainer
       </NavLink>

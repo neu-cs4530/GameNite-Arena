@@ -1,0 +1,35 @@
+.ga-live-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ga-live-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.ga-live-card__game {
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-body);
+}
+
+.ga-live-card__players {
+  font-size: var(--text-small);
+  color: var(--color-fg);
+}
+
+.ga-live-card__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}
+
+.ga-live-card__elo {
+  font-variant-numeric: tabular-nums;
+}

@@ -1,12 +1,16 @@
 import "./Profile.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import type { ProfileSummary } from "@gamenite/shared";
 import useAsync from "../hooks/useAsync.ts";
 import useReplaysForUser from "../hooks/useReplaysForUser.ts";
 import useReplayFilters from "../hooks/useReplayFilters.ts";
 import useWatchLater from "../hooks/useWatchLater.ts";
 import useLoginContext from "../hooks/useLoginContext.ts";
+import useLiveBroadcasts from "../hooks/useLiveBroadcasts.ts";
+import { useFollowers } from "../hooks/useFollowerData.ts";
+import { findLiveBroadcastForUser } from "../util/liveGames.ts";
+import LiveDot from "../components/live/LiveDot.tsx";
 
 import Avatar from "../components/ui/Avatar.tsx";
 import Badge from "../components/ui/Badge.tsx";
@@ -43,7 +47,7 @@ import type { ReplaySummary } from "../util/types.ts";
 
 const PROFILE_MATCHES_PER_PAGE = 12;
 
-type ProfileTab = "matches" | "settings" | "watch-later";
+type ProfileTab = "matches" | "settings" | "watch-later" | "followers";
 
 export default function Profile() {
   const { username } = useParams<{ username: string }>();
@@ -52,7 +56,9 @@ export default function Profile() {
   const isOwner = viewer.username === username;
   const tabParam = searchParams.get("tab");
   const tab: ProfileTab =
-    tabParam === "settings" || tabParam === "watch-later" ? tabParam : "matches";
+    tabParam === "settings" || tabParam === "watch-later" || tabParam === "followers"
+      ? tabParam
+      : "matches";
   const scope = parseProfileScope(searchParams.get(SCOPE_PARAM));
 
   // ONE real fetch powers every scope; pill switches are client-side only.
@@ -73,6 +79,18 @@ export default function Profile() {
   });
   const { page, loading: matchesLoading } = useReplaysForUser(username, filters);
   const watchLater = useWatchLater();
+
+  // Is this user currently a human player in a live broadcast? Drives the red
+  // "watch live" indicator in the header. Best-effort: matched by username
+  // against the enriched live list.
+  const liveBroadcasts = useLiveBroadcasts();
+  const liveBroadcastId = useMemo(
+    () =>
+      username
+        ? findLiveBroadcastForUser(liveBroadcasts.data ?? [], username)?.broadcast.broadcastId
+        : undefined,
+    [liveBroadcasts.data, username],
+  );
 
   const filtersKey = useMemo(() => JSON.stringify(filters), [filters]);
   const [extraReplays, setExtraReplays] = useState<ReplaySummary[]>([]);
@@ -192,6 +210,7 @@ export default function Profile() {
         isOwner={isOwner}
         onTabChange={setTab}
         activeTab={tab}
+        liveBroadcastId={liveBroadcastId}
       />
 
       {tab === "settings" && isOwner && (
@@ -270,6 +289,8 @@ export default function Profile() {
       {tab === "watch-later" && (
         <WatchLaterTab username={username} watchLaterIds={watchLater.ids} />
       )}
+
+      {tab === "followers" && <FollowersTab username={username} />}
     </div>
   );
 }
@@ -338,9 +359,18 @@ interface ProfileHeaderProps {
   isOwner: boolean;
   activeTab: ProfileTab;
   onTabChange: (next: ProfileTab) => void;
+  /** Set when this user is currently in a live broadcast; links to watch it. */
+  liveBroadcastId?: string;
 }
 
-function ProfileHeader({ summary, loading, isOwner, activeTab, onTabChange }: ProfileHeaderProps) {
+function ProfileHeader({
+  summary,
+  loading,
+  isOwner,
+  activeTab,
+  onTabChange,
+  liveBroadcastId,
+}: ProfileHeaderProps) {
   if (loading || !summary) {
     return (
       <Card className="ga-profile-header" testId="profile-header-skeleton">
@@ -374,6 +404,16 @@ function ProfileHeader({ summary, loading, isOwner, activeTab, onTabChange }: Pr
           <div className="ga-profile-header__name-row">
             <h1 className="ga-profile-header__display">{user.display}</h1>
             <span className="ga-profile-header__handle">@{user.username}</span>
+            {liveBroadcastId && (
+              <Link
+                to={`/live/${liveBroadcastId}`}
+                className="ga-profile-header__live"
+                data-testid="profile-live-indicator"
+                title="This player is in a live game — watch now"
+              >
+                <LiveDot label="LIVE — watch" />
+              </Link>
+            )}
           </div>
           <div className="ga-profile-header__since">
             Joined <TimeAgo date={new Date(user.createdAt)} />
@@ -409,6 +449,14 @@ function ProfileHeader({ summary, loading, isOwner, activeTab, onTabChange }: Pr
         >
           Overview
         </Button>
+        <Button
+          variant={activeTab === "followers" ? "primary" : "ghost"}
+          onClick={() => onTabChange("followers")}
+          aria-pressed={activeTab === "followers"}
+          role="tab"
+        >
+          Followers
+        </Button>
         {isOwner && (
           <Button
             variant={activeTab === "watch-later" ? "primary" : "ghost"}
@@ -431,6 +479,44 @@ function ProfileHeader({ summary, loading, isOwner, activeTab, onTabChange }: Pr
         )}
       </div>
     </Card>
+  );
+}
+
+/**
+ * SCAFFOLD: a user's followers. The backend isn't built yet, so the data hook
+ * reports "unavailable" and we render an honest waiting-for-backend state
+ * (never fabricated followers). The real-data branch is already wired for when
+ * the backend lands.
+ */
+function FollowersTab({ username }: { username?: string }) {
+  const { data, loading } = useFollowers(username);
+  return (
+    <Section title="Followers" testId="profile-followers">
+      {loading ? (
+        <Skeleton variant="rect" height={80} />
+      ) : data?.available ? (
+        data.data.users.length === 0 ? (
+          <EmptyState icon="👤" title="No followers yet" />
+        ) : (
+          <ul className="ga-profile-followers" data-testid="profile-followers-list">
+            {data.data.users.map((f) => (
+              <li key={f.user.username} className="ga-profile-followers__item">
+                <Avatar name={f.user.display} size="sm" />
+                <Link to={`/profile/${f.user.username}`}>{f.user.display}</Link>
+                <span className="ga-profile-followers__handle">@{f.user.username}</span>
+              </li>
+            ))}
+          </ul>
+        )
+      ) : (
+        <EmptyState
+          icon="🚧"
+          title="Followers are coming soon"
+          body="The follow system is still being built on the backend — this is where this player's followers will appear."
+          testId="followers-waiting"
+        />
+      )}
+    </Section>
   );
 }
 
