@@ -94,12 +94,7 @@ export const zMatchmakingJoinPayload = z.object({
  * state machine exposes nextPlayer so the server knows when the model
  * is to move (guess does neither today).
  */
-export const AI_PLAYABLE_GAME_KEYS: GameKey[] = [
-  "nim",
-  "tictactoe",
-  "connect4",
-  "checkers",
-];
+export const AI_PLAYABLE_GAME_KEYS: GameKey[] = ["nim", "tictactoe", "connect4", "checkers"];
 
 /**
  * The TaggedGameView type allows the views for different game to be
