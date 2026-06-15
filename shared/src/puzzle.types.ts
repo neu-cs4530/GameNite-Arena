@@ -110,3 +110,25 @@ export interface PuzzleLeaderboardPage {
   pageSize: number;
   total: number;
 }
+
+/** One practice position from the training feed. No solution, same as PuzzleView. */
+export interface TrainingPackEntry {
+  gameKey: GameKey;
+  position: unknown;
+  sourceMatchId: string;
+  createdAt: string;
+}
+
+/** Body payload for POST /api/puzzle/:gameKey/training/attempt. */
+export const zTrainingAttemptPayload = z.object({
+  sourceMatchId: z.string(),
+  move: z.unknown(),
+});
+export type TrainingAttemptPayload = z.infer<typeof zTrainingAttemptPayload>;
+
+/** Stateless grading result, practice attempts never touch rating or streak. */
+export interface TrainingAttemptResult {
+  success: boolean;
+  solutionMove: unknown;
+  explanation?: string;
+}

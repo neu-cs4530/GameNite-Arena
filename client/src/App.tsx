@@ -30,6 +30,7 @@ import ModelsBrowse from "./pages/ModelsBrowse.tsx";
 import ModelCardPage from "./pages/ModelCardPage.tsx";
 import ForkModelPage from "./pages/ForkModelPage.tsx";
 import Puzzles from "./pages/Puzzles.tsx";
+import Practice from "./pages/Practice.tsx";
 import Leaderboards from "./pages/Leaderboards.tsx";
 
 /** If `true`, all incoming socket messages will be logged */
@@ -142,6 +143,7 @@ export default function App() {
             <Route path="/game/:gameId" element={<Game />} />
             <Route path="/profile/:username" element={<Profile />} />
             <Route path="/puzzles" element={<Puzzles />} />
+            <Route path="/puzzles/practice" element={<Practice />} />
             <Route path="/replays" element={<ReplaysDiscovery />} />
             <Route path="/replays/:matchId" element={<ReplayViewer />} />
             <Route path="/study/:shareToken" element={<StudyView />} />

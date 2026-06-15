@@ -4,6 +4,8 @@ import type {
   PuzzleAttemptResult,
   PuzzleHintResult,
   PuzzleViewerAttempt,
+  TrainingAttemptResult,
+  TrainingPackEntry,
 } from "@gamenite/shared";
 import { dailyPuzzleKey, puzzleHintKey, type MatchRecord, type PuzzleRecord } from "../models.ts";
 import {
@@ -153,6 +155,50 @@ function explainSolution(gameKey: GameKey, solutionMoves: unknown[]): string {
   );
 }
 
+/** one archived match that passed the soundness check for a puzzle */
+interface SoundCandidate {
+  matchId: string;
+  match: MatchRecord;
+  hydrated: { state: unknown; position: unknown; solutionMoves: unknown[] };
+}
+
+/**
+ * Scans the match archive for matches that could become a puzzle for
+ * gameKey: right game, a win, long enough, and the split move passes
+ * isWinningMove (the soundness check, e.g. nim: leaves remaining = 1 mod 4).
+ *
+ * @param gameKey - which game's archive to scan
+ * @returns sound candidates, most-recent-first
+ */
+async function findSoundCandidates(gameKey: GameKey): Promise<SoundCandidate[]> {
+  const allMatchKeys = await MatchRepo.getAllKeys();
+  if (allMatchKeys.length === 0) return [];
+
+  const allMatches = await MatchRepo.getMany(allMatchKeys);
+  const servicer = gameServices[gameKey];
+
+  // most recent first; corrupt/unsound entries just get skipped below
+  const ordered = allMatches
+    .map((match, index) => ({ match, matchId: allMatchKeys[index] }))
+    .filter(
+      ({ match }) =>
+        match.gameKey === gameKey &&
+        match.result.outcome === "win" &&
+        match.moves.length >= MIN_MOVES_FOR_PUZZLE,
+    )
+    .sort((a, b) => (b.match.completedAt > a.match.completedAt ? 1 : -1));
+
+  const candidates: SoundCandidate[] = [];
+  for (const { match, matchId } of ordered) {
+    const splitIndex = match.moves.length - SOLUTION_MOVE_COUNT;
+    const hydrated = hydrateSplit(match, splitIndex);
+    if (hydrated === null) continue;
+    if (servicer.isWinningMove(hydrated.state, hydrated.solutionMoves[0]) === false) continue;
+    candidates.push({ matchId, match, hydrated });
+  }
+  return candidates;
+}
+
 /**
  * Finds a suitable match for the given game and writes a PuzzleRecord for
  * that day. Skips silently if no suitable match exists yet, and refuses
@@ -184,49 +230,23 @@ export async function generatePuzzleForGame(
   const existing = await PuzzleRepo.find(key);
   if (existing) return existing;
 
-  const allMatchKeys = await MatchRepo.getAllKeys();
-  if (allMatchKeys.length === 0) return null;
+  const [candidate] = await findSoundCandidates(gameKey);
+  if (!candidate) return null;
 
-  const allMatches = await MatchRepo.getMany(allMatchKeys);
-  const servicer = gameServices[gameKey];
+  const puzzle: PuzzleRecord = {
+    gameKey,
+    date: date.toISOString().slice(0, 10),
+    position: candidate.hydrated.position,
+    solution: {
+      moves: candidate.hydrated.solutionMoves,
+      explanation: explainSolution(gameKey, candidate.hydrated.solutionMoves),
+    },
+    sourceMatchId: candidate.matchId,
+    createdAt: new Date().toISOString(),
+  };
 
-  // most recent wins first; fall through corrupt/unsound entries to older ones
-  const candidates = allMatches
-    .map((match, index) => ({ match, matchId: allMatchKeys[index] }))
-    .filter(
-      ({ match }) =>
-        match.gameKey === gameKey &&
-        match.result.outcome === "win" &&
-        match.moves.length >= MIN_MOVES_FOR_PUZZLE,
-    )
-    .sort((a, b) => (b.match.completedAt > a.match.completedAt ? 1 : -1));
-
-  for (const { match, matchId } of candidates) {
-    const splitIndex = match.moves.length - SOLUTION_MOVE_COUNT;
-    const hydrated = hydrateSplit(match, splitIndex);
-    if (hydrated === null) continue;
-
-    // Soundness gate: if the game can judge moves, the archived split move
-    // must be genuinely winning, or the "solution" teaches a losing line.
-    if (servicer.isWinningMove(hydrated.state, hydrated.solutionMoves[0]) === false) continue;
-
-    const puzzle: PuzzleRecord = {
-      gameKey,
-      date: date.toISOString().slice(0, 10),
-      position: hydrated.position,
-      solution: {
-        moves: hydrated.solutionMoves,
-        explanation: explainSolution(gameKey, hydrated.solutionMoves),
-      },
-      sourceMatchId: matchId,
-      createdAt: new Date().toISOString(),
-    };
-
-    await PuzzleRepo.set(key, puzzle);
-    return puzzle;
-  }
-
-  return null;
+  await PuzzleRepo.set(key, puzzle);
+  return puzzle;
 }
 
 /**
@@ -468,5 +488,74 @@ export async function getViewerAttempt(
     // records written before the profile rework lack `rated` — fall back to
     // the nonzero eloDelta that only rated attempts could carry
     rated: mine.some((a) => a.rated ?? a.eloDelta !== 0),
+  };
+}
+
+/**
+ * Extra unrated practice positions for gameKey, mined from the same archive
+ * as the daily puzzle. Nothing gets stored, every call just re-scans the
+ * archive via findSoundCandidates.
+ *
+ * @param gameKey - which game's training feed to build
+ * @param opts.limit - max entries to return
+ * @param opts.exclude - sourceMatchIds to skip (e.g. already-seen ids on a
+ *   "load more" page). Today's daily puzzle is always excluded too.
+ * @returns up to `limit` practice positions, most-recent-first
+ */
+export async function getTrainingPack(
+  gameKey: GameKey,
+  opts: { limit: number; exclude?: string[] },
+): Promise<TrainingPackEntry[]> {
+  if (!PUZZLE_GAME_KEYS.includes(gameKey)) return [];
+
+  const todays = await getTodaysPuzzle(gameKey);
+  const excluded = new Set(opts.exclude ?? []);
+  if (todays?.sourceMatchId) excluded.add(todays.sourceMatchId);
+
+  const candidates = await findSoundCandidates(gameKey);
+  const entries: TrainingPackEntry[] = [];
+  for (const candidate of candidates) {
+    if (excluded.has(candidate.matchId)) continue;
+    entries.push({
+      gameKey,
+      position: candidate.hydrated.position,
+      sourceMatchId: candidate.matchId,
+      createdAt: candidate.match.completedAt,
+    });
+    if (entries.length >= opts.limit) break;
+  }
+  return entries;
+}
+
+/**
+ * Grades one practice attempt against the archived match sourceMatchId.
+ * Re-derives the solution from the archive each time and never touches
+ * PuzzleAttemptRepo, ratings, or streaks.
+ *
+ * @param gameKey - which game the attempt is for
+ * @param sourceMatchId - the archived match the position came from
+ * @param move - the player's submitted move
+ * @returns the graded result, or null if sourceMatchId doesn't replay to a
+ *   sound position for this game
+ */
+export async function submitTrainingAttempt(
+  gameKey: GameKey,
+  sourceMatchId: string,
+  move: unknown,
+): Promise<TrainingAttemptResult | null> {
+  const match = await MatchRepo.find(sourceMatchId);
+  if (!match || match.gameKey !== gameKey) return null;
+
+  const hydrated = hydrateSplit(match, match.moves.length - SOLUTION_MOVE_COUNT);
+  if (hydrated === null) return null;
+
+  const verdict = gameServices[gameKey].isWinningMove(hydrated.state, move);
+  const success =
+    verdict !== null ? verdict : JSON.stringify(move) === JSON.stringify(hydrated.solutionMoves[0]);
+
+  return {
+    success,
+    solutionMove: hydrated.solutionMoves[0],
+    explanation: explainSolution(gameKey, hydrated.solutionMoves),
   };
 }

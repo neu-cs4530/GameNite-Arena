@@ -5,6 +5,9 @@ import type {
   PuzzleAttemptResult,
   PuzzleHintResult,
   PuzzleView,
+  TrainingAttemptPayload,
+  TrainingAttemptResult,
+  TrainingPackEntry,
   UserAuth,
 } from "@gamenite/shared";
 import { api } from "./api.ts";
@@ -88,6 +91,51 @@ export async function requestPuzzleHint(
   const res = await api.post<PuzzleHintResult>(`/api/puzzle/${gameKey}/hint`, {
     auth,
     payload: { date },
+  });
+  return res.data;
+}
+
+/**
+ * GET /api/puzzle/:gameKey/training — a batch of extra practice positions
+ * mined from the match archive. Never contains a solution.
+ *
+ * @param gameKey - which game's training feed to fetch.
+ * @param opts.limit - max entries to return, server defaults to 5.
+ * @param opts.exclude - sourceMatchIds to skip, e.g. entries already shown.
+ * @returns up to `limit` practice entries, most-recent-first.
+ */
+export async function fetchTrainingPack(
+  gameKey: GameKey,
+  opts: { limit?: number; exclude?: string[] } = {},
+): Promise<TrainingPackEntry[]> {
+  const params = new URLSearchParams();
+  if (opts.limit !== undefined) params.set("limit", String(opts.limit));
+  if (opts.exclude && opts.exclude.length > 0) params.set("exclude", opts.exclude.join(","));
+
+  const query = params.toString();
+  const res = await api.get<TrainingPackEntry[]>(
+    `/api/puzzle/${gameKey}/training${query ? `?${query}` : ""}`,
+  );
+  return res.data;
+}
+
+/**
+ * POST /api/puzzle/:gameKey/training/attempt — grade one practice move
+ * against the archived match `sourceMatchId`. Never touches rating or streak.
+ *
+ * @param gameKey - which game the practice position is from.
+ * @param auth - the signed-in user's credentials (house body-auth pattern).
+ * @param payload - the sourceMatchId and the raw move.
+ * @returns success flag, solution move, and explanation.
+ */
+export async function submitTrainingAttempt(
+  gameKey: GameKey,
+  auth: UserAuth,
+  payload: TrainingAttemptPayload,
+): Promise<TrainingAttemptResult> {
+  const res = await api.post<TrainingAttemptResult>(`/api/puzzle/${gameKey}/training/attempt`, {
+    auth,
+    payload,
   });
   return res.data;
 }

@@ -4,18 +4,23 @@ import {
   zPuzzleAttemptPayload,
   zPuzzleHintPayload,
   zPuzzleLeaderboardScope,
+  zTrainingAttemptPayload,
   type PuzzleAttemptResult,
   type PuzzleHintResult,
   type PuzzleLeaderboardPage,
   type PuzzleView,
+  type TrainingAttemptResult,
+  type TrainingPackEntry,
 } from "@gamenite/shared";
 import { z } from "zod";
 import { checkAuth } from "../services/auth.service.ts";
 import {
   getOrGenerateTodaysPuzzle,
+  getTrainingPack,
   getViewerAttempt,
   grantHint,
   submitAttempt,
+  submitTrainingAttempt,
 } from "../services/puzzle.service.ts";
 import { getPuzzleLeaderboard } from "../services/puzzleLeaderboard.service.ts";
 import { type RestAPI } from "../types.ts";
@@ -23,6 +28,13 @@ import { type RestAPI } from "../types.ts";
 // the shared payloads are the single source of truth for attempt/hint bodies
 const zAttemptBody = withAuth(zPuzzleAttemptPayload);
 const zHintBody = withAuth(zPuzzleHintPayload);
+const zTrainingBody = withAuth(zTrainingAttemptPayload);
+
+// limit defaults to 5, exclude is a comma-separated list of match ids
+const zTrainingQuery = z.object({
+  limit: z.coerce.number().int().positive().max(20).default(5),
+  exclude: z.string().optional(),
+});
 
 // `?game=` per the design doc, with `?scope=` accepted as an alias
 const zLeaderboardQuery = z.object({
@@ -180,6 +192,73 @@ export const getLeaderboard: RestAPI<PuzzleLeaderboardPage> = async (req, res) =
     page: query.data.page,
     limit: query.data.limit,
   });
+
+  res.send(result);
+};
+
+/**
+ * GET /api/puzzle/:gameKey/training — extra unrated practice positions mined
+ * from the match archive. Never contains a solution, same as getToday.
+ * Unknown game keys just get an empty array back.
+ *
+ * @param req The request containing the gameKey route param and the
+ *            limit/exclude query params.
+ * @param res The response: an array of TrainingPackEntry.
+ */
+export const getTraining: RestAPI<TrainingPackEntry[], { gameKey: string }> = async (req, res) => {
+  const gameKeyParsed = zGameKey.safeParse(req.params.gameKey);
+  if (!gameKeyParsed.success) {
+    res.send([]);
+    return;
+  }
+
+  const query = zTrainingQuery.safeParse(req.query);
+  if (!query.success) {
+    res.status(400).send({ error: "Invalid query parameters" });
+    return;
+  }
+
+  const exclude = query.data.exclude?.split(",").filter((id) => id.length > 0);
+  const entries = await getTrainingPack(gameKeyParsed.data, { limit: query.data.limit, exclude });
+  res.send(entries);
+};
+
+/**
+ * POST /api/puzzle/:gameKey/training/attempt — grades a practice move against
+ * the archived match `sourceMatchId`. Always practice: no rating or streak
+ * change, no attempt log entry.
+ *
+ * @param req The request containing auth, sourceMatchId, and the move.
+ * @param res The response: success flag, solution move, and explanation.
+ */
+export const postTrainingAttempt: RestAPI<TrainingAttemptResult, { gameKey: string }> = async (
+  req,
+  res,
+) => {
+  const gameKeyParsed = zGameKey.safeParse(req.params.gameKey);
+  if (!gameKeyParsed.success) {
+    res.status(404).send({ error: "Unknown game" });
+    return;
+  }
+
+  const body = zTrainingBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).send({ error: "Poorly-formed request" });
+    return;
+  }
+
+  const user = await checkAuth(body.data.auth);
+  if (!user) {
+    res.status(403).send({ error: "Invalid credentials" });
+    return;
+  }
+
+  const { sourceMatchId, move } = body.data.payload;
+  const result = await submitTrainingAttempt(gameKeyParsed.data, sourceMatchId, move);
+  if (result === null) {
+    res.status(404).send({ error: "No practice position for that match" });
+    return;
+  }
 
   res.send(result);
 };

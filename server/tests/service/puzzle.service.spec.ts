@@ -17,8 +17,10 @@ import {
 import {
   generatePuzzleForGame,
   getOrGenerateTodaysPuzzle,
+  getTrainingPack,
   grantHint,
   submitAttempt,
+  submitTrainingAttempt,
 } from "../../src/services/puzzle.service.ts";
 
 /* ---------------------------------------------------------------------------
@@ -759,5 +761,99 @@ describe("grantHint", () => {
       rd: DEFAULT_RD,
       vol: DEFAULT_VOLATILITY,
     });
+  });
+});
+
+/* ---------------------------------------------------------------------------
+ * Training pack feed (getTrainingPack / submitTrainingAttempt)
+ *
+ * Extra unrated practice positions, mined from the same sound candidates as
+ * the daily puzzle, but nothing gets stored: every call re-scans the archive
+ * and grading re-derives the solution from sourceMatchId.
+ * ------------------------------------------------------------------------- */
+
+describe("getTrainingPack", () => {
+  it("returns [] for a game outside PUZZLE_GAME_KEYS", async () => {
+    await MatchRepo.set("match-guess-1", guessWin());
+
+    expect(await getTrainingPack("guess", { limit: 5 })).toStrictEqual([]);
+  });
+
+  it("mines sound candidates from the archive, most-recent-first", async () => {
+    await MatchRepo.set("match-old", soundNimWin({ completedAt: "2026-06-08T00:00:00.000Z" }));
+    await MatchRepo.set("match-new", soundNimWin({ completedAt: "2026-06-09T00:00:00.000Z" }));
+
+    const pack = await getTrainingPack("nim", { limit: 5 });
+
+    expect(pack.map((entry) => entry.sourceMatchId)).toStrictEqual(["match-new", "match-old"]);
+    expect(pack[0].gameKey).toBe("nim");
+    expect(pack[0].position).toStrictEqual({ remaining: 2, nextPlayer: 1 });
+  });
+
+  it("excludes today's daily puzzle's source match automatically", async () => {
+    await MatchRepo.set("match-nim-1", soundNimWin());
+    await generatePuzzleForGame("nim", today);
+
+    expect(await getTrainingPack("nim", { limit: 5 })).toStrictEqual([]);
+  });
+
+  it("excludes client-supplied match ids for load more", async () => {
+    await MatchRepo.set("match-a", soundNimWin({ completedAt: "2026-06-08T00:00:00.000Z" }));
+    await MatchRepo.set("match-b", soundNimWin({ completedAt: "2026-06-09T00:00:00.000Z" }));
+
+    const pack = await getTrainingPack("nim", { limit: 5, exclude: ["match-b"] });
+
+    expect(pack.map((entry) => entry.sourceMatchId)).toStrictEqual(["match-a"]);
+  });
+
+  it("caps results at limit", async () => {
+    await MatchRepo.set("match-a", soundNimWin({ completedAt: "2026-06-07T00:00:00.000Z" }));
+    await MatchRepo.set("match-b", soundNimWin({ completedAt: "2026-06-08T00:00:00.000Z" }));
+    await MatchRepo.set("match-c", soundNimWin({ completedAt: "2026-06-09T00:00:00.000Z" }));
+
+    expect(await getTrainingPack("nim", { limit: 2 })).toHaveLength(2);
+  });
+});
+
+describe("submitTrainingAttempt", () => {
+  it("grades a winning move as success and returns the archived solution", async () => {
+    await MatchRepo.set("match-nim-1", soundNimWin());
+
+    const result = await submitTrainingAttempt("nim", "match-nim-1", 1);
+
+    expect(result!.success).toBe(true);
+    expect(result!.solutionMove).toBe(1);
+    expect(typeof result!.explanation).toBe("string");
+  });
+
+  it("grades a losing move as failure", async () => {
+    await MatchRepo.set("match-nim-1", soundNimWin());
+
+    const result = await submitTrainingAttempt("nim", "match-nim-1", 3);
+
+    expect(result!.success).toBe(false);
+  });
+
+  it("returns null for an unknown sourceMatchId", async () => {
+    expect(await submitTrainingAttempt("nim", "does-not-exist", 1)).toBeNull();
+  });
+
+  it("returns null when the match belongs to a different game", async () => {
+    await MatchRepo.set("match-guess-1", guessWin());
+
+    expect(await submitTrainingAttempt("nim", "match-guess-1", 1)).toBeNull();
+  });
+
+  it("never touches ratings, streaks, or the attempt log", async () => {
+    await MatchRepo.set("match-nim-1", soundNimWin());
+    const userId = await user1Id();
+    const before = await UserRepo.get(userId);
+
+    await submitTrainingAttempt("nim", "match-nim-1", 1);
+
+    const after = await UserRepo.get(userId);
+    expect(after.puzzleRatings).toStrictEqual(before.puzzleRatings);
+    expect(after.puzzleStreak).toStrictEqual(before.puzzleStreak);
+    expect(await PuzzleAttemptRepo.getAllKeys()).toHaveLength(0);
   });
 });

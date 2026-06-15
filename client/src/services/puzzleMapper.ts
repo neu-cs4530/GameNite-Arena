@@ -4,6 +4,7 @@ import type {
   NimView,
   PuzzleView,
   PuzzleViewerAttempt,
+  TrainingPackEntry,
 } from "@gamenite/shared";
 import { notateNimMove } from "../games/replay/nimReducer.ts";
 
@@ -90,6 +91,27 @@ export function mapPuzzleView(view: PuzzleView): DailyPuzzle | null {
     sourceMatchId: view.sourceMatchId,
     viewerAttempt: view.viewerAttempt ?? null,
   };
+}
+
+/** One practice entry from the training feed, position narrowed like DailyPuzzle. */
+export interface TrainingPracticeItem {
+  gameKey: GameKey;
+  position: PuzzlePosition;
+  sourceMatchId: string;
+  createdAt: string;
+}
+
+/**
+ * Narrows a wire TrainingPackEntry the same way mapPuzzleView does.
+ *
+ * @param entry - one entry from GET /api/puzzle/:gameKey/training.
+ * @returns the narrowed TrainingPracticeItem, or null when malformed.
+ */
+export function mapTrainingPackEntry(entry: TrainingPackEntry): TrainingPracticeItem | null {
+  const position = positionParsers[entry.gameKey](entry.position);
+  if (position === null) return null;
+
+  return { ...entry, position };
 }
 
 /**
