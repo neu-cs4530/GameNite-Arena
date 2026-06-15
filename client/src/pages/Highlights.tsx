@@ -6,11 +6,12 @@ import EmptyState from "../components/ui/EmptyState.tsx";
 import ErrorState from "../components/ui/ErrorState.tsx";
 import Skeleton from "../components/ui/Skeleton.tsx";
 import TimeAgo from "../components/ui/TimeAgo.tsx";
+import { replayGameNames } from "../util/consts.ts";
 
 /**
- * The broadcaster's bookmarked matches (Story 3.12): moments they highlighted
- * while broadcasting, newest first, each linking to the match's replay. A
- * snapshot fetched on mount.
+ * The user's bookmarked highlights (Story 3.12): clips they saved while
+ * watching a live broadcast or playing a game, newest first, each linking to
+ * the match's replay. A snapshot fetched on mount.
  */
 export default function Highlights(): JSX.Element {
   const { data, loading, error, refetch } = useHighlights();
@@ -19,8 +20,8 @@ export default function Highlights(): JSX.Element {
   return (
     <div className="ga-highlights" data-testid="highlights-page">
       <header className="ga-highlights__hero">
-        <h1>Bookmarked matches</h1>
-        <p>Moments you highlighted while broadcasting, saved for later.</p>
+        <h1>Highlights</h1>
+        <p>Clips you've saved from live games and matches you've played.</p>
       </header>
 
       {error ? (
@@ -32,14 +33,14 @@ export default function Highlights(): JSX.Element {
       ) : loading && !data ? (
         <div className="ga-highlights__list" data-testid="highlights-skeleton">
           {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} variant="rect" height={84} />
+            <Skeleton key={i} variant="rect" height={72} />
           ))}
         </div>
       ) : highlights.length === 0 ? (
         <EmptyState
           icon="★"
           title="No highlights yet"
-          body="Press Highlight while broadcasting a live match to bookmark the moment."
+          body="Save a clip from a live game's Highlights panel, or press Highlight while playing a match."
           action={
             <Link to="/live" className="ga-highlights__browse">
               Browse live games
@@ -50,13 +51,20 @@ export default function Highlights(): JSX.Element {
         <ul className="ga-highlights__list" data-testid="highlights-list">
           {highlights.map((h) => (
             <li key={h.highlightId}>
-              <Link to={`/replays/${h.gameId}`} className="ga-highlights__item">
+              <Link
+                to={`/replays/${h.gameId}?from=${h.startIndex}&clip=${h.moves.length}`}
+                className="ga-highlights__item"
+              >
                 <span className="ga-highlights__star" aria-hidden="true">
                   ★
                 </span>
                 <span className="ga-highlights__body">
-                  <span className="ga-highlights__note">{h.note || "Highlighted moment"}</span>
-                  <TimeAgo date={h.capturedAt} className="ga-highlights__time" />
+                  <span className="ga-highlights__note">
+                    {h.note || `${h.moves.length}-move clip`}
+                  </span>
+                  <span className="ga-highlights__time">
+                    {replayGameNames[h.gameKey]} (<TimeAgo date={h.capturedAt} />)
+                  </span>
                 </span>
                 <span className="ga-highlights__cta">Watch replay →</span>
               </Link>
