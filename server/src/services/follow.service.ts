@@ -26,8 +26,10 @@ export async function followUser(
   if (!target) throw new Error(`No user ${targetUsername}`);
   if (target.userId !== follower.userId) {
     const record = await UserRepo.get(follower.userId);
-    if (!record.following.includes(target.userId)) {
-      record.following = [...record.following, target.userId];
+    // `following` may be absent on user records created before Story 3.9.
+    const following = record.following ?? [];
+    if (!following.includes(target.userId)) {
+      record.following = [...following, target.userId];
       await UserRepo.set(follower.userId, record);
     }
   }
@@ -49,7 +51,7 @@ export async function unfollowUser(
   const target = await getUserByUsername(targetUsername);
   if (!target) throw new Error(`No user ${targetUsername}`);
   const record = await UserRepo.get(follower.userId);
-  record.following = record.following.filter((id) => id !== target.userId);
+  record.following = (record.following ?? []).filter((id) => id !== target.userId);
   await UserRepo.set(follower.userId, record);
   return getFollowing(follower);
 }
@@ -57,7 +59,8 @@ export async function unfollowUser(
 /** The accounts `user` follows, as safe user info. */
 export async function getFollowing(user: UserWithId): Promise<SafeUserInfo[]> {
   const record = await UserRepo.get(user.userId);
-  return Promise.all(record.following.map(populateSafeUserInfo));
+  // `following` may be absent on user records created before Story 3.9.
+  return Promise.all((record.following ?? []).map(populateSafeUserInfo));
 }
 
 /**
@@ -83,7 +86,7 @@ export async function listFollowers(targetUsername: string): Promise<SafeUserInf
   if (!target) throw new Error(`No user ${targetUsername}`);
   const ids = await UserRepo.getAllKeys();
   const records = await Promise.all(ids.map((id) => UserRepo.get(id)));
-  const followerIds = ids.filter((_, i) => records[i].following.includes(target.userId));
+  const followerIds = ids.filter((_, i) => (records[i].following ?? []).includes(target.userId));
   return Promise.all(followerIds.map(populateSafeUserInfo));
 }
 
