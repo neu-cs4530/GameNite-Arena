@@ -299,19 +299,50 @@ def evaluate_connect4(model, n_episodes: int = EVAL_EPISODES) -> tuple[float, fl
     return wins / n_episodes, total_reward / n_episodes
 
 
+# How often to rotate the frozen self-play opponent (every N chunks)
+SELF_PLAY_ROTATE_EVERY = 5
+
+
 def run_connect4(session: GameNiteSession, *, user_id: str, episodes: int,
                  learning_rate: float, heuristics: Any, chunk_steps: int,
                  display_name: str) -> int:
+    """
+    Chunked PPO with self-play and random start positions.
+    Phase 1 (first 20% of chunks): random opponent, random starts.
+    Phase 2 (remaining): frozen-opponent self-play, random starts.
+    Frozen opponent is updated every SELF_PLAY_ROTATE_EVERY chunks.
+    """
+    import copy
     from stable_baselines3 import PPO
     from adapter.example_connect4_adapter import Connect4Adapter
-    print("[train] connect4 — self-play vs random opponent")
-    adapter = Connect4Adapter(user_id=user_id)
-    env = adapter.build_env()
+
+    print("[train] connect4 — random starts + self-play")
+    adapter = Connect4Adapter(user_id=user_id, random_start=True)
+    n_chunks = plan_chunks(episodes, chunk_steps)
+    warmup_chunks = max(1, n_chunks // 5)
+
+    # Phase 1: random opponent
+    env = adapter.build_env(opponent_policy=None)
     model = PPO("MlpPolicy", env, learning_rate=learning_rate, n_steps=PPO_N_STEPS, verbose=0)
     adapter._model = model
-    n_chunks = plan_chunks(episodes, chunk_steps)
+    frozen = None
+
     win_rate, mean_reward = 0.0, 0.0
     for chunk in range(1, n_chunks + 1):
+        # Rotate to self-play after warmup
+        if chunk == warmup_chunks + 1:
+            frozen = copy.deepcopy(model)
+            env.close()
+            env = adapter.build_env(opponent_policy=frozen)
+            model.set_env(env)
+            print(f"[train] switching to self-play at chunk {chunk}")
+        elif chunk > warmup_chunks and (chunk - warmup_chunks) % SELF_PLAY_ROTATE_EVERY == 0:
+            frozen = copy.deepcopy(model)
+            env.close()
+            env = adapter.build_env(opponent_policy=frozen)
+            model.set_env(env)
+            print(f"[train] rotating frozen opponent at chunk {chunk}")
+
         model.learn(total_timesteps=chunk_steps, reset_num_timesteps=False)
         win_rate, mean_reward = evaluate_connect4(model)
         keep_going = session.report(
@@ -322,7 +353,10 @@ def run_connect4(session: GameNiteSession, *, user_id: str, episodes: int,
         print(f"[train] {model.num_timesteps} steps  winRate={win_rate:.2f}  meanReward={mean_reward:+.2f}")
         if not keep_going:
             print("[train] canceled from the web UI - stopping")
+            env.close()
             return 0
+
+    env.close()
     session.complete(final_metrics={"winRate": round(win_rate, 4), "meanReward": round(mean_reward, 4)})
     with tempfile.TemporaryDirectory() as tmp:
         pth = Path(tmp) / f"{display_name}.pth"
@@ -352,16 +386,39 @@ def evaluate_tictactoe(model, n_episodes: int = EVAL_EPISODES) -> tuple[float, f
 def run_tictactoe(session: GameNiteSession, *, user_id: str, episodes: int,
                   learning_rate: float, heuristics: Any, chunk_steps: int,
                   display_name: str) -> int:
+    """
+    Chunked PPO with self-play and random start positions.
+    Same phase structure as connect4: warmup vs random, then frozen self-play.
+    """
+    import copy
     from stable_baselines3 import PPO
     from adapter.example_tictactoe_adapter import TicTacToeAdapter
-    print("[train] tictactoe — self-play vs random opponent")
-    adapter = TicTacToeAdapter(user_id=user_id)
-    env = adapter.build_env()
+
+    print("[train] tictactoe — random starts + self-play")
+    adapter = TicTacToeAdapter(user_id=user_id, random_start=True)
+    n_chunks = plan_chunks(episodes, chunk_steps)
+    warmup_chunks = max(1, n_chunks // 5)
+
+    env = adapter.build_env(opponent_policy=None)
     model = PPO("MlpPolicy", env, learning_rate=learning_rate, n_steps=PPO_N_STEPS, verbose=0)
     adapter._model = model
-    n_chunks = plan_chunks(episodes, chunk_steps)
+    frozen = None
+
     win_rate, mean_reward = 0.0, 0.0
     for chunk in range(1, n_chunks + 1):
+        if chunk == warmup_chunks + 1:
+            frozen = copy.deepcopy(model)
+            env.close()
+            env = adapter.build_env(opponent_policy=frozen)
+            model.set_env(env)
+            print(f"[train] switching to self-play at chunk {chunk}")
+        elif chunk > warmup_chunks and (chunk - warmup_chunks) % SELF_PLAY_ROTATE_EVERY == 0:
+            frozen = copy.deepcopy(model)
+            env.close()
+            env = adapter.build_env(opponent_policy=frozen)
+            model.set_env(env)
+            print(f"[train] rotating frozen opponent at chunk {chunk}")
+
         model.learn(total_timesteps=chunk_steps, reset_num_timesteps=False)
         win_rate, mean_reward = evaluate_tictactoe(model)
         keep_going = session.report(
@@ -372,7 +429,10 @@ def run_tictactoe(session: GameNiteSession, *, user_id: str, episodes: int,
         print(f"[train] {model.num_timesteps} steps  winRate={win_rate:.2f}  meanReward={mean_reward:+.2f}")
         if not keep_going:
             print("[train] canceled from the web UI - stopping")
+            env.close()
             return 0
+
+    env.close()
     session.complete(final_metrics={"winRate": round(win_rate, 4), "meanReward": round(mean_reward, 4)})
     with tempfile.TemporaryDirectory() as tmp:
         pth = Path(tmp) / f"{display_name}.pth"
