@@ -1,7 +1,7 @@
 import "./DailyPuzzleCard.css";
 import dayjs from "dayjs";
 import { useEffect, useReducer, useState, type JSX } from "react";
-import type { GameKey } from "@gamenite/shared";
+import { HINT_PENALTY, type GameKey } from "@gamenite/shared";
 import Badge from "../ui/Badge.tsx";
 import Button from "../ui/Button.tsx";
 import Card from "../ui/Card.tsx";
@@ -9,7 +9,11 @@ import PuzzleBoard from "./PuzzleBoard.tsx";
 import PuzzleMoveInput from "./PuzzleMoveInput.tsx";
 import ResultPanel from "./ResultPanel.tsx";
 import useAuth from "../../hooks/useAuth.ts";
-import { describePuzzleMove, type DailyPuzzle } from "../../services/puzzleMapper.ts";
+import {
+  describePuzzleMove,
+  formatEloDelta,
+  type DailyPuzzle,
+} from "../../services/puzzleMapper.ts";
 import { requestPuzzleHint, submitPuzzleAttempt } from "../../services/puzzleService.ts";
 import { attemptReducer, attemptTimeMs, initialAttemptState } from "../../util/puzzleAttempt.ts";
 import { gameNames } from "../../util/consts.ts";
@@ -71,7 +75,7 @@ export default function DailyPuzzleCard({ puzzle, onSolved }: DailyPuzzleCardPro
     } catch {
       dispatch({
         type: "failed",
-        message: "Couldn't submit your attempt — check your connection and try again.",
+        message: "Couldn't submit your attempt. Check your connection and try again.",
       });
     }
   }
@@ -84,12 +88,17 @@ export default function DailyPuzzleCard({ puzzle, onSolved }: DailyPuzzleCardPro
       const hint = await requestPuzzleHint(gameKey, auth, puzzle.date);
       dispatch({
         type: "hintReceived",
-        hint: { move: hint.hintMove, explanation: hint.explanation },
+        hint: {
+          move: hint.hintMove,
+          explanation: hint.explanation,
+          eloDelta: hint.eloDelta,
+          newRating: hint.newRating,
+        },
       });
     } catch {
       dispatch({
         type: "hintFailed",
-        message: "Couldn't fetch the hint — your attempt is still rated. Try again.",
+        message: "Couldn't fetch the hint. Your attempt is still rated. Try again.",
       });
     }
   }
@@ -115,8 +124,8 @@ export default function DailyPuzzleCard({ puzzle, onSolved }: DailyPuzzleCardPro
           {practiceOnly && (
             <p className="ga-puzzle-card__fine-print" data-testid="puzzle-practice-note">
               {hinted
-                ? "Hint used — this attempt is practice (no rating change)."
-                : "Today's rated attempt is spent — further attempts are practice."}
+                ? "Hint used: this attempt is practice, but the hint already cost you rating."
+                : "Today's rated attempt is done: further attempts are practice."}
             </p>
           )}
 
@@ -140,6 +149,10 @@ export default function DailyPuzzleCard({ puzzle, onSolved }: DailyPuzzleCardPro
               {attempt.hint.explanation !== undefined && (
                 <p className="ga-puzzle-card__fine-print">{attempt.hint.explanation}</p>
               )}
+              <p className="ga-puzzle-card__fine-print" data-testid="puzzle-hint-penalty">
+                Hint penalty: {formatEloDelta(attempt.hint.eloDelta)} (rating now{" "}
+                {Math.round(attempt.hint.newRating.rating)})
+              </p>
             </div>
           ) : (
             attempt.phase === "viewing" &&
@@ -155,7 +168,8 @@ export default function DailyPuzzleCard({ puzzle, onSolved }: DailyPuzzleCardPro
                   Need a hint?
                 </Button>
                 <span className="ga-puzzle-card__fine-print">
-                  The hint is the answer — asking makes today's attempt practice.
+                  The hint is the answer. It costs {HINT_PENALTY} rating and makes today&apos;s
+                  attempt practice.
                 </span>
               </div>
             )

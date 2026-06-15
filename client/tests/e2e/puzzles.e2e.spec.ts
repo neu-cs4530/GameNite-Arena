@@ -1,13 +1,14 @@
 /**
- * Daily puzzles tab against the REAL stack:
+ * Daily puzzles + practice tabs against the REAL stack:
  *
  *   two real users play a full nim game over sockets → the recorder archives
  *   the match → the puzzle GET lazily mines today's nim puzzle from that
  *   archive → a fresh throwaway user solves it on /puzzles.
  *
- * The suite plays its own source game first, so the lazy generator always
+ * The suite plays its own source games first, so the lazy generator always
  * has a match to mine even on a cold database — no seeded or mocked
- * puzzles anywhere in the path.
+ * puzzles anywhere in the path. Two matches are archived: the daily puzzle
+ * claims the most recent one, leaving the other for the practice feed.
  */
 
 import { test, expect, type APIRequestContext } from "@playwright/test";
@@ -18,26 +19,30 @@ let api: APIRequestContext;
 let solver: TrainerUser;
 
 test.beforeAll(async ({ browser, playwright }) => {
-  // Archive one finished nim match whose penultimate move is SOUND, so the
-  // mining gate accepts it: 21 → 3,3,3,3,3,2,2 leaves 2 tokens; the winner
+  test.setTimeout(60000);
+
+  // Archive two finished nim matches whose penultimate move is SOUND, so the
+  // mining gate accepts them: 21 → 3,3,3,3,3,2,2 leaves 2 tokens; the winner
   // then takes 1 (leaving 1 ≡ 1 mod 4 — the theory-winning move) and the
   // loser is forced to take the last token. The old 7×Take-three line is
   // deliberately rejected now — its split move was a blunder.
-  const context1 = await browser.newContext();
-  const context2 = await browser.newContext();
-  const page1 = await context1.newPage();
-  const page2 = await context2.newPage();
-  await createAndLoadGame(page1, page2, "nim", true, false);
-  const pages = [page1, page2];
   const line = ["three", "three", "three", "three", "three", "two", "two", "one", "one"];
-  for (let move = 0; move < line.length; move++) {
-    const btn = pages[move % 2].getByRole("button", { name: `Take ${line[move]}` });
-    await expect(btn).toBeEnabled();
-    await btn.click();
+  for (let i = 0; i < 2; i++) {
+    const context1 = await browser.newContext();
+    const context2 = await browser.newContext();
+    const page1 = await context1.newPage();
+    const page2 = await context2.newPage();
+    await createAndLoadGame(page1, page2, "nim", true, false);
+    const pages = [page1, page2];
+    for (let move = 0; move < line.length; move++) {
+      const btn = pages[move % 2].getByRole("button", { name: `Take ${line[move]}` });
+      await expect(btn).toBeEnabled();
+      await btn.click();
+    }
+    await expect(page1.getByText(/The game is over/)).toBeVisible();
+    await context1.close();
+    await context2.close();
   }
-  await expect(page1.getByText(/The game is over/)).toBeVisible();
-  await context1.close();
-  await context2.close();
 
   api = await playwright.request.newContext();
   solver = await signupTrainerUser(api, "e2e_puzzle");
@@ -98,7 +103,38 @@ test.describe("Daily puzzles tab", () => {
     // solution disclosure still never renders before an attempt.
     await page.getByTestId("puzzle-hint").click();
     await expect(page.getByTestId("puzzle-hint-reveal")).toContainText(/Take [123]/);
+    // hints cost rating too
+    await expect(page.getByTestId("puzzle-hint-penalty")).toContainText(/-5/);
     await expect(page.getByTestId("puzzle-practice-note")).toBeVisible();
     await expect(page.getByTestId("puzzle-solution")).toHaveCount(0);
+  });
+});
+
+test.describe("Practice tab", () => {
+  test("a user opens Practice from the sidebar, attempts a position, and loads more", async ({
+    page,
+  }) => {
+    await logInTrainer(page, solver);
+    await page.goto("/puzzles");
+
+    // the Puzzles dropdown is already open on /puzzles routes
+    await page.getByRole("link", { name: "Practice" }).click();
+    await page.waitForURL("/puzzles/practice");
+
+    await page.getByTestId("practice-game-tile-nim").click();
+
+    // At least one position mined from the archive, distinct from today's puzzle.
+    const card = page.getByTestId("training-card").first();
+    await expect(card).toBeVisible();
+    await expect(card.getByTestId("puzzle-board-nim")).toBeVisible();
+
+    // Any legal take is a valid attempt — the reveal shows pass/fail + solution.
+    await card.getByTestId("puzzle-take-1").click();
+    const result = card.getByTestId("training-result");
+    await expect(result).toBeVisible();
+    await expect(result).toContainText(/Take [123]/);
+
+    // "Load more" stays usable even when nothing new comes back.
+    await page.getByTestId("training-load-more").click();
   });
 });

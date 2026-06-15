@@ -1,8 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AxiosError, type AxiosResponse } from "axios";
-import type { PuzzleAttemptResult, PuzzleView, UserAuth } from "@gamenite/shared";
+import {
+  HINT_PENALTY,
+  type PuzzleAttemptResult,
+  type PuzzleView,
+  type TrainingAttemptResult,
+  type TrainingPackEntry,
+  type UserAuth,
+} from "@gamenite/shared";
 import { api } from "./api.ts";
-import { fetchDailyPuzzle, requestPuzzleHint, submitPuzzleAttempt } from "./puzzleService.ts";
+import {
+  fetchDailyPuzzle,
+  fetchTrainingPack,
+  requestPuzzleHint,
+  submitPuzzleAttempt,
+  submitTrainingAttempt,
+} from "./puzzleService.ts";
 
 vi.mock("./api.ts", () => ({
   api: { get: vi.fn(), post: vi.fn() },
@@ -88,12 +101,70 @@ describe("submitPuzzleAttempt", () => {
 
 describe("requestPuzzleHint", () => {
   it("posts the pinned date with body auth and returns the revealed move", async () => {
-    mockedPost.mockResolvedValueOnce(asResponse({ hintMove: 3, explanation: "leave 5" }));
+    const hintResult = {
+      hintMove: 3,
+      explanation: "leave 5",
+      eloDelta: -HINT_PENALTY,
+      newRating: { rating: 1495, rd: 350, vol: 0.06 },
+    };
+    mockedPost.mockResolvedValueOnce(asResponse(hintResult));
     const hint = await requestPuzzleHint("nim", AUTH, "2026-06-11");
     expect(mockedPost).toHaveBeenCalledWith("/api/puzzle/nim/hint", {
       auth: AUTH,
       payload: { date: "2026-06-11" },
     });
-    expect(hint).toStrictEqual({ hintMove: 3, explanation: "leave 5" });
+    expect(hint).toStrictEqual(hintResult);
+  });
+});
+
+describe("fetchTrainingPack", () => {
+  const entries: TrainingPackEntry[] = [
+    {
+      gameKey: "nim",
+      position: { remaining: 5, nextPlayer: 0 },
+      sourceMatchId: "match-1",
+      createdAt: "2026-06-09T00:30:00.000Z",
+    },
+  ];
+
+  it("hits the plain endpoint with no query when no options are given", async () => {
+    mockedGet.mockResolvedValueOnce(asResponse(entries));
+    const pack = await fetchTrainingPack("nim");
+    expect(mockedGet).toHaveBeenCalledWith("/api/puzzle/nim/training");
+    expect(pack).toStrictEqual(entries);
+  });
+
+  it("sends limit and a comma-joined exclude list when given", async () => {
+    mockedGet.mockResolvedValueOnce(asResponse(entries));
+    await fetchTrainingPack("nim", { limit: 5, exclude: ["match-1", "match-2"] });
+    expect(mockedGet).toHaveBeenCalledWith(
+      "/api/puzzle/nim/training?limit=5&exclude=match-1%2Cmatch-2",
+    );
+  });
+
+  it("omits exclude when the list is empty", async () => {
+    mockedGet.mockResolvedValueOnce(asResponse(entries));
+    await fetchTrainingPack("nim", { limit: 5, exclude: [] });
+    expect(mockedGet).toHaveBeenCalledWith("/api/puzzle/nim/training?limit=5");
+  });
+});
+
+describe("submitTrainingAttempt", () => {
+  it("posts the sourceMatchId and move with body auth, returns the verdict", async () => {
+    const result: TrainingAttemptResult = {
+      success: true,
+      solutionMove: 3,
+      explanation: "Take 3 to leave them 1.",
+    };
+    mockedPost.mockResolvedValueOnce(asResponse(result));
+    const verdict = await submitTrainingAttempt("nim", AUTH, {
+      sourceMatchId: "match-1",
+      move: 3,
+    });
+    expect(mockedPost).toHaveBeenCalledWith("/api/puzzle/nim/training/attempt", {
+      auth: AUTH,
+      payload: { sourceMatchId: "match-1", move: 3 },
+    });
+    expect(verdict).toStrictEqual(result);
   });
 });

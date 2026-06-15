@@ -91,7 +91,9 @@ app.use(
         .get("/leaderboard", puzzle.getLeaderboard)
         .get("/:gameKey", puzzle.getToday)
         .post("/:gameKey/attempt", puzzle.postAttempt)
-        .post("/:gameKey/hint", puzzle.postHint),
+        .post("/:gameKey/hint", puzzle.postHint)
+        .get("/:gameKey/training", puzzle.getTraining)
+        .post("/:gameKey/training/attempt", puzzle.postTrainingAttempt),
     )
     .use("/rating", rating.ratingRouter())
     .use(

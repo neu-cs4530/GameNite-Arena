@@ -1,5 +1,6 @@
 import "./SideBarNav.css";
-import { NavLink, type NavLinkRenderProps } from "react-router-dom";
+import { useState } from "react";
+import { NavLink, useLocation, type NavLinkRenderProps } from "react-router-dom";
 import useAuth from "../hooks/useAuth.ts";
 
 /**
@@ -9,6 +10,9 @@ import useAuth from "../hooks/useAuth.ts";
  */
 export default function SideBarNav() {
   const { username } = useAuth();
+  const location = useLocation();
+  const onPuzzlesRoute = location.pathname.startsWith("/puzzles");
+  const [puzzlesOpen, setPuzzlesOpen] = useState(onPuzzlesRoute);
 
   const navClass = ({ isActive }: NavLinkRenderProps) =>
     `menu_button ${isActive ? "menu_selected" : ""}`;
@@ -21,9 +25,30 @@ export default function SideBarNav() {
       <NavLink to="/games" className={navClass}>
         Games
       </NavLink>
-      <NavLink to="/puzzles" className={navClass}>
-        Puzzles
-      </NavLink>
+      <div className={`menu_group ${puzzlesOpen ? "menu_group--open" : ""}`}>
+        <button
+          type="button"
+          className="menu_button menu_dropdown_toggle"
+          aria-expanded={puzzlesOpen}
+          onClick={() => setPuzzlesOpen((open) => !open)}
+          data-testid="puzzles-menu-toggle"
+        >
+          <span className="menu_label">Puzzles</span>
+          <span className="menu_chevron" aria-hidden="true">
+            ▸
+          </span>
+        </button>
+        {puzzlesOpen && (
+          <div className="menu_submenu">
+            <NavLink to="/puzzles" className={navClass} end>
+              Daily Puzzle
+            </NavLink>
+            <NavLink to="/puzzles/practice" className={navClass}>
+              Practice
+            </NavLink>
+          </div>
+        )}
+      </div>
       <NavLink to="/leaderboards" className={navClass}>
         Leaderboards
       </NavLink>

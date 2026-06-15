@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { JSX } from "react";
-import type { PuzzleAttemptResult, SafeUserInfo } from "@gamenite/shared";
+import { HINT_PENALTY, type PuzzleAttemptResult, type SafeUserInfo } from "@gamenite/shared";
 import { LoginContext } from "../../contexts/LoginContext.ts";
 import type { GameSocket } from "../../util/types.ts";
 import type { DailyPuzzle } from "../../services/puzzleMapper.ts";
@@ -111,7 +111,12 @@ describe("DailyPuzzleCard: submitting", () => {
 
 describe("DailyPuzzleCard: hints (server round-trip)", () => {
   it("requests the hint with the pinned date and reveals the move as practice-only", async () => {
-    mockedHint.mockResolvedValueOnce({ hintMove: 3, explanation: "Leave them 3." });
+    mockedHint.mockResolvedValueOnce({
+      hintMove: 3,
+      explanation: "Leave them 3.",
+      eloDelta: -HINT_PENALTY,
+      newRating: { rating: 1495, rd: 350, vol: 0.06 },
+    });
     renderCard(nimPuzzle);
 
     await userEvent.click(screen.getByTestId("puzzle-hint"));
@@ -124,13 +129,20 @@ describe("DailyPuzzleCard: hints (server round-trip)", () => {
     const reveal = await screen.findByTestId("puzzle-hint-reveal");
     expect(reveal).toHaveTextContent("Take 3");
     expect(reveal).toHaveTextContent("Leave them 3.");
+    // the penalty shows up right away so it's not a surprise later
+    expect(screen.getByTestId("puzzle-hint-penalty")).toHaveTextContent("-5");
+    expect(screen.getByTestId("puzzle-hint-penalty")).toHaveTextContent("1495");
     // the rated slot is forfeit — the UI says so up front
     expectPracticeNote();
     expect(screen.getByTestId("puzzle-practice-note")).toHaveTextContent(/practice/i);
   });
 
   it("a hinted solve renders the practice verdict (rating frozen)", async () => {
-    mockedHint.mockResolvedValueOnce({ hintMove: 3 });
+    mockedHint.mockResolvedValueOnce({
+      hintMove: 3,
+      eloDelta: -HINT_PENALTY,
+      newRating: { rating: 1495, rd: 350, vol: 0.06 },
+    });
     mockedSubmit.mockResolvedValueOnce(practiceWin);
     renderCard(nimPuzzle);
 

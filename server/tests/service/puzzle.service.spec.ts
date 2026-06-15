@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { HINT_PENALTY } from "@gamenite/shared";
 import { dailyPuzzleKey, puzzleHintKey, type MatchRecord } from "../../src/models.ts";
 import {
   MatchRepo,
@@ -9,10 +10,17 @@ import {
 } from "../../src/repository.ts";
 import { getUserByUsername } from "../../src/services/auth.service.ts";
 import {
+  DEFAULT_RATING,
+  DEFAULT_RD,
+  DEFAULT_VOLATILITY,
+} from "../../src/services/glicko2.service.ts";
+import {
   generatePuzzleForGame,
   getOrGenerateTodaysPuzzle,
+  getTrainingPack,
   grantHint,
   submitAttempt,
+  submitTrainingAttempt,
 } from "../../src/services/puzzle.service.ts";
 
 /* ---------------------------------------------------------------------------
@@ -653,7 +661,12 @@ describe("submitAttempt: streak decoupled from the rated slot", () => {
 
     const after = await UserRepo.get(userId);
     expect(after.puzzleStreak).toStrictEqual({ current: 0, best: 0 });
-    expect(after.puzzleRatings.nim).toBeUndefined();
+    // the hint already docked the rating - the unrated attempt doesn't touch it again
+    expect(after.puzzleRatings.nim).toStrictEqual({
+      rating: DEFAULT_RATING - HINT_PENALTY,
+      rd: DEFAULT_RD,
+      vol: DEFAULT_VOLATILITY,
+    });
     expect(after.puzzleLastRatedAt?.nim).toBeUndefined();
   });
 });
@@ -696,18 +709,24 @@ describe("grantHint", () => {
     expect(await hint(await user1Id(), "nim", D1)).toBeNull();
   });
 
-  it("reveals the archived solution move and records the grant", async () => {
+  it("reveals the archived solution move, records the grant, and docks the rating", async () => {
     await seedNimPuzzle(D1, { remaining: 6, nextPlayer: 1 }, [1]);
     const userId = await user1Id();
 
     const result = await hint(userId, "nim", D1);
 
-    expect(result).toStrictEqual({ hintMove: 1, explanation: "seeded by test" });
+    expect(result).toStrictEqual({
+      hintMove: 1,
+      explanation: "seeded by test",
+      eloDelta: -HINT_PENALTY,
+      newRating: { rating: DEFAULT_RATING - HINT_PENALTY, rd: DEFAULT_RD, vol: DEFAULT_VOLATILITY },
+    });
     const record = await PuzzleHintRepo.find(puzzleHintKey(userId, `nim:${D1}`));
     expect(record).toMatchObject({ userId, puzzleId: `nim:${D1}` });
+    expect((await UserRepo.get(userId)).puzzleRatings.nim).toStrictEqual(result!.newRating);
   });
 
-  it("is idempotent — a second grant keeps the original record", async () => {
+  it("is idempotent — a second grant keeps the original record and doesn't charge twice", async () => {
     await seedNimPuzzle(D1, { remaining: 6, nextPlayer: 1 }, [1]);
     const userId = await user1Id();
 
@@ -720,6 +739,9 @@ describe("grantHint", () => {
     expect(second).toStrictEqual(first);
     expect(recordAfterSecond).toStrictEqual(recordAfterFirst);
     expect(await PuzzleHintRepo.getAllKeys()).toHaveLength(1);
+    expect((await UserRepo.get(userId)).puzzleRatings.nim?.rating).toBe(
+      DEFAULT_RATING - HINT_PENALTY,
+    );
   });
 
   it("poisons the rated slot for that puzzle: post-hint attempts never rate", async () => {
@@ -733,6 +755,105 @@ describe("grantHint", () => {
 
     expect(first!.rated).toBe(false);
     expect(second!.rated).toBe(false);
-    expect((await UserRepo.get(userId)).puzzleRatings.nim).toBeUndefined();
+    // the hint already docked the rating — unrated attempts don't touch it further
+    expect((await UserRepo.get(userId)).puzzleRatings.nim).toStrictEqual({
+      rating: DEFAULT_RATING - HINT_PENALTY,
+      rd: DEFAULT_RD,
+      vol: DEFAULT_VOLATILITY,
+    });
+  });
+});
+
+/* ---------------------------------------------------------------------------
+ * Training pack feed (getTrainingPack / submitTrainingAttempt)
+ *
+ * Extra unrated practice positions, mined from the same sound candidates as
+ * the daily puzzle, but nothing gets stored: every call re-scans the archive
+ * and grading re-derives the solution from sourceMatchId.
+ * ------------------------------------------------------------------------- */
+
+describe("getTrainingPack", () => {
+  it("returns [] for a game outside PUZZLE_GAME_KEYS", async () => {
+    await MatchRepo.set("match-guess-1", guessWin());
+
+    expect(await getTrainingPack("guess", { limit: 5 })).toStrictEqual([]);
+  });
+
+  it("mines sound candidates from the archive, most-recent-first", async () => {
+    await MatchRepo.set("match-old", soundNimWin({ completedAt: "2026-06-08T00:00:00.000Z" }));
+    await MatchRepo.set("match-new", soundNimWin({ completedAt: "2026-06-09T00:00:00.000Z" }));
+
+    const pack = await getTrainingPack("nim", { limit: 5 });
+
+    expect(pack.map((entry) => entry.sourceMatchId)).toStrictEqual(["match-new", "match-old"]);
+    expect(pack[0].gameKey).toBe("nim");
+    expect(pack[0].position).toStrictEqual({ remaining: 2, nextPlayer: 1 });
+  });
+
+  it("excludes today's daily puzzle's source match automatically", async () => {
+    await MatchRepo.set("match-nim-1", soundNimWin());
+    await generatePuzzleForGame("nim", today);
+
+    expect(await getTrainingPack("nim", { limit: 5 })).toStrictEqual([]);
+  });
+
+  it("excludes client-supplied match ids for load more", async () => {
+    await MatchRepo.set("match-a", soundNimWin({ completedAt: "2026-06-08T00:00:00.000Z" }));
+    await MatchRepo.set("match-b", soundNimWin({ completedAt: "2026-06-09T00:00:00.000Z" }));
+
+    const pack = await getTrainingPack("nim", { limit: 5, exclude: ["match-b"] });
+
+    expect(pack.map((entry) => entry.sourceMatchId)).toStrictEqual(["match-a"]);
+  });
+
+  it("caps results at limit", async () => {
+    await MatchRepo.set("match-a", soundNimWin({ completedAt: "2026-06-07T00:00:00.000Z" }));
+    await MatchRepo.set("match-b", soundNimWin({ completedAt: "2026-06-08T00:00:00.000Z" }));
+    await MatchRepo.set("match-c", soundNimWin({ completedAt: "2026-06-09T00:00:00.000Z" }));
+
+    expect(await getTrainingPack("nim", { limit: 2 })).toHaveLength(2);
+  });
+});
+
+describe("submitTrainingAttempt", () => {
+  it("grades a winning move as success and returns the archived solution", async () => {
+    await MatchRepo.set("match-nim-1", soundNimWin());
+
+    const result = await submitTrainingAttempt("nim", "match-nim-1", 1);
+
+    expect(result!.success).toBe(true);
+    expect(result!.solutionMove).toBe(1);
+    expect(typeof result!.explanation).toBe("string");
+  });
+
+  it("grades a losing move as failure", async () => {
+    await MatchRepo.set("match-nim-1", soundNimWin());
+
+    const result = await submitTrainingAttempt("nim", "match-nim-1", 3);
+
+    expect(result!.success).toBe(false);
+  });
+
+  it("returns null for an unknown sourceMatchId", async () => {
+    expect(await submitTrainingAttempt("nim", "does-not-exist", 1)).toBeNull();
+  });
+
+  it("returns null when the match belongs to a different game", async () => {
+    await MatchRepo.set("match-guess-1", guessWin());
+
+    expect(await submitTrainingAttempt("nim", "match-guess-1", 1)).toBeNull();
+  });
+
+  it("never touches ratings, streaks, or the attempt log", async () => {
+    await MatchRepo.set("match-nim-1", soundNimWin());
+    const userId = await user1Id();
+    const before = await UserRepo.get(userId);
+
+    await submitTrainingAttempt("nim", "match-nim-1", 1);
+
+    const after = await UserRepo.get(userId);
+    expect(after.puzzleRatings).toStrictEqual(before.puzzleRatings);
+    expect(after.puzzleStreak).toStrictEqual(before.puzzleStreak);
+    expect(await PuzzleAttemptRepo.getAllKeys()).toHaveLength(0);
   });
 });

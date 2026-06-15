@@ -1,0 +1,43 @@
+.ga-training-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ga-training-card__fine-print {
+  margin: 0;
+  font-size: var(--text-micro);
+  color: var(--color-fg-subtle);
+}
+
+.ga-training-card__error {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.ga-training-card__result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.ga-training-card__solution-move {
+  margin: 0;
+}
+
+.ga-training-feed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.ga-training-feed__load-more {
+  display: flex;
+  justify-content: center;
+}

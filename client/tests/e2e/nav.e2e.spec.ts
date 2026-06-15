@@ -40,14 +40,13 @@ test.describe("The sidebar navigation", () => {
     const labels = await sidebar.getByRole("link").allInnerTexts();
     const cleaned = labels.map((s) => s.trim());
 
-    // Original spec order plus the surfaces added later: Puzzles (after
-    // Games, its gameplay sibling), Leaderboards (rankings sit beside the
-    // arena), and the trainer-platform pages (Trainer, Models) ahead of
-    // Profile.
+    // Original spec order plus the surfaces added later: Leaderboards
+    // (rankings sit beside the arena), and the trainer-platform pages
+    // (Trainer, Models) ahead of Profile. Puzzles is its own dropdown
+    // button (see below), not a plain link.
     expect(cleaned).toEqual([
       "Home",
       "Games",
-      "Puzzles",
       "Leaderboards",
       "Forum",
       "Replays",
@@ -61,5 +60,21 @@ test.describe("The sidebar navigation", () => {
     await page.goto("/replays");
     const replays = page.getByRole("link", { name: "Replays" });
     await expect(replays).toHaveClass(/menu_selected/);
+  });
+
+  test("the 'Puzzles' button expands a submenu with Daily Puzzle and Practice @smoke", async ({
+    page,
+  }) => {
+    const toggle = page.getByTestId("puzzles-menu-toggle");
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+    await page.getByRole("link", { name: "Daily Puzzle" }).click();
+    await page.waitForURL("/puzzles");
+
+    await page.getByRole("link", { name: "Practice" }).click();
+    await page.waitForURL("/puzzles/practice");
   });
 });
