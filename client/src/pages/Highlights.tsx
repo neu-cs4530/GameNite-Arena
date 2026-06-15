@@ -49,27 +49,34 @@ export default function Highlights(): JSX.Element {
         />
       ) : (
         <ul className="ga-highlights__list" data-testid="highlights-list">
-          {highlights.map((h) => (
-            <li key={h.highlightId}>
-              <Link
-                to={`/replays/${h.gameId}?from=${h.startIndex}&clip=${h.moves.length}`}
-                className="ga-highlights__item"
-              >
-                <span className="ga-highlights__star" aria-hidden="true">
-                  ★
-                </span>
-                <span className="ga-highlights__body">
-                  <span className="ga-highlights__note">
-                    {h.note || `${h.moves.length}-move clip`}
+          {highlights.map((h) => {
+            // Highlights saved before the clip fields existed may lack
+            // moves/startIndex/gameKey — default them so old records still render.
+            const moveCount = h.moves?.length ?? 0;
+            const gameName = h.gameKey ? replayGameNames[h.gameKey] : "Match";
+            const watchTo =
+              moveCount > 0
+                ? `/replays/${h.gameId}?from=${h.startIndex ?? 0}&clip=${moveCount}`
+                : `/replays/${h.gameId}`;
+            return (
+              <li key={h.highlightId}>
+                <Link to={watchTo} className="ga-highlights__item">
+                  <span className="ga-highlights__star" aria-hidden="true">
+                    ★
                   </span>
-                  <span className="ga-highlights__time">
-                    {replayGameNames[h.gameKey]} (<TimeAgo date={h.capturedAt} />)
+                  <span className="ga-highlights__body">
+                    <span className="ga-highlights__note">
+                      {h.note || `${moveCount}-move clip`}
+                    </span>
+                    <span className="ga-highlights__time">
+                      {gameName} (<TimeAgo date={h.capturedAt} />)
+                    </span>
                   </span>
-                </span>
-                <span className="ga-highlights__cta">Watch replay →</span>
-              </Link>
-            </li>
-          ))}
+                  <span className="ga-highlights__cta">Watch replay →</span>
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
