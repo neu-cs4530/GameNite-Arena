@@ -7,7 +7,11 @@ import Card from "../ui/Card.tsx";
 import PuzzleBoard from "./PuzzleBoard.tsx";
 import PuzzleMoveInput from "./PuzzleMoveInput.tsx";
 import useAuth from "../../hooks/useAuth.ts";
-import { describePuzzleMove, type TrainingPracticeItem } from "../../services/puzzleMapper.ts";
+import {
+  applyPuzzleMove,
+  describePuzzleMove,
+  type TrainingPracticeItem,
+} from "../../services/puzzleMapper.ts";
 import { submitTrainingAttempt } from "../../services/puzzleService.ts";
 
 type Phase = "viewing" | "submitting" | "result" | "error";
@@ -17,9 +21,11 @@ export default function TrainingPuzzleCard({ item }: { item: TrainingPracticeIte
   const auth = useAuth();
   const [phase, setPhase] = useState<Phase>("viewing");
   const [result, setResult] = useState<TrainingAttemptResult | null>(null);
+  const [submittedMove, setSubmittedMove] = useState<unknown>(null);
 
   async function handleSubmit(move: unknown) {
     if (phase !== "viewing") return;
+    setSubmittedMove(move);
     setPhase("submitting");
     try {
       const res = await submitTrainingAttempt(item.gameKey, auth, {
@@ -35,7 +41,20 @@ export default function TrainingPuzzleCard({ item }: { item: TrainingPracticeIte
 
   return (
     <Card testId="training-card" className="ga-training-card">
-      <PuzzleBoard position={item.position} />
+      <PuzzleBoard
+        // once submitted, show the move played rather than the pre-move snapshot
+        position={
+          phase === "submitting" || phase === "result"
+            ? applyPuzzleMove(item.position, submittedMove)
+            : item.position
+        }
+        onSubmit={
+          phase === "viewing" || phase === "submitting"
+            ? (move) => void handleSubmit(move)
+            : undefined
+        }
+        disabled={phase === "submitting"}
+      />
 
       {(phase === "viewing" || phase === "submitting") && (
         <PuzzleMoveInput

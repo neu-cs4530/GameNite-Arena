@@ -17,16 +17,17 @@
   flex-direction: column;
   gap: var(--space-2);
   width: min(100%, var(--board-max, 34rem));
+  --c4-frame-pad: clamp(4px, 1.5cqw, var(--space-3));
 }
 
-/* Drop controls: a 7-column grid aligned 1:1 with the board grid. Because it
-   is itself `repeat(7, 1fr)` at the same width as the board, the row of
-   buttons can never be wider than the board and so can never overflow. */
+/* Drop controls: a 7-column grid aligned 1:1 with the board grid. Padding
+   matches .c4-frame's so each arrow lines up with its column. */
 .c4-drops {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: clamp(2px, 1cqw, var(--space-2));
   width: 100%;
+  padding-inline: var(--c4-frame-pad);
 }
 
 .c4-drop {
@@ -88,7 +89,7 @@
 .c4-frame {
   width: 100%;
   aspect-ratio: 7 / 6;
-  padding: clamp(4px, 1.5cqw, var(--space-3));
+  padding: var(--c4-frame-pad);
   background: var(--color-primary);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm, 0 1px 2px rgba(14, 23, 38, 0.08));

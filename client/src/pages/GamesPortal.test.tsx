@@ -57,11 +57,11 @@ describe("GamesPortal: daily-puzzle tile badge", () => {
     mockedFetch.mockResolvedValue(nimPuzzle);
     renderPortal();
 
-    const badge = await screen.findByTestId("portal-puzzle-badge");
-    expect(badge).toHaveTextContent(/daily puzzle/i);
-    expect(within(screen.getByTestId("game-tile-nim")).getByTestId("portal-puzzle-badge")).toBe(
-      badge,
+    // every puzzle-enabled game gets a badge now, so scope to the nim tile
+    const badge = await within(screen.getByTestId("game-tile-nim")).findByTestId(
+      "portal-puzzle-badge",
     );
+    expect(badge).toHaveTextContent(/daily puzzle/i);
     // guess is not puzzle-enabled — its tile carries no badge
     expect(
       within(screen.getByTestId("game-tile-guess")).queryByTestId("portal-puzzle-badge"),
@@ -75,7 +75,10 @@ describe("GamesPortal: daily-puzzle tile badge", () => {
     });
     renderPortal();
 
-    expect(await screen.findByTestId("portal-puzzle-badge")).toHaveTextContent(/solved/i);
+    const badge = await within(screen.getByTestId("game-tile-nim")).findByTestId(
+      "portal-puzzle-badge",
+    );
+    expect(badge).toHaveTextContent(/solved/i);
   });
 
   it("falls back to the plain badge when the puzzle fetch fails", async () => {
@@ -83,7 +86,9 @@ describe("GamesPortal: daily-puzzle tile badge", () => {
     renderPortal();
 
     await waitFor(() => expect(mockedFetch).toHaveBeenCalled());
-    const badge = await screen.findByTestId("portal-puzzle-badge");
+    const badge = await within(screen.getByTestId("game-tile-nim")).findByTestId(
+      "portal-puzzle-badge",
+    );
     expect(badge).toHaveTextContent(/daily puzzle/i);
     expect(badge).not.toHaveTextContent(/solved/i);
   });

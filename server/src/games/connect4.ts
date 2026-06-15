@@ -239,6 +239,14 @@ export const connect4Logic: GameLogic<Connect4State, Connect4View> = {
     const move = zConnect4Move.safeParse(payload);
     return move.success ? move.data : null;
   },
+
+  // a winning move is one that drops a disc and completes four in a row
+  isWinningMove: (state, payload) => {
+    const mover = state.nextPlayer;
+    const updated = connect4Logic.update(state, payload, mover);
+    if (updated === null) return false;
+    return connect4Logic.isDone(updated) && connect4Logic.winnerIndex!(updated) === mover;
+  },
 };
 
 export const connect4GameService = new GameService<Connect4State, Connect4View>(connect4Logic);
