@@ -189,23 +189,26 @@
   align-items: center;
 }
 
-/* Scaffold followers list. */
-.ga-profile-followers {
-  list-style: none;
-  margin: 0;
+/* Clickable follower / following counts in the profile header. */
+.ga-profile-header__counts {
+  display: flex;
+  gap: var(--space-4);
+  margin-top: var(--space-1);
+}
+
+.ga-profile-header__count {
+  background: none;
+  border: none;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.ga-profile-followers__item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.ga-profile-followers__handle {
+  cursor: pointer;
   color: var(--color-fg-muted);
   font-size: var(--text-small);
+}
+
+.ga-profile-header__count strong {
+  color: var(--color-fg);
+}
+
+.ga-profile-header__count:hover {
+  color: var(--color-fg);
 }

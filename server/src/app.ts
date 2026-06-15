@@ -78,6 +78,8 @@ app.use(
       express
         .Router()
         .post("/feed", follow.postFeed)
+        .get("/:username/followers", follow.getFollowers)
+        .get("/:username/following", follow.getFollowingList)
         .post("/:username", follow.postFollow)
         .post("/:username/unfollow", follow.postUnfollow),
     )

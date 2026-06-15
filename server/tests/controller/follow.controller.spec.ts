@@ -14,6 +14,8 @@ function makeApp(): express.Express {
     express
       .Router()
       .post("/feed", follow.postFeed)
+      .get("/:username/followers", follow.getFollowers)
+      .get("/:username/following", follow.getFollowingList)
       .post("/:username", follow.postFollow)
       .post("/:username/unfollow", follow.postUnfollow),
   );
@@ -48,6 +50,27 @@ describe("POST /api/follow/:username/unfollow", () => {
       .send({ auth: caster });
     expect(res.status).toBe(200);
     expect((res.body as { username: string }[]).map((u) => u.username)).not.toContain("user1");
+  });
+});
+
+describe("GET /api/follow/:username/followers and /following", () => {
+  it("lists a user's followers (200)", async () => {
+    await supertest(makeApp()).post("/api/follow/user1").send({ auth: caster }); // user0 follows user1
+    const res = await supertest(makeApp()).get("/api/follow/user1/followers");
+    expect(res.status).toBe(200);
+    expect((res.body as { username: string }[]).map((u) => u.username)).toContain("user0");
+  });
+
+  it("lists who a user follows (200)", async () => {
+    await supertest(makeApp()).post("/api/follow/user1").send({ auth: caster });
+    const res = await supertest(makeApp()).get("/api/follow/user0/following");
+    expect(res.status).toBe(200);
+    expect((res.body as { username: string }[]).map((u) => u.username)).toContain("user1");
+  });
+
+  it("returns 404 for an unknown user", async () => {
+    const res = await supertest(makeApp()).get("/api/follow/ghost/followers");
+    expect(res.status).toBe(404);
   });
 });
 

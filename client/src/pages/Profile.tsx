@@ -1,14 +1,16 @@
 import "./Profile.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import type { ProfileSummary } from "@gamenite/shared";
+import type { ProfileSummary, SafeUserInfo } from "@gamenite/shared";
 import useAsync from "../hooks/useAsync.ts";
 import useReplaysForUser from "../hooks/useReplaysForUser.ts";
 import useReplayFilters from "../hooks/useReplayFilters.ts";
 import useWatchLater from "../hooks/useWatchLater.ts";
 import useLoginContext from "../hooks/useLoginContext.ts";
 import useLiveBroadcasts from "../hooks/useLiveBroadcasts.ts";
-import { useFollowers } from "../hooks/useFollowerData.ts";
+import useFollow from "../hooks/useFollow.ts";
+import { listFollowers, listFollowing } from "../services/followService.ts";
+import FollowList from "../components/follow/FollowList.tsx";
 import { findLiveBroadcastForUser } from "../util/liveGames.ts";
 import LiveDot from "../components/live/LiveDot.tsx";
 
@@ -91,6 +93,25 @@ export default function Profile() {
         : undefined,
     [liveBroadcasts.data, username],
   );
+
+  // This profile's followers + following lists (for the counts + Followers
+  // tab), plus the viewer's own follow graph for inline follow/unfollow.
+  const followCtl = useFollow();
+  const followsProducer = useCallback(async (): Promise<{
+    followers: SafeUserInfo[];
+    following: SafeUserInfo[];
+  }> => {
+    if (!username) return { followers: [], following: [] };
+    const [followers, following] = await Promise.all([
+      listFollowers(username),
+      listFollowing(username),
+    ]);
+    return { followers, following };
+  }, [username]);
+  const { data: follows, loading: followsLoading } = useAsync(followsProducer, [username], {
+    followers: [],
+    following: [],
+  });
 
   const filtersKey = useMemo(() => JSON.stringify(filters), [filters]);
   const [extraReplays, setExtraReplays] = useState<ReplaySummary[]>([]);
@@ -211,6 +232,15 @@ export default function Profile() {
         onTabChange={setTab}
         activeTab={tab}
         liveBroadcastId={liveBroadcastId}
+        followerCount={follows?.followers.length ?? 0}
+        followingCount={follows?.following.length ?? 0}
+        viewerFollows={!!username && followCtl.isFollowing(username)}
+        followBusy={!!username && followCtl.busy === username}
+        onToggleFollow={() => {
+          if (!username) return;
+          if (followCtl.isFollowing(username)) void followCtl.unfollow(username);
+          else void followCtl.follow(username);
+        }}
       />
 
       {tab === "settings" && isOwner && (
@@ -290,7 +320,15 @@ export default function Profile() {
         <WatchLaterTab username={username} watchLaterIds={watchLater.ids} />
       )}
 
-      {tab === "followers" && <FollowersTab username={username} />}
+      {tab === "followers" && (
+        <FollowersTab
+          followers={follows?.followers ?? []}
+          following={follows?.following ?? []}
+          loading={followsLoading}
+          followCtl={followCtl}
+          viewerUsername={viewer.username}
+        />
+      )}
     </div>
   );
 }
@@ -361,6 +399,12 @@ interface ProfileHeaderProps {
   onTabChange: (next: ProfileTab) => void;
   /** Set when this user is currently in a live broadcast; links to watch it. */
   liveBroadcastId?: string;
+  followerCount?: number;
+  followingCount?: number;
+  /** Whether the signed-in viewer follows this profile (non-owner only). */
+  viewerFollows?: boolean;
+  followBusy?: boolean;
+  onToggleFollow?: () => void;
 }
 
 function ProfileHeader({
@@ -370,6 +414,11 @@ function ProfileHeader({
   activeTab,
   onTabChange,
   liveBroadcastId,
+  followerCount = 0,
+  followingCount = 0,
+  viewerFollows = false,
+  followBusy = false,
+  onToggleFollow,
 }: ProfileHeaderProps) {
   if (loading || !summary) {
     return (
@@ -414,9 +463,37 @@ function ProfileHeader({
                 <LiveDot label="LIVE — watch" />
               </Link>
             )}
+            {!isOwner && onToggleFollow && (
+              <Button
+                variant={viewerFollows ? "ghost" : "primary"}
+                size="sm"
+                loading={followBusy}
+                onClick={onToggleFollow}
+              >
+                {viewerFollows ? "Following" : "Follow"}
+              </Button>
+            )}
           </div>
           <div className="ga-profile-header__since">
             Joined <TimeAgo date={new Date(user.createdAt)} />
+          </div>
+          <div className="ga-profile-header__counts">
+            <button
+              type="button"
+              className="ga-profile-header__count"
+              onClick={() => onTabChange("followers")}
+              data-testid="profile-followers-count"
+            >
+              <strong>{followerCount}</strong> {followerCount === 1 ? "follower" : "followers"}
+            </button>
+            <button
+              type="button"
+              className="ga-profile-header__count"
+              onClick={() => onTabChange("followers")}
+              data-testid="profile-following-count"
+            >
+              <strong>{followingCount}</strong> following
+            </button>
           </div>
           <div className="ga-profile-header__chips" data-testid="profile-elo-chips">
             <div className="ga-profile-header__overall" data-testid="overall-elo">
@@ -483,40 +560,58 @@ function ProfileHeader({
 }
 
 /**
- * SCAFFOLD: a user's followers. The backend isn't built yet, so the data hook
- * reports "unavailable" and we render an honest waiting-for-backend state
- * (never fabricated followers). The real-data branch is already wired for when
- * the backend lands.
+ * Followers + Following lists with inline follow / follow-back, driven by the
+ * viewer's follow graph (Instagram-style). Data is fetched once at the Profile
+ * level and passed in, so the header counts and these lists stay consistent.
  */
-function FollowersTab({ username }: { username?: string }) {
-  const { data, loading } = useFollowers(username);
+function FollowersTab({
+  followers,
+  following,
+  loading,
+  followCtl,
+  viewerUsername,
+}: {
+  followers: SafeUserInfo[];
+  following: SafeUserInfo[];
+  loading: boolean;
+  followCtl: ReturnType<typeof useFollow>;
+  viewerUsername: string;
+}) {
   return (
-    <Section title="Followers" testId="profile-followers">
-      {loading ? (
-        <Skeleton variant="rect" height={80} />
-      ) : data?.available ? (
-        data.data.users.length === 0 ? (
-          <EmptyState icon="👤" title="No followers yet" />
+    <>
+      <Section title={`Followers (${followers.length})`} testId="profile-followers">
+        {loading ? (
+          <Skeleton variant="rect" height={80} />
         ) : (
-          <ul className="ga-profile-followers" data-testid="profile-followers-list">
-            {data.data.users.map((f) => (
-              <li key={f.user.username} className="ga-profile-followers__item">
-                <Avatar name={f.user.display} size="sm" />
-                <Link to={`/profile/${f.user.username}`}>{f.user.display}</Link>
-                <span className="ga-profile-followers__handle">@{f.user.username}</span>
-              </li>
-            ))}
-          </ul>
-        )
-      ) : (
-        <EmptyState
-          icon="🚧"
-          title="Followers are coming soon"
-          body="The follow system is still being built on the backend — this is where this player's followers will appear."
-          testId="followers-waiting"
-        />
-      )}
-    </Section>
+          <FollowList
+            users={followers}
+            viewerUsername={viewerUsername}
+            isFollowing={followCtl.isFollowing}
+            onFollow={(u) => void followCtl.follow(u)}
+            onUnfollow={(u) => void followCtl.unfollow(u)}
+            busy={followCtl.busy}
+            emptyTitle="No followers yet"
+            testId="profile-followers-list"
+          />
+        )}
+      </Section>
+      <Section title={`Following (${following.length})`} testId="profile-following">
+        {loading ? (
+          <Skeleton variant="rect" height={80} />
+        ) : (
+          <FollowList
+            users={following}
+            viewerUsername={viewerUsername}
+            isFollowing={followCtl.isFollowing}
+            onFollow={(u) => void followCtl.follow(u)}
+            onUnfollow={(u) => void followCtl.unfollow(u)}
+            busy={followCtl.busy}
+            emptyTitle="Not following anyone yet"
+            testId="profile-following-list"
+          />
+        )}
+      </Section>
+    </>
   );
 }
 

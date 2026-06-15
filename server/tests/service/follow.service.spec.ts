@@ -8,7 +8,13 @@ import {
   makeDefaultStore,
   replaceStoreForTests,
 } from "../../src/services/replay.service.ts";
-import { followUser, getFollowerFeed, unfollowUser } from "../../src/services/follow.service.ts";
+import {
+  followUser,
+  getFollowerFeed,
+  listFollowers,
+  listFollowing,
+  unfollowUser,
+} from "../../src/services/follow.service.ts";
 import type { UserWithId } from "../../src/types.ts";
 
 let user0: UserWithId;
@@ -95,6 +101,36 @@ describe("getFollowerFeed", () => {
     const ids = feed.replays.map((r) => r.matchId);
     expect(ids).toContain("m-follow");
     expect(ids).not.toContain("m-other");
+  });
+});
+
+describe("listFollowers / listFollowing", () => {
+  it("listFollowing returns the accounts a user follows", async () => {
+    await followUser(user0, "user1");
+    const following = await listFollowing("user0");
+    expect(following.map((u) => u.username)).toContain("user1");
+  });
+
+  it("listFollowers returns the accounts that follow a user", async () => {
+    await followUser(user0, "user1"); // user0 follows user1
+    const followers = await listFollowers("user1");
+    expect(followers.map((u) => u.username)).toContain("user0");
+  });
+
+  it("listFollowers excludes accounts that don't follow the target", async () => {
+    await followUser(user0, "user1");
+    const followers = await listFollowers("user1");
+    expect(followers.map((u) => u.username)).not.toContain("user2");
+  });
+
+  it("is empty when nobody follows / the user follows nobody", async () => {
+    expect(await listFollowers("user1")).toHaveLength(0);
+    expect(await listFollowing("user0")).toHaveLength(0);
+  });
+
+  it("throws for an unknown username", async () => {
+    await expect(listFollowers("ghost")).rejects.toThrow();
+    await expect(listFollowing("ghost")).rejects.toThrow();
   });
 });
 
