@@ -24,7 +24,6 @@ import ReplaysDiscovery from "./pages/ReplaysDiscovery.tsx";
 import ReplayViewer from "./pages/ReplayViewer.tsx";
 import LiveGamesDashboard from "./pages/LiveGamesDashboard.tsx";
 import LiveViewer from "./pages/LiveViewer.tsx";
-import FollowingFeed from "./pages/FollowingFeed.tsx";
 import Highlights from "./pages/Highlights.tsx";
 import StudyView from "./pages/StudyView.tsx";
 import TrainerDashboard from "./pages/TrainerDashboard.tsx";
@@ -34,7 +33,10 @@ import ModelsBrowse from "./pages/ModelsBrowse.tsx";
 import ModelCardPage from "./pages/ModelCardPage.tsx";
 import ForkModelPage from "./pages/ForkModelPage.tsx";
 import Puzzles from "./pages/Puzzles.tsx";
+import PuzzlesHub from "./pages/PuzzlesHub.tsx";
 import Practice from "./pages/Practice.tsx";
+import WatchGamesHub from "./pages/WatchGamesHub.tsx";
+import AiHub from "./pages/AiHub.tsx";
 import Leaderboards from "./pages/Leaderboards.tsx";
 
 /** If `true`, all incoming socket messages will be logged */
@@ -146,15 +148,17 @@ export default function App() {
             <Route path="/leaderboards" element={<Leaderboards />} />
             <Route path="/game/:gameId" element={<Game />} />
             <Route path="/profile/:username" element={<Profile />} />
-            <Route path="/puzzles" element={<Puzzles />} />
+            <Route path="/puzzles" element={<PuzzlesHub />} />
+            <Route path="/puzzles/daily" element={<Puzzles />} />
             <Route path="/puzzles/practice" element={<Practice />} />
+            <Route path="/watch" element={<WatchGamesHub />} />
             <Route path="/replays" element={<ReplaysDiscovery />} />
             <Route path="/replays/:matchId" element={<ReplayViewer />} />
             <Route path="/live" element={<LiveGamesDashboard />} />
             <Route path="/live/:broadcastId" element={<LiveViewer />} />
-            <Route path="/following" element={<FollowingFeed />} />
             <Route path="/highlights" element={<Highlights />} />
             <Route path="/study/:shareToken" element={<StudyView />} />
+            <Route path="/ai" element={<AiHub />} />
             <Route path="/trainer" element={<TrainerDashboard />} />
             <Route path="/trainer/new" element={<NewTrainingRun />} />
             <Route path="/trainer/jobs/:jobId" element={<TrainingJobLive />} />
