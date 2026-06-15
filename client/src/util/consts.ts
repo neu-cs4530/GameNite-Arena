@@ -58,7 +58,10 @@ export const PLAYABLE_GAME_KEYS = Object.keys(gameNames) as GameKey[];
  * state). Guess does NOT — watchers only ever see WHO guessed, never the
  * values, so a guess "puzzle" could only be solved via the leaked answer.
  *
+ * Tictactoe, connect4, and checkers boards are also fully visible, so they
+ * qualify too.
+ *
  * Mirrors PUZZLE_GAME_KEYS in server/src/services/puzzle.service.ts; update
  * both together.
  */
-export const PUZZLE_GAME_KEYS: GameKey[] = ["nim"];
+export const PUZZLE_GAME_KEYS: GameKey[] = ["nim", "tictactoe", "connect4", "checkers"];

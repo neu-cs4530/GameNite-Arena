@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReplayDetail, ReplayListQuery } from "@gamenite/shared";
 import { SEED_REPLAYS } from "../../src/__fixtures__/replays.fixture.ts";
 import type { MatchRecord } from "../../src/models.ts";
@@ -470,5 +470,27 @@ describe("dev seed — parity with the client mock dataset", () => {
   it("seeds at least 13 user0 replays so profile pagination can trigger", async () => {
     const page = await listReplays({ page: 1, pageSize: 100, forUser: "user0" });
     expect(page.total).toBeGreaterThanOrEqual(13);
+  });
+});
+
+describe("production mode — real data only (no dev seed)", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("excludes the dev seed from the default store under MODE=production", async () => {
+    vi.stubEnv("MODE", "production");
+    // MatchRepo is cleared by tests/setup.ts, so a real-only store is empty.
+    replaceStoreForTests(makeDefaultStore());
+    const page = await listReplays({ page: 1, pageSize: 100 });
+    expect(page.total).toBe(0);
+    expect(page.replays.some((r) => r.matchId === "mock-match-1")).toBe(false);
+  });
+
+  it("still composes the dev seed when MODE is not production", async () => {
+    vi.stubEnv("MODE", "development");
+    replaceStoreForTests(makeDefaultStore());
+    const page = await listReplays({ page: 1, pageSize: 100 });
+    expect(page.total).toBe(SEED_REPLAYS.length);
   });
 });

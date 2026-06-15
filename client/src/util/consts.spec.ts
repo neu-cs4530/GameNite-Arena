@@ -17,4 +17,10 @@ describe("PUZZLE_GAME_KEYS", () => {
     expect(PUZZLE_GAME_KEYS).not.toContain("guess");
     expect(PUZZLE_GAME_KEYS).toContain("nim");
   });
+
+  it("includes tictactoe, connect4, and checkers - their boards are fully visible", () => {
+    expect(PUZZLE_GAME_KEYS).toContain("tictactoe");
+    expect(PUZZLE_GAME_KEYS).toContain("connect4");
+    expect(PUZZLE_GAME_KEYS).toContain("checkers");
+  });
 });

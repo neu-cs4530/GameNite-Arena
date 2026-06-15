@@ -115,6 +115,158 @@ function guessWin(): MatchRecord {
   };
 }
 
+const TttP1 = { id: "u-ttt-o", type: "human" as const, displayName: "O Player" };
+const TttP2 = { id: "u-ttt-x", type: "human" as const, displayName: "X Player" };
+
+/**
+ * A SOUND 5-move tictactoe win: X takes (0,0)/(0,1), O takes (1,0)/(1,1),
+ * then X's 3rd move (0,2) completes the top row and wins - the split move
+ * the puzzle is built around.
+ */
+function soundTicTacToeWin(): MatchRecord {
+  const moves: [number, number][] = [
+    [0, 0],
+    [1, 0],
+    [0, 1],
+    [1, 1],
+    [0, 2],
+  ];
+  const actors = [TttP2, TttP1, TttP2, TttP1, TttP2]; // X moves first
+  return {
+    gameId: "game-ttt-sound",
+    gameKey: "tictactoe",
+    rated: true,
+    participants: [TttP1, TttP2],
+    moves: moves.map((move, i) => ({
+      actor: actors[i].id,
+      move,
+      timestamp: `2026-06-09T03:0${i}:00.000Z`,
+    })),
+    result: { outcome: "win", winnerId: TttP2.id },
+    createdAt: "2026-06-09T03:10:00.000Z",
+    completedAt: "2026-06-09T03:10:00.000Z",
+  };
+}
+
+const C4P1 = { id: "u-c4-r", type: "human" as const, displayName: "Red Player" };
+const C4P2 = { id: "u-c4-y", type: "human" as const, displayName: "Yellow Player" };
+
+/** Builds a 6x7 connect4 board, "." everywhere except the given squares. */
+function connect4Board(pieces: Record<string, string>): string[][] {
+  const board = Array.from({ length: 6 }, () => Array.from({ length: 7 }, () => "."));
+  for (const [key, entry] of Object.entries(pieces)) {
+    const [row, col] = key.split(",").map(Number);
+    board[row][col] = entry;
+  }
+  return board;
+}
+
+/**
+ * A SOUND 7-move connect4 win: red drops columns 0, 1, 2 (yellow stacks on
+ * top each time), then red's 4th drop in column 3 completes a horizontal
+ * four-in-a-row on the bottom row - the split move.
+ */
+function soundConnect4Win(): MatchRecord {
+  const cols = [0, 0, 1, 1, 2, 2, 3];
+  const actors = [C4P1, C4P2, C4P1, C4P2, C4P1, C4P2, C4P1];
+  return {
+    gameId: "game-c4-sound",
+    gameKey: "connect4",
+    rated: true,
+    participants: [C4P1, C4P2],
+    moves: cols.map((move, i) => ({
+      actor: actors[i].id,
+      move,
+      timestamp: `2026-06-09T04:0${i}:00.000Z`,
+    })),
+    result: { outcome: "win", winnerId: C4P1.id },
+    createdAt: "2026-06-09T04:10:00.000Z",
+    completedAt: "2026-06-09T04:10:00.000Z",
+  };
+}
+
+const ChRed = { id: "u-ch-red", type: "human" as const, displayName: "Red Player" };
+const ChBlack = { id: "u-ch-black", type: "human" as const, displayName: "Black Player" };
+
+/** Builds an 8x8 checkers board, "." everywhere except the given squares. */
+function checkersBoard(pieces: Record<string, string>): string[][] {
+  const board = Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => "."));
+  for (const [key, entry] of Object.entries(pieces)) {
+    const [row, col] = key.split(",").map(Number);
+    board[row][col] = entry;
+  }
+  return board;
+}
+
+/**
+ * A SOUND checkers win: black's only piece blunders into red's path
+ * ((2,3) -> (3,4)), and red's piece at (4,5) jumps it - the split move -
+ * leaving black with no pieces left.
+ */
+function soundCheckersWin(): MatchRecord {
+  const moves = [
+    {
+      actor: ChRed.id,
+      move: {
+        squares: [
+          [6, 1],
+          [5, 0],
+        ],
+      },
+    },
+    {
+      actor: ChBlack.id,
+      move: {
+        squares: [
+          [1, 2],
+          [2, 3],
+        ],
+      },
+    },
+    {
+      actor: ChRed.id,
+      move: {
+        squares: [
+          [5, 0],
+          [6, 1],
+        ],
+      },
+    },
+    {
+      actor: ChBlack.id,
+      move: {
+        squares: [
+          [2, 3],
+          [3, 4],
+        ],
+      },
+    },
+    {
+      actor: ChRed.id,
+      move: {
+        squares: [
+          [4, 5],
+          [2, 3],
+        ],
+      },
+    },
+  ];
+  return {
+    gameId: "game-ch-sound",
+    gameKey: "checkers",
+    rated: true,
+    participants: [ChRed, ChBlack],
+    moves: moves.map((m, i) => ({ ...m, timestamp: `2026-06-09T05:0${i}:00.000Z` })),
+    result: { outcome: "win", winnerId: ChRed.id },
+    initialState: {
+      board: checkersBoard({ "1,2": "B", "4,5": "R", "6,1": "RK" }),
+      nextPlayer: 0,
+    },
+    createdAt: "2026-06-09T05:10:00.000Z",
+    completedAt: "2026-06-09T05:10:00.000Z",
+  };
+}
+
 const today = new Date();
 
 // Fixed puzzle days for the date-pinned attempt/hint/streak tests. Everything
@@ -144,6 +296,22 @@ async function seedNimPuzzle(
 ): Promise<void> {
   await PuzzleRepo.set(`nim:${date}`, {
     gameKey: "nim",
+    date,
+    position,
+    solution: { moves: solutionMoves, explanation: "seeded by test" },
+    createdAt: new Date().toISOString(),
+  });
+}
+
+/** Seed a tictactoe/connect4/checkers puzzle with a known position + solution. */
+async function seedPuzzle(
+  gameKey: "tictactoe" | "connect4" | "checkers",
+  date: string,
+  position: unknown,
+  solutionMoves: unknown[],
+): Promise<void> {
+  await PuzzleRepo.set(`${gameKey}:${date}`, {
+    gameKey,
     date,
     position,
     solution: { moves: solutionMoves, explanation: "seeded by test" },
@@ -855,5 +1023,255 @@ describe("submitTrainingAttempt", () => {
     expect(after.puzzleRatings).toStrictEqual(before.puzzleRatings);
     expect(after.puzzleStreak).toStrictEqual(before.puzzleStreak);
     expect(await PuzzleAttemptRepo.getAllKeys()).toHaveLength(0);
+  });
+});
+
+/* ---------------------------------------------------------------------------
+ * Tictactoe, connect4, and checkers go through the same pipeline as nim, but
+ * all three use SOLUTION_MOVE_COUNT of 1 (a mate-in-1: the archived move
+ * itself must end the game in the mover's favor).
+ * ------------------------------------------------------------------------- */
+
+describe("generatePuzzleForGame (tictactoe)", () => {
+  it("hydrates the position and finds a sound mate-in-1", async () => {
+    await MatchRepo.set("match-ttt-1", soundTicTacToeWin());
+
+    const puzzle = await generatePuzzleForGame("tictactoe", today);
+
+    expect(puzzle).not.toBeNull();
+    expect(puzzle!.position).toStrictEqual({
+      board: [
+        ["X", "X", "."],
+        ["O", "O", "."],
+        [".", ".", "."],
+      ],
+      nextPlayer: 1,
+      winningEntry: null,
+    });
+    expect(puzzle!.solution.moves).toStrictEqual([[0, 2]]);
+    expect(puzzle!.sourceMatchId).toBe("match-ttt-1");
+  });
+});
+
+describe("submitAttempt: grading through isWinningMove (tictactoe)", () => {
+  it("accepts the winning move [0,2] and rejects a legal but losing move", async () => {
+    await seedPuzzle(
+      "tictactoe",
+      D1,
+      {
+        board: [
+          ["X", "X", "."],
+          ["O", "O", "."],
+          [".", ".", "."],
+        ],
+        nextPlayer: 1,
+        winningEntry: null,
+      },
+      [[0, 2]],
+    );
+    const userId = await user1Id();
+
+    const win = await submit(userId, "tictactoe", { move: [0, 2], timeMs: 500, date: D1 });
+    expect(win!.success).toBe(true);
+
+    // [2,0] is legal but hands O the win on row 1 (OO.) - not a real solution
+    const loss = await submit(userId, "tictactoe", { move: [2, 0], timeMs: 500, date: D1 });
+    expect(loss!.success).toBe(false);
+  });
+});
+
+describe("getTrainingPack / submitTrainingAttempt (tictactoe)", () => {
+  it("mines a practice position and grades attempts against it", async () => {
+    await MatchRepo.set("match-ttt-1", soundTicTacToeWin());
+
+    const pack = await getTrainingPack("tictactoe", { limit: 5 });
+    expect(pack.map((entry) => entry.sourceMatchId)).toStrictEqual(["match-ttt-1"]);
+
+    const win = await submitTrainingAttempt("tictactoe", "match-ttt-1", [0, 2]);
+    expect(win!.success).toBe(true);
+
+    const loss = await submitTrainingAttempt("tictactoe", "match-ttt-1", [2, 0]);
+    expect(loss!.success).toBe(false);
+  });
+});
+
+describe("generatePuzzleForGame (connect4)", () => {
+  it("hydrates the position and finds a sound mate-in-1", async () => {
+    await MatchRepo.set("match-c4-1", soundConnect4Win());
+
+    const puzzle = await generatePuzzleForGame("connect4", today);
+
+    expect(puzzle).not.toBeNull();
+    expect(puzzle!.position).toStrictEqual({
+      board: connect4Board({
+        "5,0": "R",
+        "5,1": "R",
+        "5,2": "R",
+        "4,0": "Y",
+        "4,1": "Y",
+        "4,2": "Y",
+      }),
+      nextPlayer: 0,
+      winningEntry: null,
+    });
+    expect(puzzle!.solution.moves).toStrictEqual([3]);
+    expect(puzzle!.sourceMatchId).toBe("match-c4-1");
+  });
+});
+
+describe("submitAttempt: grading through isWinningMove (connect4)", () => {
+  it("accepts the winning column 3 and rejects a non-winning column", async () => {
+    await seedPuzzle(
+      "connect4",
+      D1,
+      {
+        board: connect4Board({
+          "5,0": "R",
+          "5,1": "R",
+          "5,2": "R",
+          "4,0": "Y",
+          "4,1": "Y",
+          "4,2": "Y",
+        }),
+        nextPlayer: 0,
+        winningEntry: null,
+      },
+      [3],
+    );
+    const userId = await user1Id();
+
+    const win = await submit(userId, "connect4", { move: 3, timeMs: 500, date: D1 });
+    expect(win!.success).toBe(true);
+
+    const loss = await submit(userId, "connect4", { move: 4, timeMs: 500, date: D1 });
+    expect(loss!.success).toBe(false);
+  });
+});
+
+describe("getTrainingPack / submitTrainingAttempt (connect4)", () => {
+  it("mines a practice position and grades attempts against it", async () => {
+    await MatchRepo.set("match-c4-1", soundConnect4Win());
+
+    const pack = await getTrainingPack("connect4", { limit: 5 });
+    expect(pack.map((entry) => entry.sourceMatchId)).toStrictEqual(["match-c4-1"]);
+
+    const win = await submitTrainingAttempt("connect4", "match-c4-1", 3);
+    expect(win!.success).toBe(true);
+
+    const loss = await submitTrainingAttempt("connect4", "match-c4-1", 4);
+    expect(loss!.success).toBe(false);
+  });
+});
+
+describe("generatePuzzleForGame (checkers)", () => {
+  it("hydrates the position and finds a sound mate-in-1", async () => {
+    await MatchRepo.set("match-ch-1", soundCheckersWin());
+
+    const puzzle = await generatePuzzleForGame("checkers", today);
+
+    expect(puzzle).not.toBeNull();
+    expect(puzzle!.position).toStrictEqual({
+      board: checkersBoard({ "3,4": "B", "4,5": "R", "6,1": "RK" }),
+      nextPlayer: 0,
+      winner: null,
+      legalMoves: [
+        {
+          squares: [
+            [4, 5],
+            [2, 3],
+          ],
+        },
+      ],
+    });
+    expect(puzzle!.solution.moves).toStrictEqual([
+      {
+        squares: [
+          [4, 5],
+          [2, 3],
+        ],
+      },
+    ]);
+    expect(puzzle!.sourceMatchId).toBe("match-ch-1");
+  });
+});
+
+describe("submitAttempt: grading through isWinningMove (checkers)", () => {
+  it("accepts the winning capture and rejects an illegal move", async () => {
+    await seedPuzzle(
+      "checkers",
+      D1,
+      {
+        board: checkersBoard({ "3,4": "B", "4,5": "R", "6,1": "RK" }),
+        nextPlayer: 0,
+        winner: null,
+        legalMoves: [
+          {
+            squares: [
+              [4, 5],
+              [2, 3],
+            ],
+          },
+        ],
+      },
+      [
+        {
+          squares: [
+            [4, 5],
+            [2, 3],
+          ],
+        },
+      ],
+    );
+    const userId = await user1Id();
+
+    const win = await submit(userId, "checkers", {
+      move: {
+        squares: [
+          [4, 5],
+          [2, 3],
+        ],
+      },
+      timeMs: 500,
+      date: D1,
+    });
+    expect(win!.success).toBe(true);
+
+    // a capture is mandatory here, so this simple move is illegal
+    const loss = await submit(userId, "checkers", {
+      move: {
+        squares: [
+          [6, 1],
+          [5, 0],
+        ],
+      },
+      timeMs: 500,
+      date: D1,
+    });
+    expect(loss!.success).toBe(false);
+  });
+});
+
+describe("getTrainingPack / submitTrainingAttempt (checkers)", () => {
+  it("mines a practice position and grades attempts against it", async () => {
+    await MatchRepo.set("match-ch-1", soundCheckersWin());
+
+    const pack = await getTrainingPack("checkers", { limit: 5 });
+    expect(pack.map((entry) => entry.sourceMatchId)).toStrictEqual(["match-ch-1"]);
+
+    const win = await submitTrainingAttempt("checkers", "match-ch-1", {
+      squares: [
+        [4, 5],
+        [2, 3],
+      ],
+    });
+    expect(win!.success).toBe(true);
+
+    const loss = await submitTrainingAttempt("checkers", "match-ch-1", {
+      squares: [
+        [6, 1],
+        [5, 0],
+      ],
+    });
+    expect(loss!.success).toBe(false);
   });
 });

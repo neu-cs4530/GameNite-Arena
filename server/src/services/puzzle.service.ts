@@ -36,15 +36,27 @@ import { dayBefore, effectiveStreak, isAttemptableDate } from "./puzzleStreak.ut
  * only who has guessed, never the values or the secret, so a guess "puzzle"
  * could only be solved by leaking the answer.
  *
+ * Tictactoe, connect4, and checkers boards are also fully visible to
+ * watchers, so they qualify too.
+ *
  * Mirrors PUZZLE_GAME_KEYS in client/src/util/consts.ts; update both together.
  */
-const PUZZLE_GAME_KEYS: GameKey[] = ["nim"];
+const PUZZLE_GAME_KEYS: GameKey[] = ["nim", "tictactoe", "connect4", "checkers"];
 
 // need at least this many moves to carve out a position + solution
 const MIN_MOVES_FOR_PUZZLE = 4;
 
-// last N moves of a match become the solution; everything before is the position
-const SOLUTION_MOVE_COUNT = 2;
+// last N moves of a match become the solution; everything before is the
+// position. nim puzzles are 2 moves from the end (misère: the loser's move
+// leaves remaining ≡ 1 mod 4); tictactoe/connect4/checkers puzzles are just
+// the winning move itself.
+const solutionMoveCount: Record<GameKey, number> = {
+  nim: 2,
+  tictactoe: 1,
+  connect4: 1,
+  checkers: 1,
+  guess: 2, // unused — guess isn't puzzle-eligible
+};
 
 /**
  * Returns the stored puzzle for one game and puzzle-day, or null when there
@@ -141,7 +153,7 @@ function hydrateSplit(
  * @returns A short human explanation of the archived winning line.
  */
 function explainSolution(gameKey: GameKey, solutionMoves: unknown[]): string {
-  const first = String(solutionMoves[0]);
+  const first = solutionMoves[0];
   if (gameKey === "nim") {
     return (
       `From the archived match: the winner took ${first} here, ` +
@@ -149,8 +161,28 @@ function explainSolution(gameKey: GameKey, solutionMoves: unknown[]): string {
       `whoever takes the last token loses).`
     );
   }
+  if (gameKey === "tictactoe" && Array.isArray(first)) {
+    const [row, col] = first as [number, number];
+    return (
+      `From the archived match: the next player marked row ${row + 1}, ` +
+      `column ${col + 1} here, completing three in a row and winning on ` +
+      `the spot.`
+    );
+  }
+  if (gameKey === "connect4" && typeof first === "number") {
+    return (
+      `From the archived match: the next player dropped a disc in column ` +
+      `${first + 1}, completing four in a row and winning on the spot.`
+    );
+  }
+  if (gameKey === "checkers") {
+    return (
+      `From the archived match: this move wins on the spot, leaving the ` +
+      `opponent with no legal moves.`
+    );
+  }
   return (
-    `From the archived match: the next player locked in ${first}. ` +
+    `From the archived match: the next player locked in ${String(first)}. ` +
     `In Number Guesser the guess closest to the secret wins.`
   );
 }
@@ -190,7 +222,7 @@ async function findSoundCandidates(gameKey: GameKey): Promise<SoundCandidate[]> 
 
   const candidates: SoundCandidate[] = [];
   for (const { match, matchId } of ordered) {
-    const splitIndex = match.moves.length - SOLUTION_MOVE_COUNT;
+    const splitIndex = match.moves.length - solutionMoveCount[gameKey];
     const hydrated = hydrateSplit(match, splitIndex);
     if (hydrated === null) continue;
     if (servicer.isWinningMove(hydrated.state, hydrated.solutionMoves[0]) === false) continue;
@@ -546,7 +578,7 @@ export async function submitTrainingAttempt(
   const match = await MatchRepo.find(sourceMatchId);
   if (!match || match.gameKey !== gameKey) return null;
 
-  const hydrated = hydrateSplit(match, match.moves.length - SOLUTION_MOVE_COUNT);
+  const hydrated = hydrateSplit(match, match.moves.length - solutionMoveCount[gameKey]);
   if (hydrated === null) return null;
 
   const verdict = gameServices[gameKey].isWinningMove(hydrated.state, move);

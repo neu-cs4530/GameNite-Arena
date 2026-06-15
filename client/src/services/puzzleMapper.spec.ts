@@ -32,6 +32,80 @@ const guessWire: PuzzleView = {
   createdAt: "2026-06-10T00:00:00.000Z",
 };
 
+const tttPosition = {
+  board: [
+    ["X", "X", "."],
+    ["O", "O", "."],
+    [".", ".", "."],
+  ],
+  nextPlayer: 1,
+  winningEntry: null,
+};
+
+const tttWire: PuzzleView = {
+  gameKey: "tictactoe",
+  date: "2026-06-10",
+  position: tttPosition,
+  sourceMatchId: "match-2",
+  createdAt: "2026-06-10T00:00:00.000Z",
+};
+
+/** Builds a 6x7 connect4 board, "." everywhere except the given squares. */
+function connect4Board(pieces: Record<string, string>): string[][] {
+  const board = Array.from({ length: 6 }, () => Array.from({ length: 7 }, () => "."));
+  for (const [key, entry] of Object.entries(pieces)) {
+    const [row, col] = key.split(",").map(Number);
+    board[row][col] = entry;
+  }
+  return board;
+}
+
+const connect4Position = {
+  board: connect4Board({ "5,0": "R", "5,1": "R", "5,2": "R" }),
+  nextPlayer: 0,
+  winningEntry: null,
+};
+
+const connect4Wire: PuzzleView = {
+  gameKey: "connect4",
+  date: "2026-06-10",
+  position: connect4Position,
+  sourceMatchId: "match-3",
+  createdAt: "2026-06-10T00:00:00.000Z",
+};
+
+/** Builds an 8x8 checkers board, "." everywhere except the given squares. */
+function checkersBoard(pieces: Record<string, string>): string[][] {
+  const board = Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => "."));
+  for (const [key, entry] of Object.entries(pieces)) {
+    const [row, col] = key.split(",").map(Number);
+    board[row][col] = entry;
+  }
+  return board;
+}
+
+const checkersPosition = {
+  board: checkersBoard({ "3,4": "B", "4,5": "R" }),
+  nextPlayer: 0,
+  winner: null,
+  legalMoves: [
+    {
+      squares: [
+        [4, 5],
+        [2, 3],
+      ],
+    },
+  ],
+};
+
+const checkersWire: PuzzleView = {
+  gameKey: "checkers",
+  date: "2026-06-10",
+  position: checkersPosition,
+  sourceMatchId: "match-4",
+  createdAt: "2026-06-10T00:00:00.000Z",
+};
+
 describe("mapPuzzleView (nim)", () => {
   it("narrows the hydrated nim position and echoes the puzzle date", () => {
     const puzzle = mapPuzzleView(nimWire);
@@ -77,6 +151,84 @@ describe("mapPuzzleView (guess)", () => {
   });
 });
 
+describe("mapPuzzleView (tictactoe)", () => {
+  it("narrows the hydrated tictactoe position", () => {
+    const puzzle = mapPuzzleView(tttWire);
+    expect(puzzle!.position).toStrictEqual({ kind: "tictactoe", view: tttPosition });
+    expect(puzzle!.sourceMatchId).toBe("match-2");
+  });
+
+  it("rejects a position that's already won", () => {
+    const won = {
+      ...tttWire,
+      position: {
+        ...tttPosition,
+        winningEntry: [
+          [0, 0],
+          [0, 1],
+          [0, 2],
+        ],
+      },
+    };
+    expect(mapPuzzleView(won)).toBeNull();
+  });
+
+  it("rejects a board with the wrong dimensions", () => {
+    const bad = { ...tttWire, position: { ...tttPosition, board: [["X", "X", "."]] } };
+    expect(mapPuzzleView(bad)).toBeNull();
+  });
+});
+
+describe("mapPuzzleView (connect4)", () => {
+  it("narrows the hydrated connect4 position", () => {
+    const puzzle = mapPuzzleView(connect4Wire);
+    expect(puzzle!.position).toStrictEqual({ kind: "connect4", view: connect4Position });
+    expect(puzzle!.sourceMatchId).toBe("match-3");
+  });
+
+  it("rejects a position that's already won", () => {
+    const won = {
+      ...connect4Wire,
+      position: {
+        ...connect4Position,
+        winningEntry: [
+          [5, 0],
+          [5, 1],
+          [5, 2],
+          [5, 3],
+        ],
+      },
+    };
+    expect(mapPuzzleView(won)).toBeNull();
+  });
+
+  it("rejects a board with an entry outside R/Y/.", () => {
+    const bad = {
+      ...connect4Wire,
+      position: { ...connect4Position, board: connect4Board({ "5,0": "Z" }) },
+    };
+    expect(mapPuzzleView(bad)).toBeNull();
+  });
+});
+
+describe("mapPuzzleView (checkers)", () => {
+  it("narrows the hydrated checkers position", () => {
+    const puzzle = mapPuzzleView(checkersWire);
+    expect(puzzle!.position).toStrictEqual({ kind: "checkers", view: checkersPosition });
+    expect(puzzle!.sourceMatchId).toBe("match-4");
+  });
+
+  it("rejects a position that's already won", () => {
+    const won = { ...checkersWire, position: { ...checkersPosition, winner: 0 } };
+    expect(mapPuzzleView(won)).toBeNull();
+  });
+
+  it("rejects a position missing legalMoves", () => {
+    const bad = { ...checkersWire, position: { ...checkersPosition, legalMoves: undefined } };
+    expect(mapPuzzleView(bad)).toBeNull();
+  });
+});
+
 describe("describePuzzleMove", () => {
   it("notates nim moves like the replay move list", () => {
     expect(describePuzzleMove("nim", 1)).toBe("Take 1");
@@ -86,6 +238,25 @@ describe("describePuzzleMove", () => {
 
   it("notates guess moves", () => {
     expect(describePuzzleMove("guess", 41)).toBe("Guess 41");
+  });
+
+  it("notates tictactoe moves like the replay move list", () => {
+    expect(describePuzzleMove("tictactoe", [0, 2])).toBe("C1");
+  });
+
+  it("notates connect4 moves", () => {
+    expect(describePuzzleMove("connect4", 3)).toBe("Drop column 4");
+  });
+
+  it("notates checkers moves", () => {
+    expect(
+      describePuzzleMove("checkers", {
+        squares: [
+          [4, 5],
+          [2, 3],
+        ],
+      }),
+    ).toBe("f4xd6");
   });
 
   it("falls back to a string for anything malformed", () => {
