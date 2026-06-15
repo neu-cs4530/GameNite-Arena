@@ -307,6 +307,13 @@ async function buildPuzzleStats(
   userId: string,
   userRecord: UserRecord,
 ): Promise<ProfilePuzzleStats> {
+  // puzzleRatings / puzzleStreak may be absent on user records created before
+  // Story 1.8 (legacy data that predates the backfill migration). The profile
+  // is a read-only view and must never 500 on such a record — same defensive
+  // guard follow.service and puzzleLeaderboard.service already apply.
+  const puzzleRatings = userRecord.puzzleRatings ?? {};
+  const puzzleStreak = userRecord.puzzleStreak ?? { current: 0, best: 0 };
+
   const attemptKeys = await PuzzleAttemptRepo.getAllKeys();
   const allAttempts = attemptKeys.length === 0 ? [] : await PuzzleAttemptRepo.getMany(attemptKeys);
 
@@ -320,7 +327,7 @@ async function buildPuzzleStats(
 
   const perGame: ProfilePuzzleGameStats[] = [];
   for (const gameKey of SERVER_GAME_ORDER) {
-    const glicko: GlickoRating | undefined = userRecord.puzzleRatings[gameKey];
+    const glicko: GlickoRating | undefined = puzzleRatings[gameKey];
     const attempts = mine.filter((a) => a.gameKey === gameKey);
     if (!glicko && attempts.length === 0) continue;
     const solves = attempts.filter((a) => a.attempt.success).length;
@@ -341,7 +348,7 @@ async function buildPuzzleStats(
   }
 
   const ratings = SERVER_GAME_ORDER.flatMap((gameKey) => {
-    const glicko = userRecord.puzzleRatings[gameKey];
+    const glicko = puzzleRatings[gameKey];
     return glicko ? [glicko.rating] : [];
   });
 
@@ -364,7 +371,7 @@ async function buildPuzzleStats(
         ? null
         : Math.round(ratings.reduce((sum, r) => sum + r, 0) / ratings.length),
     perGame,
-    streak: effectiveStreak(userRecord.puzzleStreak),
+    streak: effectiveStreak(puzzleStreak),
     recentAttempts,
   };
 }
