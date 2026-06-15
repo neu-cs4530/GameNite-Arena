@@ -71,7 +71,8 @@ export async function getReplay(matchId: string): Promise<ReplayDetail> {
     const res = await api.get<ReplayDetail>(`/api/replay/${matchId}`);
     return res.data;
   } catch (err) {
-    if (isNotFound(err) || isNetworkOrServerError(err)) {
+    // Production never substitutes the FE fixture — surface the real error.
+    if (!import.meta.env.PROD && (isNotFound(err) || isNetworkOrServerError(err))) {
       const fallback = findMockReplay(matchId);
       if (fallback) return { ...fallback, moves: fallback.moves.slice() };
     }
@@ -87,7 +88,9 @@ export async function listReplays(filters: ReplayFilters): Promise<ReplayListPag
     });
     return res.data;
   } catch (err) {
-    if (!isNetworkOrServerError(err)) throw err;
+    // Production never substitutes the FE fixture — surface the real error so
+    // the discovery page renders its real empty/error state.
+    if (import.meta.env.PROD || !isNetworkOrServerError(err)) throw err;
     const { replays, total } = filterMockReplays(filters);
     return { replays, total, page: filters.page, pageSize: filters.pageSize };
   }
