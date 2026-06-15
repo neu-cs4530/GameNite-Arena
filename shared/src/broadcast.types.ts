@@ -11,6 +11,8 @@ export interface BroadcastInfo {
   broadcastId: string;
   gameId: string;
   broadcasterId: string;
+  /** Display username of the broadcaster, for attribution and broadcaster-only UI. */
+  broadcasterUsername?: string;
   /** Broadcaster-set delay applied to the spectator feed, 0 to 60 seconds. */
   delaySec: number;
   status: BroadcastStatus;
