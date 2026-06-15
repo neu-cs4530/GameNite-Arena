@@ -17,7 +17,11 @@ export default function useReplays(filters: ReplayFilters) {
 
   const producer = useCallback(() => listReplays(filters), [filtersKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const seed = useMemo<ReplayListPage>(() => {
+  // Dev/e2e only: a synchronous fixture seed so the first paint already has
+  // cards for the e2e immediate-count assertions. NEVER in production — prod
+  // shows the real (possibly empty) list and never flashes the mock fixtures.
+  const seed = useMemo<ReplayListPage | undefined>(() => {
+    if (import.meta.env.PROD) return undefined;
     const { replays, total } = filterMockReplays(filters);
     return { replays, total, page: filters.page, pageSize: filters.pageSize };
     // eslint-disable-next-line react-hooks/exhaustive-deps
