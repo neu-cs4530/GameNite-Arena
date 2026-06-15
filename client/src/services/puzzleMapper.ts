@@ -1,6 +1,7 @@
 import {
   zCheckersMove,
   zConnect4Move,
+  zNimMove,
   zTicTacToeMove,
   type CheckersView,
   type Connect4View,
@@ -12,10 +13,22 @@ import {
   type TicTacToeView,
   type TrainingPackEntry,
 } from "@gamenite/shared";
-import { notateNimMove } from "../games/replay/nimReducer.ts";
-import { notateTicTacToeMove } from "../games/replay/tictactoeReducer.ts";
-import { notateConnect4Move } from "../games/replay/connect4Reducer.ts";
-import { notateCheckersMove } from "../games/replay/checkersReducer.ts";
+import { applyNimMove, nimViewFromState, notateNimMove } from "../games/replay/nimReducer.ts";
+import {
+  applyTicTacToeMove,
+  notateTicTacToeMove,
+  tictactoeViewFromState,
+} from "../games/replay/tictactoeReducer.ts";
+import {
+  applyConnect4Move,
+  connect4ViewFromState,
+  notateConnect4Move,
+} from "../games/replay/connect4Reducer.ts";
+import {
+  applyCheckersMove,
+  checkersViewFromState,
+  notateCheckersMove,
+} from "../games/replay/checkersReducer.ts";
 
 /**
  * Narrowing layer between the wire `PuzzleView` (shared type; `position` is
@@ -180,6 +193,53 @@ export function mapTrainingPackEntry(entry: TrainingPackEntry): TrainingPractice
   if (position === null) return null;
 
   return { ...entry, position };
+}
+
+/**
+ * Applies the player's submitted move to a puzzle position, so the board can
+ * show the result of an attempt (the dropped disc, the placed mark, ...) -
+ * the GET position is a pre-move snapshot and never updates on its own.
+ *
+ * @param position - The puzzle position as originally rendered.
+ * @param move - The move the player submitted.
+ * @returns `position` with `move` applied, or `position` unchanged for
+ *   non-interactive boards (guess) or a move that fails to parse (shouldn't
+ *   happen - boards only submit moves they consider legal).
+ */
+export function applyPuzzleMove(position: PuzzlePosition, move: unknown): PuzzlePosition {
+  switch (position.kind) {
+    case "nim": {
+      const safe = zNimMove.safeParse(move);
+      if (!safe.success) return position;
+      return { kind: "nim", view: nimViewFromState(applyNimMove(position.view, safe.data)) };
+    }
+    case "tictactoe": {
+      const safe = zTicTacToeMove.safeParse(move);
+      if (!safe.success) return position;
+      return {
+        kind: "tictactoe",
+        view: tictactoeViewFromState(applyTicTacToeMove(position.view, safe.data)),
+      };
+    }
+    case "connect4": {
+      const safe = zConnect4Move.safeParse(move);
+      if (!safe.success) return position;
+      return {
+        kind: "connect4",
+        view: connect4ViewFromState(applyConnect4Move(position.view, safe.data)),
+      };
+    }
+    case "checkers": {
+      const safe = zCheckersMove.safeParse(move);
+      if (!safe.success) return position;
+      return {
+        kind: "checkers",
+        view: checkersViewFromState(applyCheckersMove(position.view, safe.data)),
+      };
+    }
+    case "guess":
+      return position;
+  }
 }
 
 /**

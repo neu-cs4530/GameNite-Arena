@@ -44,14 +44,50 @@ export function applyConnect4Move(state: Connect4State, move: Connect4Move): Con
   return { board, nextPlayer: 1 - state.nextPlayer };
 }
 
+type WinningEntry = Exclude<Connect4View["winningEntry"], null>;
+
+/** Directions to scan for four-in-a-row: across, down, and both diagonals. */
+const WIN_DIRECTIONS: [number, number][] = [
+  [0, 1],
+  [1, 0],
+  [1, 1],
+  [1, -1],
+];
+
+/** The first four-in-a-row on the board, or null if there isn't one. */
+function findWinningEntry(board: Connect4State["board"]): WinningEntry | null {
+  for (let row = 0; row < C4_ROWS; row++) {
+    for (let col = 0; col < C4_COLS; col++) {
+      const entry = board[row][col];
+      if (entry === ".") continue;
+      for (const [dr, dc] of WIN_DIRECTIONS) {
+        const line: WinningEntry = [
+          [row, col],
+          [row + dr, col + dc],
+          [row + dr * 2, col + dc * 2],
+          [row + dr * 3, col + dc * 3],
+        ];
+        const [endRow, endCol] = line[3];
+        if (endRow < 0 || endRow >= C4_ROWS || endCol < 0 || endCol >= C4_COLS) continue;
+        if (line.every(([r, c]) => board[r][c] === entry)) return line;
+      }
+    }
+  }
+  return null;
+}
+
 /**
  * Omniscient view for replays. Connect 4 is perfect information, so the board
- * and next player carry over directly. The reducer doesn't recompute winners
- * (it has no win-detection state to draw from), so `winningEntry` is left null;
- * the replay board simply renders the discs as they were dropped.
+ * and next player carry over directly; `winningEntry` is recomputed from the
+ * board so the replay board highlights a completed line, matching what the
+ * live server sends.
  */
 export function connect4ViewFromState(state: Connect4State): Connect4View {
-  return { board: state.board, nextPlayer: state.nextPlayer, winningEntry: null };
+  return {
+    board: state.board,
+    nextPlayer: state.nextPlayer,
+    winningEntry: findWinningEntry(state.board),
+  };
 }
 
 /** Human-readable summary used by the move list. */

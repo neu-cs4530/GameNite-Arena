@@ -10,6 +10,7 @@ import PuzzleMoveInput from "./PuzzleMoveInput.tsx";
 import ResultPanel from "./ResultPanel.tsx";
 import useAuth from "../../hooks/useAuth.ts";
 import {
+  applyPuzzleMove,
   describePuzzleMove,
   formatEloDelta,
   type DailyPuzzle,
@@ -118,7 +119,12 @@ export default function DailyPuzzleCard({ puzzle, onSolved }: DailyPuzzleCardPro
       </header>
 
       <PuzzleBoard
-        position={puzzle.position}
+        // once submitted, show the move played rather than the pre-move snapshot
+        position={
+          attempt.phase === "submitting" || attempt.phase === "result"
+            ? applyPuzzleMove(puzzle.position, attempt.move)
+            : puzzle.position
+        }
         onSubmit={
           attempt.phase === "viewing" || attempt.phase === "submitting"
             ? (move) => void handleSubmit(move)
