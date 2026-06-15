@@ -8,6 +8,7 @@ import type {
   CommentRecord,
   DeploymentRecord,
   GameRecord,
+  HighlightRecord,
   MatchRecord,
   MessageRecord,
   MigrationLogRecord,
@@ -34,6 +35,7 @@ export const UserRepo = createRepo<UserRecord>("user");
 /* New repos for GameNite Arena (Sprint 1 baseline migration) */
 export const AnnotationRepo = createRepo<AnnotationRecord>("annotation");
 export const BroadcastRepo = createRepo<BroadcastRecord>("broadcast");
+export const HighlightRepo = createRepo<HighlightRecord>("highlight");
 export const ChannelBlockRepo = createRepo<ChannelBlockRecord>("channelBlock");
 export const DeploymentRepo = createRepo<DeploymentRecord>("deployment");
 export const MatchRepo = createRepo<MatchRecord>("match");

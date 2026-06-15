@@ -3,12 +3,14 @@ import { useEffect, useState, type JSX } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { GameInfo } from "@gamenite/shared";
 import useBroadcast from "../hooks/useBroadcast.ts";
+import useAuth from "../hooks/useAuth.ts";
 import { getGameById } from "../services/gameService.ts";
 import { replayGameNames } from "../util/consts.ts";
 
 import RailDrawer from "../components/replay/RailDrawer.tsx";
 import LiveBoard from "../components/live/LiveBoard.tsx";
 import BroadcastChatPanel from "../components/live/BroadcastChatPanel.tsx";
+import HighlightButton from "../components/live/HighlightButton.tsx";
 import LiveDot from "../components/live/LiveDot.tsx";
 import Button from "../components/ui/Button.tsx";
 import ErrorState from "../components/ui/ErrorState.tsx";
@@ -24,6 +26,9 @@ export default function LiveViewer(): JSX.Element {
   const { broadcastId } = useParams<{ broadcastId: string }>();
   const navigate = useNavigate();
   const { info, view, ended, error } = useBroadcast(broadcastId);
+  const auth = useAuth();
+  // Only the broadcaster sees the Highlight control (Story 3.12).
+  const isBroadcaster = info?.broadcasterUsername === auth.username;
 
   const [game, setGame] = useState<GameInfo | null>(null);
   useEffect(() => {
@@ -69,6 +74,9 @@ export default function LiveViewer(): JSX.Element {
         <div className="ga-live-viewer__titlebar">
           <h1 className="ga-live-viewer__title">{title}</h1>
           {!ended && <LiveDot testId="live-viewer-livedot" />}
+          {info && !ended && isBroadcaster && (
+            <HighlightButton gameId={info.gameId} broadcastId={info.broadcastId} />
+          )}
         </div>
         {playerLine && <div className="ga-live-viewer__players">{playerLine}</div>}
         {info && !ended && (

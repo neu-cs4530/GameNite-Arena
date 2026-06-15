@@ -5,9 +5,12 @@ import { useEffect, useState } from "react";
 import type { GameInfo } from "@gamenite/shared";
 import ChatPanel from "../components/ChatPanel.tsx";
 import GamePanel from "../components/GamePanel.tsx";
+import HighlightButton from "../components/live/HighlightButton.tsx";
+import useAuth from "../hooks/useAuth.ts";
 
 export default function Game() {
   const { gameId } = useParams();
+  const { username } = useAuth();
   const [game, setGame] = useState<GameInfo | null>(null);
 
   useEffect(() => {
@@ -28,9 +31,16 @@ export default function Game() {
     };
   }, [gameId]);
 
+  const isPlayer = !!game && game.players.some((p) => p.username === username);
+
   return (
     game && (
       <>
+        {isPlayer && game.status === "active" && (
+          <div className="gameToolbar">
+            <HighlightButton gameId={game.gameId} />
+          </div>
+        )}
         <div className="gameContainer">
           <GamePanel {...game} />
           <ChatPanel chatId={game.chat} />
