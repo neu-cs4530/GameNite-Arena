@@ -620,3 +620,22 @@ describe("puzzles", () => {
     expect(alive.puzzles.streak).toEqual({ current: 4, best: 4, lastSolvedAt: today });
   });
 });
+
+describe("legacy user records (pre-Story-1.8, missing puzzle fields)", () => {
+  it("builds the profile instead of 500ing when puzzleRatings/puzzleStreak are absent", async () => {
+    // Reproduce the deployed-instance bug: a record persisted before
+    // puzzleRatings/puzzleStreak existed (the backfill migration never ran),
+    // so buildPuzzleStats used to throw on `undefined['tictactoe']`.
+    const record = await UserRepo.get(me.userId);
+    const legacy: Partial<UserRecord> = { ...record };
+    delete legacy.puzzleRatings;
+    delete legacy.puzzleStreak;
+    await UserRepo.set(me.userId, legacy as UserRecord);
+
+    const summary = await buildProfileSummary("user0");
+    expect(summary).not.toBeNull();
+    expect(summary!.puzzles.perGame).toEqual([]);
+    expect(summary!.puzzles.overallRating).toBeNull();
+    expect(summary!.puzzles.streak.current).toBe(0);
+  });
+});
