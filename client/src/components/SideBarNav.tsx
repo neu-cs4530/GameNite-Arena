@@ -64,6 +64,9 @@ export default function SideBarNav() {
       <NavLink to="/following" className={navClass}>
         Following
       </NavLink>
+      <NavLink to="/highlights" className={navClass}>
+        Highlights
+      </NavLink>
       <NavLink to="/trainer" className={navClass}>
         Trainer
       </NavLink>

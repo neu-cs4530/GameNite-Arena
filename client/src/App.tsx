@@ -25,6 +25,7 @@ import ReplayViewer from "./pages/ReplayViewer.tsx";
 import LiveGamesDashboard from "./pages/LiveGamesDashboard.tsx";
 import LiveViewer from "./pages/LiveViewer.tsx";
 import FollowingFeed from "./pages/FollowingFeed.tsx";
+import Highlights from "./pages/Highlights.tsx";
 import StudyView from "./pages/StudyView.tsx";
 import TrainerDashboard from "./pages/TrainerDashboard.tsx";
 import NewTrainingRun from "./pages/NewTrainingRun.tsx";
@@ -152,6 +153,7 @@ export default function App() {
             <Route path="/live" element={<LiveGamesDashboard />} />
             <Route path="/live/:broadcastId" element={<LiveViewer />} />
             <Route path="/following" element={<FollowingFeed />} />
+            <Route path="/highlights" element={<Highlights />} />
             <Route path="/study/:shareToken" element={<StudyView />} />
             <Route path="/trainer" element={<TrainerDashboard />} />
             <Route path="/trainer/new" element={<NewTrainingRun />} />

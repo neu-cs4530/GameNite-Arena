@@ -20,6 +20,7 @@ import * as replay from "./controllers/replay.controller.ts";
 import * as annotation from "./controllers/annotation.controller.ts";
 import * as broadcast from "./controllers/broadcast.controller.ts";
 import * as broadcastChat from "./controllers/broadcastChat.controller.ts";
+import * as highlight from "./controllers/highlight.controller.ts";
 import * as training from "./controllers/training.controller.ts";
 import * as deployment from "./controllers/deployment.controller.ts";
 import { type GameServer } from "./types.ts";
@@ -119,6 +120,10 @@ app.use(
         .get("/:id", broadcast.getById)
         .post("/:id/end", broadcast.postEnd)
         .post("/:id/slowmode", broadcastChat.postSlowMode),
+    )
+    .use(
+      "/highlight",
+      express.Router().post("/create", highlight.postCreate).post("/list", highlight.postList),
     )
     .use("/training", training.trainingRouter())
     .use("/deployment", deployment.deploymentRouter()),

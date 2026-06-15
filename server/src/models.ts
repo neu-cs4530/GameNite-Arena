@@ -544,6 +544,26 @@ export interface BroadcastRecord {
 }
 
 /**
+ * A bookmarked moment in a match. (Story 3.12)
+ *
+ * Created by a player highlighting the game they're in, or by a broadcaster
+ * highlighting their live broadcast.
+ *
+ * - `gameId`: the match being highlighted
+ * - `userId`: who pressed Highlight (a player, or the broadcaster)
+ * - `broadcastId`: present when highlighted from a live broadcast
+ * - `note`: optional short label for the moment
+ * - `capturedAt`: when Highlight was pressed
+ */
+export interface HighlightRecord {
+  gameId: RecordId; // References Game records
+  userId: RecordId; // References User records
+  broadcastId?: RecordId; // References Broadcast records
+  note?: string;
+  capturedAt: DateISO;
+}
+
+/**
  * A per-channel block list entry. (Story 3.8)
  *
  * Stored under a deterministic composite key `${channelId}:${blockerId}:${blockedUserId}`

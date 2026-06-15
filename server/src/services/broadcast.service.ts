@@ -1,6 +1,6 @@
 import { type BroadcastInfo, type TaggedGameView } from "@gamenite/shared";
 import { type GameServer, type UserWithId } from "../types.ts";
-import { BroadcastRepo, GameRepo } from "../repository.ts";
+import { BroadcastRepo, GameRepo, UserRepo } from "../repository.ts";
 import { createChat } from "./chat.service.ts";
 
 /** Broadcaster-set delay bounds, in seconds (Story 3.7). */
@@ -20,7 +20,8 @@ export function broadcastRoom(broadcastId: string): string {
  */
 async function populateBroadcastInfo(broadcastId: string): Promise<BroadcastInfo> {
   const broadcast = await BroadcastRepo.get(broadcastId);
-  return { broadcastId, ...broadcast };
+  const broadcaster = await UserRepo.find(broadcast.broadcasterId);
+  return { broadcastId, ...broadcast, broadcasterUsername: broadcaster?.username };
 }
 
 /**
@@ -69,7 +70,12 @@ export async function startBroadcast(
 export async function getBroadcast(possibleBroadcastId: string): Promise<BroadcastInfo | null> {
   const broadcast = await BroadcastRepo.find(possibleBroadcastId);
   if (!broadcast) return null;
-  return { broadcastId: possibleBroadcastId, ...broadcast };
+  const broadcaster = await UserRepo.find(broadcast.broadcasterId);
+  return {
+    broadcastId: possibleBroadcastId,
+    ...broadcast,
+    broadcasterUsername: broadcaster?.username,
+  };
 }
 
 /**
