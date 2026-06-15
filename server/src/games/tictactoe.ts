@@ -52,6 +52,31 @@ function findWinningEntry({ board }: TicTacToeState): TicTacToeView["winningEntr
   return null;
 }
 
+// full minimax: board is tiny (<=9 cells) so brute force is fine
+// returns 1/0/-1 = win/draw/loss for `mover`, assuming best play from here
+function minimaxOutcome(state: TicTacToeState, mover: number): 1 | 0 | -1 {
+  const win = findWinningEntry(state);
+  if (win !== null) {
+    const [r, c] = win[0];
+    const winner = state.board[r][c] === "O" ? 0 : 1;
+    return winner === mover ? 1 : -1;
+  }
+  if (state.board.every((row) => row.every((cell) => cell !== "."))) return 0;
+
+  const turn = state.nextPlayer;
+  const outcomes: (1 | 0 | -1)[] = [];
+  for (let row = 0; row < 3; row += 1) {
+    for (let col = 0; col < 3; col += 1) {
+      if (state.board[row][col] !== ".") continue;
+      const next = ticTacToeLogic.update(state, [row, col], turn);
+      if (next !== null) outcomes.push(minimaxOutcome(next, mover));
+    }
+  }
+  return turn === mover
+    ? (Math.max(...outcomes) as 1 | 0 | -1)
+    : (Math.min(...outcomes) as 1 | 0 | -1);
+}
+
 export const ticTacToeLogic: GameLogic<TicTacToeState, TicTacToeView> = {
   minPlayers: 2,
   maxPlayers: 2,
@@ -109,6 +134,18 @@ export const ticTacToeLogic: GameLogic<TicTacToeState, TicTacToeView> = {
   parseMove: (payload) => {
     const move = zTicTacToeMove.safeParse(payload);
     return move.success ? move.data : null;
+  },
+
+  // true if this move wins immediately, or forces a win no matter how the
+  // opponent replies (a fork)
+  isWinningMove: (state, payload) => {
+    const mover = state.nextPlayer;
+    const updated = ticTacToeLogic.update(state, payload, mover);
+    if (updated === null) return false;
+    if (ticTacToeLogic.isDone(updated)) {
+      return ticTacToeLogic.winnerIndex!(updated) === mover;
+    }
+    return minimaxOutcome(updated, mover) === 1;
   },
 };
 

@@ -723,6 +723,47 @@ describe("Checkers viewAs()", () => {
   });
 });
 
+// isWinningMove()
+
+describe("Checkers isWinningMove()", () => {
+  it("should return true for a capture that leaves the opponent with no pieces", () => {
+    const s = mkState(0, `${E}/${E}/${E}/` + "..B...../" + ".R....../" + `${E}/${E}/${E}`);
+    expect(
+      checkersLogic.isWinningMove!(s, {
+        squares: [
+          [4, 1],
+          [2, 3],
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it("should return false for an illegal move", () => {
+    const s = mkState(0, `${E}/${E}/${E}/` + "..B...../" + ".R....../" + `${E}/${E}/${E}`);
+    // a capture is available, so this simple move is illegal
+    expect(
+      checkersLogic.isWinningMove!(s, {
+        squares: [
+          [4, 1],
+          [3, 0],
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  it("should return false for a legal move that doesn't end the game", () => {
+    const s = checkersLogic.start(2);
+    expect(
+      checkersLogic.isWinningMove!(s, {
+        squares: [
+          [5, 0],
+          [4, 1],
+        ],
+      }),
+    ).toBe(false);
+  });
+});
+
 // tagView()
 
 describe("Checkers tagView()", () => {

@@ -185,6 +185,35 @@ describe(`Connect 4's viewAs() logic`, () => {
   });
 });
 
+describe(`Connect 4's isWinningMove() logic`, () => {
+  it("Should return true for a drop that completes four in a row", () => {
+    expect(
+      connect4Logic.isWinningMove!(
+        mkState(0, "......./......./......./......./...YYY./.RRR..."),
+        0,
+      ),
+    ).toBe(true);
+  });
+
+  it("Should return false for an illegal move", () => {
+    expect(
+      connect4Logic.isWinningMove!(
+        mkState(0, "......./......./......./......./......./......."),
+        7,
+      ),
+    ).toBe(false);
+  });
+
+  it("Should return false for a drop that doesn't win", () => {
+    expect(
+      connect4Logic.isWinningMove!(
+        mkState(0, "......./......./......./......./......./......."),
+        3,
+      ),
+    ).toBe(false);
+  });
+});
+
 describe(`Connect 4's tagView() logic`, () => {
   it("Should appropriately tag the view", () => {
     expect(

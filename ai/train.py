@@ -283,7 +283,7 @@ def run_tictactoe(*args, **kwargs) -> int:
 
 
 def evaluate_connect4(model, n_episodes: int = EVAL_EPISODES) -> tuple[float, float]:
-    from adapter.example_connect4_adapter import Connect4Env
+    from example_connect4_adapter import Connect4Env
     env = Connect4Env()
     wins, total_reward = 0, 0.0
     for ep in range(n_episodes):
@@ -314,7 +314,7 @@ def run_connect4(session: GameNiteSession, *, user_id: str, episodes: int,
     """
     import copy
     from stable_baselines3 import PPO
-    from adapter.example_connect4_adapter import Connect4Adapter
+    from example_connect4_adapter import Connect4Adapter
 
     print("[train] connect4 — random starts + self-play")
     adapter = Connect4Adapter(user_id=user_id, random_start=True)
@@ -367,7 +367,7 @@ def run_connect4(session: GameNiteSession, *, user_id: str, episodes: int,
 
 
 def evaluate_tictactoe(model, n_episodes: int = EVAL_EPISODES) -> tuple[float, float]:
-    from adapter.example_tictactoe_adapter import TicTacToeEnv
+    from example_tictactoe_adapter import TicTacToeEnv
     env = TicTacToeEnv()
     wins, total_reward = 0, 0.0
     for ep in range(n_episodes):
@@ -392,7 +392,7 @@ def run_tictactoe(session: GameNiteSession, *, user_id: str, episodes: int,
     """
     import copy
     from stable_baselines3 import PPO
-    from adapter.example_tictactoe_adapter import TicTacToeAdapter
+    from example_tictactoe_adapter import TicTacToeAdapter
 
     print("[train] tictactoe — random starts + self-play")
     adapter = TicTacToeAdapter(user_id=user_id, random_start=True)
@@ -450,7 +450,7 @@ def run_checkers(session: GameNiteSession, *, user_id: str, episodes: int,
     but the model has no real game knowledge until CheckersEnv is fully implemented.
     """
     from stable_baselines3 import PPO
-    from adapter.example_checkers_adapter import CheckersAdapter
+    from example_checkers_adapter import CheckersAdapter
     print("[train] checkers — stub env, artifact only")
     adapter = CheckersAdapter(user_id=user_id)
     env = adapter.build_env()
