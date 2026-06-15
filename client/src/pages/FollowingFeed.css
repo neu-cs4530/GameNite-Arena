@@ -1,49 +1,91 @@
-.ga-following {
+.ga-feed {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  max-width: 60rem;
+  max-width: 44rem;
   margin: 0 auto;
   padding: var(--space-4);
 }
 
-.ga-following__hero h1 {
+.ga-feed__hero h1 {
   margin: 0;
 }
 
-.ga-following__hero p {
+.ga-feed__hero p {
   margin: var(--space-1) 0 0;
   color: var(--color-fg-muted);
 }
 
-.ga-following__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+/* Stories row: frozen at the top of the viewport while the feed scrolls. */
+.ga-feed__stories {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-}
-
-.ga-following__item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-3);
   background: var(--color-bg-elevated);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
 }
 
-.ga-following__name {
+.ga-feed__stories-label {
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-fg-muted);
   font-weight: var(--weight-semibold);
 }
 
-.ga-following__game {
-  color: var(--color-fg-muted);
-  font-size: var(--text-small);
+.ga-feed__stories-row {
+  display: flex;
+  gap: var(--space-3);
+  overflow-x: auto;
+  padding-bottom: var(--space-1);
 }
 
-.ga-following__watch {
-  margin-left: auto;
+.ga-feed__stories-empty {
+  color: var(--color-fg-muted);
+  font-size: var(--text-small);
+  padding: var(--space-2) 0;
+}
+
+.ga-feed__story {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  text-decoration: none;
+  color: var(--color-fg);
+  width: 4.5rem;
+  flex: 0 0 auto;
+}
+
+/* The red "live" ring around an active player's avatar (Instagram story). */
+.ga-feed__story-ring {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(135deg, var(--color-danger), #ff8a3d);
+}
+
+.ga-feed__story-ring > * {
+  border: 2px solid var(--color-bg-elevated);
+  border-radius: var(--radius-pill);
+}
+
+.ga-feed__story-name {
+  font-size: var(--text-micro);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ga-feed__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
 }

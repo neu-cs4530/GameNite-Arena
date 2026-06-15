@@ -61,6 +61,33 @@ export async function getFollowing(user: UserWithId): Promise<SafeUserInfo[]> {
 }
 
 /**
+ * The accounts `targetUsername` follows, as safe user info (public read).
+ *
+ * @throws if no user with `targetUsername` exists
+ */
+export async function listFollowing(targetUsername: string): Promise<SafeUserInfo[]> {
+  const target = await getUserByUsername(targetUsername);
+  if (!target) throw new Error(`No user ${targetUsername}`);
+  return getFollowing(target);
+}
+
+/**
+ * The accounts that follow `targetUsername`, as safe user info (public read).
+ * Followers aren't stored directly, so this scans every user's `following`
+ * list for the target — acceptable at this scale.
+ *
+ * @throws if no user with `targetUsername` exists
+ */
+export async function listFollowers(targetUsername: string): Promise<SafeUserInfo[]> {
+  const target = await getUserByUsername(targetUsername);
+  if (!target) throw new Error(`No user ${targetUsername}`);
+  const ids = await UserRepo.getAllKeys();
+  const records = await Promise.all(ids.map((id) => UserRepo.get(id)));
+  const followerIds = ids.filter((_, i) => records[i].following.includes(target.userId));
+  return Promise.all(followerIds.map(populateSafeUserInfo));
+}
+
+/**
  * Build the home-page follower feed (Story 3.9): each followed account paired
  * with the live (active) match it's currently in, plus recent replays featuring
  * any followed account.
