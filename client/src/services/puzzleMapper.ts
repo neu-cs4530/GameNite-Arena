@@ -1,12 +1,21 @@
-import type {
-  GameKey,
-  GuessView,
-  NimView,
-  PuzzleView,
-  PuzzleViewerAttempt,
-  TrainingPackEntry,
+import {
+  zCheckersMove,
+  zConnect4Move,
+  zTicTacToeMove,
+  type CheckersView,
+  type Connect4View,
+  type GameKey,
+  type GuessView,
+  type NimView,
+  type PuzzleView,
+  type PuzzleViewerAttempt,
+  type TicTacToeView,
+  type TrainingPackEntry,
 } from "@gamenite/shared";
 import { notateNimMove } from "../games/replay/nimReducer.ts";
+import { notateTicTacToeMove } from "../games/replay/tictactoeReducer.ts";
+import { notateConnect4Move } from "../games/replay/connect4Reducer.ts";
+import { notateCheckersMove } from "../games/replay/checkersReducer.ts";
 
 /**
  * Narrowing layer between the wire `PuzzleView` (shared type; `position` is
@@ -20,7 +29,12 @@ import { notateNimMove } from "../games/replay/nimReducer.ts";
  */
 
 /** Per-game puzzle position, discriminated for the board dispatch. */
-export type PuzzlePosition = { kind: "nim"; view: NimView } | { kind: "guess"; view: GuessView };
+export type PuzzlePosition =
+  | { kind: "nim"; view: NimView }
+  | { kind: "guess"; view: GuessView }
+  | { kind: "tictactoe"; view: TicTacToeView }
+  | { kind: "connect4"; view: Connect4View }
+  | { kind: "checkers"; view: CheckersView };
 
 /** The narrowed view-model the puzzle surfaces render from. */
 export interface DailyPuzzle {
@@ -55,6 +69,53 @@ function parseGuessPosition(position: unknown): GuessView | null {
   return { finished: false, guesses };
 }
 
+/** Checks that `board` is rows x cols of cells, each one of `entries`. */
+function isBoardOf(board: unknown, rows: number, cols: number, entries: string[]): boolean {
+  if (!Array.isArray(board) || board.length !== rows) return false;
+  return board.every(
+    (row) =>
+      Array.isArray(row) &&
+      row.length === cols &&
+      row.every((cell) => typeof cell === "string" && entries.includes(cell)),
+  );
+}
+
+/** Narrows a tic-tac-toe position: a 3x3 board, mid-game (no winner yet). */
+function parseTicTacToePosition(position: unknown): TicTacToeView | null {
+  if (!isRecord(position)) return null;
+  const { board, nextPlayer, winningEntry } = position;
+  if (winningEntry !== null) return null;
+  if (nextPlayer !== 0 && nextPlayer !== 1) return null;
+  if (!isBoardOf(board, 3, 3, [".", "O", "X"])) return null;
+  return { board: board as TicTacToeView["board"], nextPlayer, winningEntry: null };
+}
+
+/** Narrows a connect4 position: a 6x7 board, mid-game (no winner yet). */
+function parseConnect4Position(position: unknown): Connect4View | null {
+  if (!isRecord(position)) return null;
+  const { board, nextPlayer, winningEntry } = position;
+  if (winningEntry !== null) return null;
+  if (nextPlayer !== 0 && nextPlayer !== 1) return null;
+  if (!isBoardOf(board, 6, 7, [".", "R", "Y"])) return null;
+  return { board: board as Connect4View["board"], nextPlayer, winningEntry: null };
+}
+
+/** Narrows a checkers position: an 8x8 board, mid-game (no winner yet). */
+function parseCheckersPosition(position: unknown): CheckersView | null {
+  if (!isRecord(position)) return null;
+  const { board, nextPlayer, winner, legalMoves } = position;
+  if (winner !== null) return null;
+  if (nextPlayer !== 0 && nextPlayer !== 1) return null;
+  if (!isBoardOf(board, 8, 8, [".", "R", "B", "RK", "BK"])) return null;
+  if (!Array.isArray(legalMoves)) return null;
+  return {
+    board: board as CheckersView["board"],
+    nextPlayer,
+    winner: null,
+    legalMoves: legalMoves as CheckersView["legalMoves"],
+  };
+}
+
 const positionParsers: { [key in GameKey]: (position: unknown) => PuzzlePosition | null } = {
   nim: (position) => {
     const view = parseNimPosition(position);
@@ -64,11 +125,18 @@ const positionParsers: { [key in GameKey]: (position: unknown) => PuzzlePosition
     const view = parseGuessPosition(position);
     return view === null ? null : { kind: "guess", view };
   },
-  // The board games are not puzzle-eligible (not in PUZZLE_GAME_KEYS), so no
-  // position ever parses for them. Present only to satisfy the GameKey map.
-  tictactoe: () => null,
-  connect4: () => null,
-  checkers: () => null,
+  tictactoe: (position) => {
+    const view = parseTicTacToePosition(position);
+    return view === null ? null : { kind: "tictactoe", view };
+  },
+  connect4: (position) => {
+    const view = parseConnect4Position(position);
+    return view === null ? null : { kind: "connect4", view };
+  },
+  checkers: (position) => {
+    const view = parseCheckersPosition(position);
+    return view === null ? null : { kind: "checkers", view };
+  },
 };
 
 /**
@@ -128,6 +196,18 @@ export function describePuzzleMove(gameKey: GameKey, move: unknown): string {
       return notateNimMove(move);
     }
     if (gameKey === "guess") return `Guess ${move}`;
+  }
+  if (gameKey === "tictactoe") {
+    const safe = zTicTacToeMove.safeParse(move);
+    if (safe.success) return notateTicTacToeMove(safe.data);
+  }
+  if (gameKey === "connect4") {
+    const safe = zConnect4Move.safeParse(move);
+    if (safe.success) return notateConnect4Move(safe.data);
+  }
+  if (gameKey === "checkers") {
+    const safe = zCheckersMove.safeParse(move);
+    if (safe.success) return notateCheckersMove(safe.data);
   }
   return JSON.stringify(move);
 }

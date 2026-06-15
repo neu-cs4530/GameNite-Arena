@@ -161,3 +161,17 @@ describe(`TicTacToe's tagView() logic`, () => {
     });
   });
 });
+
+describe(`TicTacToe's isWinningMove() logic`, () => {
+  it("Should return true for a move that completes a line", () => {
+    expect(ticTacToeLogic.isWinningMove!(mkState(1, "XX./OO./..."), [0, 2])).toBe(true);
+    expect(ticTacToeLogic.isWinningMove!(mkState(0, "OO./XX./..."), [0, 2])).toBe(true);
+  });
+  it("Should return false for an illegal move", () => {
+    expect(ticTacToeLogic.isWinningMove!(mkState(1, "XX./OO./..."), [0, 0])).toBe(false);
+  });
+  it("Should return false for a move that lets the opponent win next", () => {
+    // O is one move from winning row 1 (OO.); playing elsewhere hands O the win.
+    expect(ticTacToeLogic.isWinningMove!(mkState(1, "XX./OO./..."), [2, 0])).toBe(false);
+  });
+});

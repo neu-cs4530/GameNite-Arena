@@ -62,6 +62,125 @@ const soundNimMatch: MatchRecord = {
   completedAt: "2026-06-09T00:30:00.000Z",
 };
 
+// sound 5-move tictactoe win: X completes the top row on the split move
+const soundTttMatch: MatchRecord = {
+  gameId: "game-training-ttt",
+  gameKey: "tictactoe",
+  rated: true,
+  participants: [
+    { id: "u-o", type: "human", displayName: "O Player" },
+    { id: "u-x", type: "human", displayName: "X Player" },
+  ],
+  moves: [
+    [0, 0],
+    [1, 0],
+    [0, 1],
+    [1, 1],
+    [0, 2],
+  ].map((move, i) => ({
+    actor: i % 2 === 0 ? "u-x" : "u-o", // X moves first
+    move,
+    timestamp: `2026-06-09T03:0${i}:00.000Z`,
+  })),
+  result: { outcome: "win", winnerId: "u-x" },
+  createdAt: "2026-06-09T03:10:00.000Z",
+  completedAt: "2026-06-09T03:10:00.000Z",
+};
+
+// sound 7-move connect4 win: red completes a horizontal four on the split move
+const soundC4Match: MatchRecord = {
+  gameId: "game-training-c4",
+  gameKey: "connect4",
+  rated: true,
+  participants: [
+    { id: "u-red", type: "human", displayName: "Red Player" },
+    { id: "u-yellow", type: "human", displayName: "Yellow Player" },
+  ],
+  moves: [0, 0, 1, 1, 2, 2, 3].map((move, i) => ({
+    actor: i % 2 === 0 ? "u-red" : "u-yellow", // red moves first
+    move,
+    timestamp: `2026-06-09T04:0${i}:00.000Z`,
+  })),
+  result: { outcome: "win", winnerId: "u-red" },
+  createdAt: "2026-06-09T04:10:00.000Z",
+  completedAt: "2026-06-09T04:10:00.000Z",
+};
+
+// builds an 8x8 checkers board, "." everywhere except the given squares
+function checkersBoard(pieces: Record<string, string>): string[][] {
+  const board = Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => "."));
+  for (const [key, entry] of Object.entries(pieces)) {
+    const [row, col] = key.split(",").map(Number);
+    board[row][col] = entry;
+  }
+  return board;
+}
+
+// sound checkers win: black blunders adjacent to red, red jumps it on the split move
+const soundChMatch: MatchRecord = {
+  gameId: "game-training-ch",
+  gameKey: "checkers",
+  rated: true,
+  participants: [
+    { id: "u-red2", type: "human", displayName: "Red Player" },
+    { id: "u-black", type: "human", displayName: "Black Player" },
+  ],
+  moves: [
+    {
+      actor: "u-red2",
+      move: {
+        squares: [
+          [6, 1],
+          [5, 0],
+        ],
+      },
+    },
+    {
+      actor: "u-black",
+      move: {
+        squares: [
+          [1, 2],
+          [2, 3],
+        ],
+      },
+    },
+    {
+      actor: "u-red2",
+      move: {
+        squares: [
+          [5, 0],
+          [6, 1],
+        ],
+      },
+    },
+    {
+      actor: "u-black",
+      move: {
+        squares: [
+          [2, 3],
+          [3, 4],
+        ],
+      },
+    },
+    {
+      actor: "u-red2",
+      move: {
+        squares: [
+          [4, 5],
+          [2, 3],
+        ],
+      },
+    },
+  ].map((m, i) => ({ ...m, timestamp: `2026-06-09T05:0${i}:00.000Z` })),
+  result: { outcome: "win", winnerId: "u-red2" },
+  initialState: {
+    board: checkersBoard({ "1,2": "B", "4,5": "R", "6,1": "RK" }),
+    nextPlayer: 0,
+  },
+  createdAt: "2026-06-09T05:10:00.000Z",
+  completedAt: "2026-06-09T05:10:00.000Z",
+};
+
 beforeEach(async () => {
   // deterministic daily keys + the redis-cached leaderboard would otherwise
   // leak between tests in this file
@@ -527,6 +646,80 @@ describe("GET /api/puzzle/:gameKey lazy generation", () => {
   it("still returns 404 when the archive has no suitable match", async () => {
     response = await supertest(app).get("/api/puzzle/nim");
     expect(response.status).toBe(404);
+  });
+});
+
+describe("daily puzzle pipeline for tictactoe, connect4, and checkers", () => {
+  it("tictactoe: lazily generates from the archive and grades an array move", async () => {
+    await MatchRepo.set("match-ttt-1", soundTttMatch);
+
+    response = await supertest(app).get("/api/puzzle/tictactoe");
+    expect(response.status).toBe(200);
+    expect(response.body.position).toStrictEqual({
+      board: [
+        ["X", "X", "."],
+        ["O", "O", "."],
+        [".", ".", "."],
+      ],
+      nextPlayer: 1,
+      winningEntry: null,
+    });
+    expect(response.body).not.toHaveProperty("solution");
+
+    response = await supertest(app)
+      .post("/api/puzzle/tictactoe/attempt")
+      .send({ auth: auth1, payload: { move: [0, 2], timeMs: 500, date: today() } });
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+  });
+
+  it("connect4: lazily generates from the archive and grades a numeric column move", async () => {
+    await MatchRepo.set("match-c4-1", soundC4Match);
+
+    response = await supertest(app).get("/api/puzzle/connect4");
+    expect(response.status).toBe(200);
+    expect(response.body.position.nextPlayer).toBe(0);
+    expect(response.body.position.winningEntry).toBeNull();
+
+    response = await supertest(app)
+      .post("/api/puzzle/connect4/attempt")
+      .send({ auth: auth1, payload: { move: 3, timeMs: 500, date: today() } });
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+  });
+
+  it("checkers: lazily generates from the archive and grades an object move", async () => {
+    await MatchRepo.set("match-ch-1", soundChMatch);
+
+    response = await supertest(app).get("/api/puzzle/checkers");
+    expect(response.status).toBe(200);
+    expect(response.body.position.winner).toBeNull();
+    expect(response.body.position.legalMoves).toStrictEqual([
+      {
+        squares: [
+          [4, 5],
+          [2, 3],
+        ],
+      },
+    ]);
+
+    response = await supertest(app)
+      .post("/api/puzzle/checkers/attempt")
+      .send({
+        auth: auth1,
+        payload: {
+          move: {
+            squares: [
+              [4, 5],
+              [2, 3],
+            ],
+          },
+          timeMs: 500,
+          date: today(),
+        },
+      });
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
   });
 });
 

@@ -117,7 +117,15 @@ export default function DailyPuzzleCard({ puzzle, onSolved }: DailyPuzzleCardPro
         </span>
       </header>
 
-      <PuzzleBoard position={puzzle.position} />
+      <PuzzleBoard
+        position={puzzle.position}
+        onSubmit={
+          attempt.phase === "viewing" || attempt.phase === "submitting"
+            ? (move) => void handleSubmit(move)
+            : undefined
+        }
+        disabled={attempt.phase === "submitting"}
+      />
 
       {(attempt.phase === "viewing" || attempt.phase === "submitting") && (
         <div className="ga-puzzle-card__attempt">

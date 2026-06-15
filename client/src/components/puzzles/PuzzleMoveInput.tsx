@@ -89,6 +89,10 @@ const inputs: {
     position.kind === "nim" ? <NimMoveInput view={position.view} {...rest} /> : null,
   guess: ({ position, ...rest }) =>
     position.kind === "guess" ? <GuessMoveInput view={position.view} {...rest} /> : null,
+  // these games are played by clicking the board itself (see PuzzleBoard)
+  tictactoe: () => null,
+  connect4: () => null,
+  checkers: () => null,
 };
 
 /** Renders the per-game attempt controls for a daily puzzle. */

@@ -6,7 +6,7 @@ import {
   type Connect4Entry,
   zConnect4Move,
 } from "@gamenite/shared";
-import type { GameLogic } from "./gameLogic.ts";
+import { isWinningMove, type GameLogic } from "./gameLogic.ts";
 import { GameService } from "./gameServiceManager.ts";
 
 const H = "horizontal";
@@ -240,5 +240,8 @@ export const connect4Logic: GameLogic<Connect4State, Connect4View> = {
     return move.success ? move.data : null;
   },
 };
+
+// a winning move is one that drops a disc and completes four in a row
+connect4Logic.isWinningMove = isWinningMove(connect4Logic);
 
 export const connect4GameService = new GameService<Connect4State, Connect4View>(connect4Logic);

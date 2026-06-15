@@ -6,7 +6,7 @@ import {
   type CheckersEntry,
   type CheckersLegalMove,
 } from "@gamenite/shared";
-import type { GameLogic } from "./gameLogic.ts";
+import { isWinningMove, type GameLogic } from "./gameLogic.ts";
 import { GameService } from "./gameServiceManager.ts";
 
 const SIZE = 8;
@@ -273,5 +273,8 @@ export const checkersLogic: GameLogic<CheckersState, CheckersView> = {
     return move.success ? move.data : null;
   },
 };
+
+// a winning move is one that leaves the opponent with no legal moves
+checkersLogic.isWinningMove = isWinningMove(checkersLogic);
 
 export const checkersGameService = new GameService<CheckersState, CheckersView>(checkersLogic);

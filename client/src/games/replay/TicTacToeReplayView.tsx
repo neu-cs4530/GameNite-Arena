@@ -6,22 +6,25 @@ import type { JSX } from "react";
 interface TicTacToeReplayViewProps {
   view: TicTacToeView;
   participants: MatchParticipantView[];
+  /** When set, empty cells become clickable buttons (for puzzles). */
+  onCellClick?: (row: number, col: number) => void;
 }
 
 /**
- * Read-only Tic-Tac-Toe board for replays. Same responsive board as the live
- * game (square wrapper + 3x3 fractional grid, marks sized in cqw) but with no
- * buttons — it's driven entirely by the view the reducer produces while
- * stepping through archived moves. Player 0 = O, player 1 = X.
+ * Tic-Tac-Toe board for replays and puzzles. Same responsive board as the
+ * live game. Read-only unless `onCellClick` is given, in which case empty
+ * cells become playable buttons. Player 0 = O, player 1 = X.
  */
 export default function TicTacToeReplayView({
   view,
   participants,
+  onCellClick,
 }: TicTacToeReplayViewProps): JSX.Element {
   const gameOver = view.winningEntry !== null;
   const winnerIndex = 1 - view.nextPlayer; // whoever just moved
   const nextName = participants[view.nextPlayer]?.displayName ?? "—";
   const winnerName = participants[winnerIndex]?.displayName ?? "—";
+  const me: TicTacEntry = view.nextPlayer === 0 ? "O" : "X";
 
   const isWinningCell = (row: number, col: number) =>
     view.winningEntry?.some(([winRow, winCol]) => winRow === row && winCol === col) ?? false;
@@ -30,6 +33,33 @@ export default function TicTacToeReplayView({
     if (entry === ".") return null;
     const markClass = entry === "O" ? "ttt-mark ttt-mark--o" : "ttt-mark ttt-mark--x";
     return <span className={markClass}>{entry}</span>;
+  }
+
+  // a placed mark, or (if playable) a move button
+  function renderCell(row: number, col: number, entry: TicTacEntry) {
+    const cellClass = `ttt-cell${isWinningCell(row, col) ? " ttt-cell--winner" : ""}`;
+    const testId = `ttt-cell-${row}-${col}`;
+
+    if (entry !== "." || gameOver || onCellClick === undefined) {
+      return (
+        <div className={cellClass} key={testId} data-testid={testId}>
+          {renderMark(entry)}
+        </div>
+      );
+    }
+
+    return (
+      <button
+        type="button"
+        className={`${cellClass} ttt-cell--playable`}
+        key={testId}
+        data-testid={testId}
+        aria-label={`Place ${me} at row ${row + 1}, column ${col + 1}`}
+        onClick={() => onCellClick(row, col)}
+      >
+        <span className="ttt-mark ttt-mark--ghost">{me}</span>
+      </button>
+    );
   }
 
   return (
@@ -46,17 +76,7 @@ export default function TicTacToeReplayView({
         )}
       </div>
       <div className="ttt-board" data-testid="ttt-board" role="grid" aria-label="Tic-Tac-Toe board">
-        {view.board.map((entries, row) =>
-          entries.map((entry, col) => (
-            <div
-              className={`ttt-cell${isWinningCell(row, col) ? " ttt-cell--winner" : ""}`}
-              key={`${row}-${col}`}
-              data-testid={`ttt-cell-${row}-${col}`}
-            >
-              {renderMark(entry)}
-            </div>
-          )),
-        )}
+        {view.board.map((entries, row) => entries.map((entry, col) => renderCell(row, col, entry)))}
       </div>
     </div>
   );

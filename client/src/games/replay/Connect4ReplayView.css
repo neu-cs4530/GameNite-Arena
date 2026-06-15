@@ -57,7 +57,64 @@
 
 .ga-c4-replay .c4-stage {
   container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
   width: min(100%, var(--board-max, 34rem));
+}
+
+/* --- Column drop arrows (puzzle mode) ----------------------------------- */
+
+.ga-c4-replay .c4-drops {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: clamp(2px, 1cqw, var(--space-2));
+  width: 100%;
+}
+
+.ga-c4-replay .c4-drop {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  width: 70%;
+  margin-inline: auto;
+  border-radius: var(--radius-pill);
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+  cursor: pointer;
+  transition:
+    background var(--duration-base, 0.15s) var(--ease-out, ease),
+    transform var(--duration-base, 0.15s) var(--ease-out, ease);
+}
+
+.ga-c4-replay .c4-drop-arrow {
+  font-size: clamp(0.75rem, 3cqw, 1.25rem);
+  line-height: 1;
+}
+
+.ga-c4-replay .c4-drop:hover:not(:disabled) {
+  background: var(--color-primary);
+  color: var(--color-bg);
+}
+
+.ga-c4-replay .c4-drop:active:not(:disabled) {
+  transform: translateY(1px);
+  background: var(--color-primary-pressed);
+}
+
+.ga-c4-replay .c4-drop:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.ga-c4-replay .c4-drop:disabled {
+  cursor: default;
+  opacity: 0.35;
+  background: var(--color-surface-2);
+  color: var(--color-fg-subtle);
 }
 
 .ga-c4-replay .c4-frame {

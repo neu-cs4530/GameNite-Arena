@@ -35,7 +35,15 @@ export default function TrainingPuzzleCard({ item }: { item: TrainingPracticeIte
 
   return (
     <Card testId="training-card" className="ga-training-card">
-      <PuzzleBoard position={item.position} />
+      <PuzzleBoard
+        position={item.position}
+        onSubmit={
+          phase === "viewing" || phase === "submitting"
+            ? (move) => void handleSubmit(move)
+            : undefined
+        }
+        disabled={phase === "submitting"}
+      />
 
       {(phase === "viewing" || phase === "submitting") && (
         <PuzzleMoveInput

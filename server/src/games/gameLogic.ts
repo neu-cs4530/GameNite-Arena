@@ -42,3 +42,15 @@ export interface GameLogic<GameState, GameView> {
   parseMove?: (payload: unknown) => unknown;
   isWinningMove?: (state: GameState, movePayload: unknown) => boolean;
 }
+
+// generic isWinningMove: true if movePayload wins the game right away
+export function isWinningMove<S extends { nextPlayer: number }>(
+  logic: Pick<GameLogic<S, unknown>, "update" | "isDone" | "winnerIndex">,
+): (state: S, movePayload: unknown) => boolean {
+  return (state, movePayload) => {
+    const mover = state.nextPlayer;
+    const updated = logic.update(state, movePayload, mover);
+    if (updated === null) return false;
+    return logic.isDone(updated) && logic.winnerIndex?.(updated) === mover;
+  };
+}
