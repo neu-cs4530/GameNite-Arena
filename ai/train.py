@@ -61,7 +61,7 @@ for _p in (str(AI_DIR), str(AI_DIR / "adapter")):
 
 from session_reporter import GameNiteSession, GameNiteSessionError  # noqa: E402
 
-PPO_N_STEPS = 512          # rollout length per env
+PPO_N_STEPS = 1024         # rollout length per env — longer rollouts reduce variance
 N_ENVS = 4                 # vectorized envs -> one PPO rollout = 2048 steps
 DEFAULT_CHUNK_STEPS = PPO_N_STEPS * N_ENVS
 EVAL_EPISODES = 200
@@ -83,9 +83,9 @@ _NIM_SHAPING = {
     "potential-mod4": {"reward_shaping": True},
 }
 _NIM_TABLES = (
-    ("opponentStyle", _NIM_OPPONENTS, "misere-blunder-25"),
+    ("opponentStyle", _NIM_OPPONENTS, "misere-blunder-15"),
     ("startingPile", _NIM_STARTS, "random-8-21"),
-    ("rewardShaping", _NIM_SHAPING, "none"),
+    ("rewardShaping", _NIM_SHAPING, "potential-mod4"),
 )
 
 
@@ -280,6 +280,141 @@ def run_tictactoe(*args, **kwargs) -> int:
     return make_board_runner(TicTacToeAdapter, TicTacToeEnv)(*args, **kwargs)
 
 
+
+
+def evaluate_connect4(model, n_episodes: int = EVAL_EPISODES) -> tuple[float, float]:
+    from adapter.example_connect4_adapter import Connect4Env
+    env = Connect4Env()
+    wins, total_reward = 0, 0.0
+    for ep in range(n_episodes):
+        obs, _ = env.reset(seed=ep if ep == 0 else None)
+        done, ep_reward = False, 0.0
+        while not done:
+            action, _ = model.predict(obs, deterministic=True)
+            obs, reward, done, _, _ = env.step(int(action))
+            ep_reward += float(reward)
+        total_reward += ep_reward
+        if ep_reward > 0:
+            wins += 1
+    return wins / n_episodes, total_reward / n_episodes
+
+
+def run_connect4(session: GameNiteSession, *, user_id: str, episodes: int,
+                 learning_rate: float, heuristics: Any, chunk_steps: int,
+                 display_name: str) -> int:
+    from stable_baselines3 import PPO
+    from adapter.example_connect4_adapter import Connect4Adapter
+    print("[train] connect4 — self-play vs random opponent")
+    adapter = Connect4Adapter(user_id=user_id)
+    env = adapter.build_env()
+    model = PPO("MlpPolicy", env, learning_rate=learning_rate, n_steps=PPO_N_STEPS, verbose=0)
+    adapter._model = model
+    n_chunks = plan_chunks(episodes, chunk_steps)
+    win_rate, mean_reward = 0.0, 0.0
+    for chunk in range(1, n_chunks + 1):
+        model.learn(total_timesteps=chunk_steps, reset_num_timesteps=False)
+        win_rate, mean_reward = evaluate_connect4(model)
+        keep_going = session.report(
+            model.num_timesteps,
+            metrics={"winRate": round(win_rate, 4), "meanReward": round(mean_reward, 4)},
+            message=f"chunk {chunk}/{n_chunks} - winRate {win_rate:.2f}",
+        )
+        print(f"[train] {model.num_timesteps} steps  winRate={win_rate:.2f}  meanReward={mean_reward:+.2f}")
+        if not keep_going:
+            print("[train] canceled from the web UI - stopping")
+            return 0
+    session.complete(final_metrics={"winRate": round(win_rate, 4), "meanReward": round(mean_reward, 4)})
+    with tempfile.TemporaryDirectory() as tmp:
+        pth = Path(tmp) / f"{display_name}.pth"
+        adapter.save(str(pth))
+        info = session.upload_artifact(str(pth))
+    print(f"[train] artifact uploaded (hasArtifact={info.get('hasArtifact')}) - done")
+    return 0
+
+
+def evaluate_tictactoe(model, n_episodes: int = EVAL_EPISODES) -> tuple[float, float]:
+    from adapter.example_tictactoe_adapter import TicTacToeEnv
+    env = TicTacToeEnv()
+    wins, total_reward = 0, 0.0
+    for ep in range(n_episodes):
+        obs, _ = env.reset(seed=ep if ep == 0 else None)
+        done, ep_reward = False, 0.0
+        while not done:
+            action, _ = model.predict(obs, deterministic=True)
+            obs, reward, done, _, _ = env.step(int(action))
+            ep_reward += float(reward)
+        total_reward += ep_reward
+        if ep_reward > 0:
+            wins += 1
+    return wins / n_episodes, total_reward / n_episodes
+
+
+def run_tictactoe(session: GameNiteSession, *, user_id: str, episodes: int,
+                  learning_rate: float, heuristics: Any, chunk_steps: int,
+                  display_name: str) -> int:
+    from stable_baselines3 import PPO
+    from adapter.example_tictactoe_adapter import TicTacToeAdapter
+    print("[train] tictactoe — self-play vs random opponent")
+    adapter = TicTacToeAdapter(user_id=user_id)
+    env = adapter.build_env()
+    model = PPO("MlpPolicy", env, learning_rate=learning_rate, n_steps=PPO_N_STEPS, verbose=0)
+    adapter._model = model
+    n_chunks = plan_chunks(episodes, chunk_steps)
+    win_rate, mean_reward = 0.0, 0.0
+    for chunk in range(1, n_chunks + 1):
+        model.learn(total_timesteps=chunk_steps, reset_num_timesteps=False)
+        win_rate, mean_reward = evaluate_tictactoe(model)
+        keep_going = session.report(
+            model.num_timesteps,
+            metrics={"winRate": round(win_rate, 4), "meanReward": round(mean_reward, 4)},
+            message=f"chunk {chunk}/{n_chunks} - winRate {win_rate:.2f}",
+        )
+        print(f"[train] {model.num_timesteps} steps  winRate={win_rate:.2f}  meanReward={mean_reward:+.2f}")
+        if not keep_going:
+            print("[train] canceled from the web UI - stopping")
+            return 0
+    session.complete(final_metrics={"winRate": round(win_rate, 4), "meanReward": round(mean_reward, 4)})
+    with tempfile.TemporaryDirectory() as tmp:
+        pth = Path(tmp) / f"{display_name}.pth"
+        adapter.save(str(pth))
+        info = session.upload_artifact(str(pth))
+    print(f"[train] artifact uploaded (hasArtifact={info.get('hasArtifact')}) - done")
+    return 0
+
+
+def run_checkers(session: GameNiteSession, *, user_id: str, episodes: int,
+                 learning_rate: float, heuristics: Any, chunk_steps: int,
+                 display_name: str) -> int:
+    """
+    Stub env always draws after 1 step — produces a valid artifact
+    but the model has no real game knowledge until CheckersEnv is fully implemented.
+    """
+    from stable_baselines3 import PPO
+    from adapter.example_checkers_adapter import CheckersAdapter
+    print("[train] checkers — stub env, artifact only")
+    adapter = CheckersAdapter(user_id=user_id)
+    env = adapter.build_env()
+    model = PPO("MlpPolicy", env, learning_rate=learning_rate, n_steps=PPO_N_STEPS, verbose=0)
+    adapter._model = model
+    n_chunks = plan_chunks(episodes, chunk_steps)
+    for chunk in range(1, n_chunks + 1):
+        model.learn(total_timesteps=chunk_steps, reset_num_timesteps=False)
+        keep_going = session.report(
+            model.num_timesteps,
+            metrics={"winRate": 0.0, "meanReward": 0.0},
+            message=f"chunk {chunk}/{n_chunks}",
+        )
+        print(f"[train] {model.num_timesteps} steps")
+        if not keep_going:
+            return 0
+    session.complete(final_metrics={"winRate": 0.0, "meanReward": 0.0})
+    with tempfile.TemporaryDirectory() as tmp:
+        pth = Path(tmp) / f"{display_name}.pth"
+        adapter.save(str(pth))
+        info = session.upload_artifact(str(pth))
+    print(f"[train] artifact uploaded (hasArtifact={info.get('hasArtifact')}) - done")
+    return 0
+
 # Games with a real local trainer. checkers is intentionally absent: its
 # action space is dynamic (index into per-position legal_moves) and the kit's
 # CheckersEnv is a one-step stub with no rules engine, so PPO has nothing real
@@ -289,6 +424,7 @@ TRAINERS = {
     "nim": run_nim,
     "connect4": run_connect4,
     "tictactoe": run_tictactoe,
+    "checkers": run_checkers,
 }
 
 
@@ -315,7 +451,7 @@ def build_parser() -> argparse.ArgumentParser:
                              f"Local trainers exist for: {', '.join(TRAINERS)}")
     parser.add_argument("--name", default=None,
                         help="Model display name when self-registering")
-    parser.add_argument("--episodes", type=int, default=30_720,
+    parser.add_argument("--episodes", type=int, default=204_800,
                         help="Total env timesteps when self-registering "
                              "(default: %(default)s)")
     parser.add_argument("--learning-rate", type=float, default=3e-4,
