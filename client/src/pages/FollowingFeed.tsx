@@ -1,59 +1,89 @@
 import "./FollowingFeed.css";
-import type { JSX } from "react";
+import { useMemo, type JSX } from "react";
 import { Link } from "react-router-dom";
-import { useFollowingFeed } from "../hooks/useFollowerData.ts";
+import useFollowFeed from "../hooks/useFollowFeed.ts";
+import useLoginContext from "../hooks/useLoginContext.ts";
+import { activeStories, feedReplaysChronological } from "../util/followFeed.ts";
 import { replayGameNames } from "../util/consts.ts";
+import MatchCard from "../components/replay/MatchCard.tsx";
+import Avatar from "../components/ui/Avatar.tsx";
 import EmptyState from "../components/ui/EmptyState.tsx";
+import ErrorState from "../components/ui/ErrorState.tsx";
 import Skeleton from "../components/ui/Skeleton.tsx";
-import LiveDot from "../components/live/LiveDot.tsx";
 
 /**
- * SCAFFOLD page for the follower feed (Story 3.9). The backend isn't built
- * yet, so the data hook reports "unavailable" and we render an honest
- * waiting-for-backend placeholder rather than fabricated followers. The real
- * data branches below are already wired so that when the backend lands the
- * feed lights up with no further UI work.
+ * The follower feed (Story 3.9): a sticky "stories" row of followed accounts
+ * currently in a game (click to watch live), above a chronological scroll of
+ * recent replays featuring people you follow. Reuses the standard MatchCard.
+ *
+ * Snapshot-on-mount, not live: a game that ends mid-scroll stays put until you
+ * navigate away and come back. The stories row stays frozen at the top while
+ * the feed scrolls beneath it.
  */
 export default function FollowingFeed(): JSX.Element {
-  const { data, loading } = useFollowingFeed();
+  const { user } = useLoginContext();
+  const { data, loading, error, refetch } = useFollowFeed();
+
+  const stories = useMemo(() => (data ? activeStories(data) : []), [data]);
+  const replays = useMemo(() => (data ? feedReplaysChronological(data) : []), [data]);
 
   return (
-    <div className="ga-following" data-testid="following-feed">
-      <header className="ga-following__hero">
+    <div className="ga-feed" data-testid="following-feed">
+      <header className="ga-feed__hero">
         <h1>Following</h1>
-        <p>See when people you follow go live, and jump straight into their games.</p>
+        <p>Live games from people you follow, and their latest matches.</p>
       </header>
 
-      {loading ? (
-        <Skeleton variant="rect" height={120} />
-      ) : data?.available ? (
-        data.data.live.length === 0 ? (
-          <EmptyState
-            icon="👀"
-            title="No one you follow is live"
-            body="When someone you follow starts a game, it'll appear here."
-          />
-        ) : (
-          <ul className="ga-following__list">
-            {data.data.live.map((item) => (
-              <li key={item.broadcastId} className="ga-following__item">
-                <LiveDot />
-                <span className="ga-following__name">{item.user.display}</span>
-                <span className="ga-following__game">{replayGameNames[item.gameKey]}</span>
-                <Link className="ga-following__watch" to={`/live/${item.broadcastId}`}>
-                  Watch
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )
-      ) : (
+      {/* Sticky stories row — stays frozen at the top while the feed scrolls. */}
+      <div className="ga-feed__stories" data-testid="feed-stories">
+        <span className="ga-feed__stories-label">Playing now</span>
+        <div className="ga-feed__stories-row">
+          {stories.length === 0 ? (
+            <span className="ga-feed__stories-empty">No one you follow is playing right now.</span>
+          ) : (
+            stories.map((s) => (
+              <Link
+                key={s.user.username}
+                to={`/game/${s.game.gameId}`}
+                className="ga-feed__story"
+                data-testid="feed-story"
+                title={`Watch ${s.user.display} play ${replayGameNames[s.game.type]}`}
+              >
+                <span className="ga-feed__story-ring">
+                  <Avatar name={s.user.display} size="lg" />
+                </span>
+                <span className="ga-feed__story-name">{s.user.display}</span>
+              </Link>
+            ))
+          )}
+        </div>
+      </div>
+
+      {error ? (
+        <ErrorState title="Could not load your feed" body={error.message} retry={() => refetch()} />
+      ) : loading && !data ? (
+        <div className="ga-feed__list" data-testid="feed-skeleton">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} variant="rect" height={150} />
+          ))}
+        </div>
+      ) : replays.length === 0 ? (
         <EmptyState
-          icon="🚧"
-          title="Following is coming soon"
-          body="The follow system is still being built on the backend. This is where the live games and recent matches of players you follow will appear."
-          testId="following-waiting"
+          icon="📭"
+          title="Your feed is empty"
+          body="Follow some players and their recent games will show up here."
+          action={
+            <Link to="/replays" className="ga-feed__browse">
+              Browse replays
+            </Link>
+          }
         />
+      ) : (
+        <div className="ga-feed__list" data-testid="feed-list">
+          {replays.map((r) => (
+            <MatchCard key={r.matchId} match={r} viewerUsername={user.username} />
+          ))}
+        </div>
       )}
     </div>
   );

@@ -8,7 +8,13 @@
 import { zUserAuth, type FollowFeed, type SafeUserInfo } from "@gamenite/shared";
 import { z } from "zod";
 import { checkAuth } from "../services/auth.service.ts";
-import { followUser, getFollowerFeed, unfollowUser } from "../services/follow.service.ts";
+import {
+  followUser,
+  getFollowerFeed,
+  listFollowers,
+  listFollowing,
+  unfollowUser,
+} from "../services/follow.service.ts";
 import { type RestAPI } from "../types.ts";
 
 const zAuthOnly = z.object({ auth: zUserAuth });
@@ -46,6 +52,24 @@ export const postUnfollow: RestAPI<SafeUserInfo[], { username: string }> = async
   }
   try {
     res.send(await unfollowUser(user, req.params.username));
+  } catch {
+    res.status(404).send({ error: "User not found" });
+  }
+};
+
+/** Handle GET `/api/follow/:username/followers` — accounts that follow them (public). */
+export const getFollowers: RestAPI<SafeUserInfo[], { username: string }> = async (req, res) => {
+  try {
+    res.send(await listFollowers(req.params.username));
+  } catch {
+    res.status(404).send({ error: "User not found" });
+  }
+};
+
+/** Handle GET `/api/follow/:username/following` — accounts they follow (public). */
+export const getFollowingList: RestAPI<SafeUserInfo[], { username: string }> = async (req, res) => {
+  try {
+    res.send(await listFollowing(req.params.username));
   } catch {
     res.status(404).send({ error: "User not found" });
   }
