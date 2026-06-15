@@ -75,7 +75,9 @@ function newId(prefix: string): string {
 export async function listAnnotations(matchId: string): Promise<AnnotationView[]> {
   try {
     const res = await api.get<AnnotationView[]>(`/api/replay/${matchId}/annotations`);
-    return res.data;
+    // Guard against a non-array body (e.g. a production SPA HTML fallback for an
+    // unbuilt route): treat it as "no real route" and fall back to the store.
+    if (Array.isArray(res.data)) return res.data;
   } catch (err) {
     if (!isFallbackEligible(err)) throw err;
   }

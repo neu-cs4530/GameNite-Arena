@@ -8,20 +8,31 @@
 import { withAuth, zUserAuth, type HighlightInfo } from "@gamenite/shared";
 import { z } from "zod";
 import { checkAuth } from "../services/auth.service.ts";
-import { createHighlight, listHighlightsForUser } from "../services/highlight.service.ts";
+import {
+  HighlightTargetNotFound,
+  createHighlight,
+  listHighlightsForUser,
+} from "../services/highlight.service.ts";
 import { type RestAPI } from "../types.ts";
 
-const zCreateHighlight = z.object({
-  gameId: z.string().min(1),
-  broadcastId: z.string().min(1).optional(),
-  note: z.string().max(280).optional(),
-});
+const zCreateHighlight = z
+  .object({
+    gameId: z.string().min(1).optional(),
+    broadcastId: z.string().min(1).optional(),
+    movesBack: z.number().int().positive().optional(),
+    note: z.string().max(280).optional(),
+  })
+  // Identify the match by exactly one of broadcastId / gameId.
+  .refine((d) => !!d.broadcastId !== !!d.gameId, {
+    message: "Provide exactly one of broadcastId or gameId",
+  });
 
 const zAuthOnly = z.object({ auth: zUserAuth });
 
 /**
- * Handle POST `/api/highlight/create` — bookmark the current moment of a live
- * broadcast. Only the broadcast's broadcaster may do this.
+ * Handle POST `/api/highlight/create` — save a clip of the last `movesBack`
+ * moves of a match to the authed user's bookmarks. The match is identified by
+ * `broadcastId` (clip a live broadcast) or `gameId` (highlight a game you play).
  */
 export const postCreate: RestAPI<HighlightInfo> = async (req, res) => {
   const body = withAuth(zCreateHighlight).safeParse(req.body);
@@ -37,15 +48,13 @@ export const postCreate: RestAPI<HighlightInfo> = async (req, res) => {
   }
 
   try {
-    const { gameId, broadcastId, note } = body.data.payload;
-    const highlight = await createHighlight(user, gameId, { broadcastId, note }, new Date());
-    if (!highlight) {
-      res.status(404).send({ error: "Game not found" });
+    res.send(await createHighlight(user, body.data.payload, new Date()));
+  } catch (err) {
+    if (err instanceof HighlightTargetNotFound) {
+      res.status(404).send({ error: err.message });
       return;
     }
-    res.send(highlight);
-  } catch {
-    res.status(403).send({ error: "Only a player or the broadcaster can highlight this match" });
+    res.status(403).send({ error: "Not allowed to highlight this match" });
   }
 };
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { lsKeys } from "../util/consts.ts";
 
 export interface ReplayPlaybackState {
@@ -48,12 +48,31 @@ function readPersistedAutoLoop(): boolean {
 /**
  * Drives the playback timeline. `totalMoves` is taken from the replay so
  * boundary clamping is correct.
+ *
+ * `clip` optionally bounds playback to a sub-range of the timeline (used when
+ * watching a saved highlight): navigation, autoplay, and the start/end seeks
+ * all stay within `[clip.start, clip.end]` instead of the whole match.
  */
 export default function useReplayPlayback(
   totalMoves: number,
   initialMove = 0,
+  clip?: { start: number; end: number },
 ): ReplayPlaybackState {
-  const [currentMove, setCurrentMoveState] = useState(clamp(initialMove, 0, totalMoves));
+  // Effective playback bounds — the clip range when given, else the full match.
+  // Memoized on primitive start/end so the derived bounds stay stable across
+  // renders (the clip object identity changes every render).
+  const clipStart = clip?.start;
+  const clipEnd = clip?.end;
+  const lo = useMemo(
+    () => (clipStart === undefined ? 0 : clamp(clipStart, 0, totalMoves)),
+    [clipStart, totalMoves],
+  );
+  const hi = useMemo(
+    () => (clipEnd === undefined ? totalMoves : clamp(clipEnd, lo, totalMoves)),
+    [clipEnd, lo, totalMoves],
+  );
+
+  const [currentMove, setCurrentMoveState] = useState(clamp(initialMove, lo, hi));
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeedState] = useState<number>(readPersistedSpeed());
   const [autoLoop, setAutoLoop] = useState<boolean>(readPersistedAutoLoop());
@@ -73,10 +92,12 @@ export default function useReplayPlayback(
   if (lastTotalMoves !== totalMoves) {
     setLastTotalMoves(totalMoves);
     if (lastTotalMoves === 0 && totalMoves > 0 && pendingInitialMove > 0) {
-      setCurrentMoveState(clamp(pendingInitialMove, 0, totalMoves));
+      setCurrentMoveState(clamp(pendingInitialMove, lo, hi));
       setPendingInitialMove(0);
-    } else if (currentMove > totalMoves) {
-      setCurrentMoveState(totalMoves);
+    } else if (currentMove > hi) {
+      setCurrentMoveState(hi);
+    } else if (currentMove < lo) {
+      setCurrentMoveState(lo);
     }
   }
 
@@ -104,10 +125,10 @@ export default function useReplayPlayback(
     timerRef.current = setInterval(() => {
       setCurrentMoveState((cur) => {
         const next = cur + 1;
-        if (next > totalMoves) {
-          if (autoLoop) return 0;
+        if (next > hi) {
+          if (autoLoop) return lo;
           setIsPlaying(false);
-          return totalMoves;
+          return hi;
         }
         return next;
       });
@@ -116,55 +137,52 @@ export default function useReplayPlayback(
       if (timerRef.current) clearInterval(timerRef.current);
       timerRef.current = null;
     };
-  }, [isPlaying, speed, totalMoves, autoLoop]);
+  }, [isPlaying, speed, hi, lo, autoLoop]);
 
   const setCurrentMove = useCallback(
-    (n: number) => setCurrentMoveState(clamp(n, 0, totalMoves)),
-    [totalMoves],
+    (n: number) => setCurrentMoveState(clamp(n, lo, hi)),
+    [lo, hi],
   );
 
   const play = useCallback(() => {
     setIsPlaying(true);
-    // If we're at the end and play is pressed, restart.
-    setCurrentMoveState((m) => (m >= totalMoves ? 0 : m));
-  }, [totalMoves]);
+    // If we're at the end and play is pressed, restart from the range start.
+    setCurrentMoveState((m) => (m >= hi ? lo : m));
+  }, [lo, hi]);
 
   const pause = useCallback(() => setIsPlaying(false), []);
 
   const togglePlayPause = useCallback(() => {
     setIsPlaying((p) => {
       if (!p) {
-        setCurrentMoveState((m) => (m >= totalMoves ? 0 : m));
+        setCurrentMoveState((m) => (m >= hi ? lo : m));
       }
       return !p;
     });
-  }, [totalMoves]);
+  }, [lo, hi]);
 
   const next = useCallback(
     () =>
       setCurrentMoveState((m) => {
-        if (m >= totalMoves) {
+        if (m >= hi) {
           // At the end: wrap when looping, otherwise hold at the end so the
           // button click is a no-op (the e2e suite asserts both behaviours).
-          return autoLoop ? 0 : totalMoves;
+          return autoLoop ? lo : hi;
         }
-        return clamp(m + 1, 0, totalMoves);
+        return clamp(m + 1, lo, hi);
       }),
-    [totalMoves, autoLoop],
+    [lo, hi, autoLoop],
   );
 
-  const prev = useCallback(
-    () => setCurrentMoveState((m) => clamp(m - 1, 0, totalMoves)),
-    [totalMoves],
-  );
+  const prev = useCallback(() => setCurrentMoveState((m) => clamp(m - 1, lo, hi)), [lo, hi]);
 
   const jump = useCallback(
-    (delta: number) => setCurrentMoveState((m) => clamp(m + delta, 0, totalMoves)),
-    [totalMoves],
+    (delta: number) => setCurrentMoveState((m) => clamp(m + delta, lo, hi)),
+    [lo, hi],
   );
 
-  const seekToStart = useCallback(() => setCurrentMoveState(0), []);
-  const seekToEnd = useCallback(() => setCurrentMoveState(totalMoves), [totalMoves]);
+  const seekToStart = useCallback(() => setCurrentMoveState(lo), [lo]);
+  const seekToEnd = useCallback(() => setCurrentMoveState(hi), [hi]);
 
   const setSpeed = useCallback((s: number) => {
     if (VALID_SPEEDS.includes(s as ReplaySpeed)) setSpeedState(s);

@@ -48,8 +48,13 @@ const SHORTCUT_HINTS = [
 export default function ReplayViewer(): JSX.Element {
   const { matchId } = useParams<{ matchId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialMoveParam = parseInt(searchParams.get("move") ?? "0", 10);
-  const initialMove = Number.isFinite(initialMoveParam) ? initialMoveParam : 0;
+  const moveParam = parseInt(searchParams.get("move") ?? "0", 10);
+  // A saved highlight links with `?from=<clipStart>&clip=<N>`, which bounds
+  // playback to those N moves. `from` is the fixed clip start (the live cursor
+  // is tracked in `?move`, which the sync effect rewrites — so the clip window
+  // must NOT be derived from `move` or it would drift as you navigate).
+  const clipFromParam = parseInt(searchParams.get("from") ?? "", 10);
+  const clipLenParam = parseInt(searchParams.get("clip") ?? "", 10);
   const navigate = useNavigate();
 
   const { user, pass } = useLoginContext();
@@ -58,7 +63,13 @@ export default function ReplayViewer(): JSX.Element {
   const { replay, loading, error, refetch } = useReplay(matchId);
   const totalMoves = replay?.moves.length ?? 0;
 
-  const playback = useReplayPlayback(totalMoves, initialMove);
+  const clip =
+    Number.isFinite(clipFromParam) && Number.isFinite(clipLenParam) && clipLenParam > 0
+      ? { start: clipFromParam, end: clipFromParam + clipLenParam }
+      : undefined;
+  // Open at the clip start for a highlight, else the requested ?move.
+  const initialMove = clip ? clip.start : Number.isFinite(moveParam) ? moveParam : 0;
+  const playback = useReplayPlayback(totalMoves, initialMove, clip);
   const view = useDerivedGameView(replay, playback.currentMove);
 
   const annotations = useAnnotations(matchId);
@@ -375,9 +386,14 @@ export default function ReplayViewer(): JSX.Element {
             />
           </div>
 
-          <RailDrawer title="Moves" badge={totalMoves} defaultOpen testId="rail-drawer-moves">
+          <RailDrawer
+            title="Moves"
+            badge={clip ? clip.end - clip.start : totalMoves}
+            defaultOpen
+            testId="rail-drawer-moves"
+          >
             <MoveList
-              moves={replay.moves}
+              moves={clip ? replay.moves.slice(clip.start, clip.end) : replay.moves}
               currentIndex={playback.currentMove}
               onSelect={playback.setCurrentMove}
               annotations={annotations.annotations}
