@@ -3,12 +3,26 @@ import express from "express";
 import supertest from "supertest";
 import * as highlight from "../../src/controllers/highlight.controller.ts";
 import { checkAuth } from "../../src/services/auth.service.ts";
+import { startBroadcast } from "../../src/services/broadcast.service.ts";
+import { matchRecorder } from "../../src/services/matchRecorder.service.ts";
 import { GameRepo, HighlightRepo } from "../../src/repository.ts";
 import type { GameRecord } from "../../src/models.ts";
 
-// setup.ts reseeds the user repo (user0/pwd0000 ...) before each test.
+// setup.ts reseeds the user repo (user0/pwd0000 ...) and resets the recorder
+// before each test.
 const caster = { username: "user0", password: "pwd0000" };
-const stranger = { username: "user1", password: "pwd1111" };
+
+const activeGame: GameRecord = {
+  type: "nim",
+  state: { remaining: 9, nextPlayer: 1 },
+  done: false,
+  chat: "chat-x",
+  players: ["u-a", "u-b"],
+  aiPlayers: [],
+  rated: true,
+  createdAt: "2026-06-01T00:00:00.000Z",
+  createdBy: "u-a",
+};
 
 function makeApp(): express.Express {
   const app = express();
@@ -20,67 +34,100 @@ function makeApp(): express.Express {
   return app;
 }
 
+/** Buffer `n` live moves for game-1 in the recorder (none finalize the game). */
+async function recordMoves(n: number): Promise<void> {
+  for (let i = 0; i < n; i++) {
+    await matchRecorder.captureMove(activeGame, "game-1", "u-a", { take: i }, false);
+  }
+}
+
+let broadcastId: string;
+
 beforeEach(async () => {
   await HighlightRepo.clear();
-  // game-1 is an active match that user0 is playing in.
+  await GameRepo.set("game-1", activeGame);
   const user0 = await checkAuth(caster);
   if (!user0) throw new Error("seeded user0 missing");
-  const activeGame: GameRecord = {
-    type: "nim",
-    state: { remaining: 5, nextPlayer: 1 },
-    done: false,
-    chat: "chat-x",
-    players: [user0.userId],
-    aiPlayers: [],
-    rated: true,
-    createdAt: "2026-06-01T00:00:00.000Z",
-    createdBy: user0.userId,
-  };
-  await GameRepo.set("game-1", activeGame);
+  const bc = await startBroadcast(user0, "game-1", 0, new Date());
+  broadcastId = bc.broadcastId;
 });
 
 describe("POST /api/highlight/create", () => {
-  it("lets a player bookmark the match they're in (200)", async () => {
+  it("saves a clip of the last `movesBack` moves (200)", async () => {
+    await recordMoves(10);
     const res = await supertest(makeApp())
       .post("/api/highlight/create")
-      .send({ auth: caster, payload: { gameId: "game-1", note: "nice fork" } });
+      .send({ auth: caster, payload: { broadcastId, movesBack: 3 } });
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ gameId: "game-1", note: "nice fork" });
-    expect(typeof res.body.highlightId).toBe("string");
-    expect(typeof res.body.capturedAt).toBe("string");
+    expect(res.body).toMatchObject({ broadcastId, gameId: "game-1", movesBack: 3, startIndex: 7 });
+    expect(res.body.moves).toHaveLength(3);
+    // The clip is the *last* 3 moves, in play order.
+    expect((res.body.moves as { move: { take: number } }[]).map((m) => m.move.take)).toEqual([
+      7, 8, 9,
+    ]);
   });
 
-  it("returns 403 when the user is not a player in the game", async () => {
+  it("returns all moves when the match is shorter than the window", async () => {
+    await recordMoves(2);
     const res = await supertest(makeApp())
       .post("/api/highlight/create")
-      .send({ auth: stranger, payload: { gameId: "game-1" } });
-    expect(res.status).toBe(403);
+      .send({ auth: caster, payload: { broadcastId } }); // default 7
+    expect(res.status).toBe(200);
+    expect(res.body.moves).toHaveLength(2);
   });
 
-  it("returns 404 for an unknown game", async () => {
+  it("returns 404 for an unknown broadcast", async () => {
     const res = await supertest(makeApp())
       .post("/api/highlight/create")
-      .send({ auth: caster, payload: { gameId: "nope" } });
+      .send({ auth: caster, payload: { broadcastId: "nope", movesBack: 5 } });
     expect(res.status).toBe(404);
   });
 
   it("returns 403 for invalid credentials", async () => {
     const res = await supertest(makeApp())
       .post("/api/highlight/create")
-      .send({ auth: { username: "user0", password: "wrong" }, payload: { gameId: "game-1" } });
+      .send({ auth: { username: "user0", password: "wrong" }, payload: { broadcastId } });
     expect(res.status).toBe(403);
+  });
+
+  it("lets a player highlight their own game by gameId (no broadcast needed)", async () => {
+    const user0 = await checkAuth(caster);
+    if (!user0) throw new Error("seeded user0 missing");
+    await GameRepo.set("game-mine", { ...activeGame, players: [user0.userId] });
+    const res = await supertest(makeApp())
+      .post("/api/highlight/create")
+      .send({ auth: caster, payload: { gameId: "game-mine", movesBack: 5 } });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ gameId: "game-mine" });
+    expect(res.body.broadcastId).toBeUndefined();
+  });
+
+  it("returns 403 when highlighting a game by gameId you're not playing", async () => {
+    // game-1's players are u-a / u-b, not user0.
+    const res = await supertest(makeApp())
+      .post("/api/highlight/create")
+      .send({ auth: caster, payload: { gameId: "game-1" } });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 400 when neither gameId nor broadcastId is given", async () => {
+    const res = await supertest(makeApp())
+      .post("/api/highlight/create")
+      .send({ auth: caster, payload: {} });
+    expect(res.status).toBe(400);
   });
 });
 
 describe("POST /api/highlight/list", () => {
   it("returns the user's highlights, newest first", async () => {
+    await recordMoves(4);
     const app = makeApp();
     await supertest(app)
       .post("/api/highlight/create")
-      .send({ auth: caster, payload: { gameId: "game-1", note: "first" } });
+      .send({ auth: caster, payload: { broadcastId, note: "first" } });
     await supertest(app)
       .post("/api/highlight/create")
-      .send({ auth: caster, payload: { gameId: "game-1", note: "second" } });
+      .send({ auth: caster, payload: { broadcastId, note: "second" } });
 
     const res = await supertest(app).post("/api/highlight/list").send({ auth: caster });
     expect(res.status).toBe(200);
@@ -89,12 +136,15 @@ describe("POST /api/highlight/list", () => {
   });
 
   it("only returns the caller's own highlights", async () => {
+    await recordMoves(1);
     const app = makeApp();
     await supertest(app)
       .post("/api/highlight/create")
-      .send({ auth: caster, payload: { gameId: "game-1" } });
+      .send({ auth: caster, payload: { broadcastId } });
 
-    const res = await supertest(app).post("/api/highlight/list").send({ auth: stranger });
+    const res = await supertest(app)
+      .post("/api/highlight/list")
+      .send({ auth: { username: "user1", password: "pwd1111" } });
     expect(res.status).toBe(200);
     expect(res.body).toEqual([]);
   });

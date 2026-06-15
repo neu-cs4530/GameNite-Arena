@@ -544,22 +544,32 @@ export interface BroadcastRecord {
 }
 
 /**
- * A bookmarked moment in a match. (Story 3.12)
+ * A bookmarked clip of a match. (Story 3.12)
  *
- * Created by a player highlighting the game they're in, or by a broadcaster
- * highlighting their live broadcast.
+ * Saved either by a player from the game they're in, or by a viewer from a live
+ * broadcast. Captures the last `movesBack` moves at the moment Highlight was
+ * pressed (or all moves if fewer exist). The clip is snapshotted here so it
+ * survives even though the recorder's live move buffer is in-memory.
  *
  * - `gameId`: the match being highlighted
- * - `userId`: who pressed Highlight (a player, or the broadcaster)
- * - `broadcastId`: present when highlighted from a live broadcast
+ * - `userId`: who saved the highlight
+ * - `broadcastId`: the live broadcast it was captured from, if any
  * - `note`: optional short label for the moment
+ * - `movesBack`: how many trailing moves were requested
+ * - `moves`: the captured clip (last `movesBack`, or all if fewer), in play order
+ * - `startIndex`: index of the clip's first move within the full match, so the
+ *                 replay can be opened positioned at the start of the clip
  * - `capturedAt`: when Highlight was pressed
  */
 export interface HighlightRecord {
   gameId: RecordId; // References Game records
+  gameKey: GameKey; // which game, for display in the highlights list
   userId: RecordId; // References User records
   broadcastId?: RecordId; // References Broadcast records
   note?: string;
+  movesBack: number;
+  moves: MatchMove[];
+  startIndex: number;
   capturedAt: DateISO;
 }
 
