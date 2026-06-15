@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import supertest, { type Response } from "supertest";
+import { HINT_PENALTY } from "@gamenite/shared";
 import { app } from "../src/app.ts";
 import { dailyPuzzleKey, type MatchRecord } from "../src/models.ts";
 import {
@@ -10,6 +11,7 @@ import {
   UserRepo,
 } from "../src/repository.ts";
 import { getUserByUsername } from "../src/services/auth.service.ts";
+import { DEFAULT_RATING, DEFAULT_RD, DEFAULT_VOLATILITY } from "../src/services/glicko2.service.ts";
 import { invalidatePuzzleLeaderboardCache } from "../src/services/puzzleLeaderboard.service.ts";
 import { dayBefore } from "../src/services/puzzleStreak.util.ts";
 
@@ -39,6 +41,26 @@ async function seedPuzzle(date: string, solutionMoves: number[] = [1]) {
     createdAt: new Date().toISOString(),
   });
 }
+
+// sound 11-move nim match: Alice takes 3 then Bob takes 1, every round
+const soundNimMatch: MatchRecord = {
+  gameId: "game-training-1",
+  gameKey: "nim",
+  rated: true,
+  participants: [
+    { id: "u-a", type: "human", displayName: "Alice" },
+    { id: "u-b", type: "human", displayName: "Bob" },
+  ],
+  moves: [3, 1, 3, 1, 3, 1, 3, 1, 3, 1, 1].map((take, i) => ({
+    actor: i % 2 === 0 ? "u-a" : "u-b",
+    move: take,
+    timestamp: `2026-06-09T00:${String(i).padStart(2, "0")}:00.000Z`,
+  })),
+  result: { outcome: "win", winnerId: "u-b" },
+  initialState: { remaining: 21, nextPlayer: 0 },
+  createdAt: "2026-06-09T00:30:00.000Z",
+  completedAt: "2026-06-09T00:30:00.000Z",
+};
 
 beforeEach(async () => {
   // deterministic daily keys + the redis-cached leaderboard would otherwise
@@ -379,7 +401,12 @@ describe("POST /api/puzzle/:gameKey/hint", () => {
       .send({ auth: auth1, payload: { date: today() } });
 
     expect(response.status).toBe(200);
-    expect(response.body).toStrictEqual({ hintMove: 1, explanation: "seeded by test" });
+    expect(response.body).toStrictEqual({
+      hintMove: 1,
+      explanation: "seeded by test",
+      eloDelta: -HINT_PENALTY,
+      newRating: { rating: DEFAULT_RATING - HINT_PENALTY, rd: DEFAULT_RD, vol: DEFAULT_VOLATILITY },
+    });
 
     // the hinted solve is graded but can never rate or advance the streak
     response = await supertest(app)
@@ -500,5 +527,115 @@ describe("GET /api/puzzle/:gameKey lazy generation", () => {
   it("still returns 404 when the archive has no suitable match", async () => {
     response = await supertest(app).get("/api/puzzle/nim");
     expect(response.status).toBe(404);
+  });
+});
+
+describe("GET /api/puzzle/:gameKey/training", () => {
+  it("returns [] for an unknown game", async () => {
+    response = await supertest(app).get("/api/puzzle/notagame/training");
+    expect(response.status).toBe(200);
+    expect(response.body).toStrictEqual([]);
+  });
+
+  it("returns [] when the archive has nothing to mine", async () => {
+    response = await supertest(app).get("/api/puzzle/nim/training");
+    expect(response.status).toBe(200);
+    expect(response.body).toStrictEqual([]);
+  });
+
+  it("returns positions mined from the archive, never a solution", async () => {
+    await MatchRepo.set("match-training-1", soundNimMatch);
+
+    response = await supertest(app).get("/api/puzzle/nim/training");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toHaveLength(1);
+    expect(response.body[0]).toMatchObject({
+      gameKey: "nim",
+      position: { remaining: 2, nextPlayer: 1 },
+      sourceMatchId: "match-training-1",
+    });
+    expect(response.body[0]).not.toHaveProperty("solution");
+  });
+
+  it("excludes today's daily puzzle source match", async () => {
+    await MatchRepo.set("match-training-1", soundNimMatch);
+    // generate today's puzzle from the same match first
+    await supertest(app).get("/api/puzzle/nim");
+
+    response = await supertest(app).get("/api/puzzle/nim/training");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toStrictEqual([]);
+  });
+
+  it("respects ?limit= and ?exclude=", async () => {
+    await MatchRepo.set("match-a", { ...soundNimMatch, completedAt: "2026-06-08T00:00:00.000Z" });
+    await MatchRepo.set("match-b", { ...soundNimMatch, completedAt: "2026-06-09T00:00:00.000Z" });
+
+    response = await supertest(app).get("/api/puzzle/nim/training?limit=1");
+    expect(response.body).toHaveLength(1);
+    expect(response.body[0].sourceMatchId).toBe("match-b");
+
+    response = await supertest(app).get("/api/puzzle/nim/training?exclude=match-b");
+    expect(response.body).toHaveLength(1);
+    expect(response.body[0].sourceMatchId).toBe("match-a");
+  });
+
+  it("returns 400 for an invalid limit", async () => {
+    response = await supertest(app).get("/api/puzzle/nim/training?limit=100");
+    expect(response.status).toBe(400);
+  });
+});
+
+describe("POST /api/puzzle/:gameKey/training/attempt", () => {
+  it("returns 404 for an unknown game", async () => {
+    response = await supertest(app)
+      .post("/api/puzzle/notagame/training/attempt")
+      .send({ auth: auth1, payload: { sourceMatchId: "match-training-1", move: 1 } });
+    expect(response.status).toBe(404);
+  });
+
+  it("returns 400 for a poorly-formed payload", async () => {
+    response = await supertest(app)
+      .post("/api/puzzle/nim/training/attempt")
+      .send({ auth: auth1, payload: { move: 1 } });
+    expect(response.status).toBe(400);
+  });
+
+  it("returns 403 with bad auth", async () => {
+    await MatchRepo.set("match-training-1", soundNimMatch);
+
+    response = await supertest(app)
+      .post("/api/puzzle/nim/training/attempt")
+      .send({ auth: authBad, payload: { sourceMatchId: "match-training-1", move: 1 } });
+    expect(response.status).toBe(403);
+  });
+
+  it("returns 404 for an unknown sourceMatchId", async () => {
+    response = await supertest(app)
+      .post("/api/puzzle/nim/training/attempt")
+      .send({ auth: auth1, payload: { sourceMatchId: "does-not-exist", move: 1 } });
+    expect(response.status).toBe(404);
+  });
+
+  it("grades the move and reveals the solution, without touching rating or streak", async () => {
+    await MatchRepo.set("match-training-1", soundNimMatch);
+    const user = (await getUserByUsername("user1"))!;
+    const before = await UserRepo.get(user.userId);
+
+    response = await supertest(app)
+      .post("/api/puzzle/nim/training/attempt")
+      .send({ auth: auth1, payload: { sourceMatchId: "match-training-1", move: 1 } });
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.solutionMove).toBe(1);
+    expect(typeof response.body.explanation).toBe("string");
+
+    const after = await UserRepo.get(user.userId);
+    expect(after.puzzleRatings).toStrictEqual(before.puzzleRatings);
+    expect(after.puzzleStreak).toStrictEqual(before.puzzleStreak);
+    expect(await PuzzleAttemptRepo.getAllKeys()).toHaveLength(0);
   });
 });

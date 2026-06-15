@@ -62,12 +62,15 @@ export type PuzzleAttemptPayload = z.infer<typeof zPuzzleAttemptPayload>;
 /** Body payload for `POST /api/puzzle/:gameKey/hint` (inside withAuth). */
 export const zPuzzleHintPayload = z.object({ date: zPuzzleDate });
 export type PuzzleHintPayload = z.infer<typeof zPuzzleHintPayload>;
+export const HINT_PENALTY = 5;
 
 /** What the hint endpoint returns. Requesting a hint forfeits the rated
  * slot for this puzzle (the hint IS the answer). */
 export interface PuzzleHintResult {
   hintMove: unknown;
   explanation?: string;
+  eloDelta: number; // -HINT_PENALTY
+  newRating: GlickoRatingView;
 }
 
 /** What `POST /api/puzzle/:gameKey/attempt` returns. The solution move and
@@ -106,4 +109,26 @@ export interface PuzzleLeaderboardPage {
   page: number;
   pageSize: number;
   total: number;
+}
+
+/** One practice position from the training feed. No solution, same as PuzzleView. */
+export interface TrainingPackEntry {
+  gameKey: GameKey;
+  position: unknown;
+  sourceMatchId: string;
+  createdAt: string;
+}
+
+/** Body payload for POST /api/puzzle/:gameKey/training/attempt. */
+export const zTrainingAttemptPayload = z.object({
+  sourceMatchId: z.string(),
+  move: z.unknown(),
+});
+export type TrainingAttemptPayload = z.infer<typeof zTrainingAttemptPayload>;
+
+/** Stateless grading result, practice attempts never touch rating or streak. */
+export interface TrainingAttemptResult {
+  success: boolean;
+  solutionMove: unknown;
+  explanation?: string;
 }
