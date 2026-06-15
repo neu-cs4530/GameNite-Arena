@@ -22,6 +22,9 @@ import NewThread from "./pages/NewThread.tsx";
 import TimeContextKeeper from "./components/UpdatingTimeContext.tsx";
 import ReplaysDiscovery from "./pages/ReplaysDiscovery.tsx";
 import ReplayViewer from "./pages/ReplayViewer.tsx";
+import LiveGamesDashboard from "./pages/LiveGamesDashboard.tsx";
+import LiveViewer from "./pages/LiveViewer.tsx";
+import FollowingFeed from "./pages/FollowingFeed.tsx";
 import StudyView from "./pages/StudyView.tsx";
 import TrainerDashboard from "./pages/TrainerDashboard.tsx";
 import NewTrainingRun from "./pages/NewTrainingRun.tsx";
@@ -146,6 +149,9 @@ export default function App() {
             <Route path="/puzzles/practice" element={<Practice />} />
             <Route path="/replays" element={<ReplaysDiscovery />} />
             <Route path="/replays/:matchId" element={<ReplayViewer />} />
+            <Route path="/live" element={<LiveGamesDashboard />} />
+            <Route path="/live/:broadcastId" element={<LiveViewer />} />
+            <Route path="/following" element={<FollowingFeed />} />
             <Route path="/study/:shareToken" element={<StudyView />} />
             <Route path="/trainer" element={<TrainerDashboard />} />
             <Route path="/trainer/new" element={<NewTrainingRun />} />

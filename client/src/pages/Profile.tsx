@@ -1,12 +1,18 @@
 import "./Profile.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
-import type { ProfileSummary } from "@gamenite/shared";
+import { Link, useParams, useSearchParams } from "react-router-dom";
+import type { ProfileSummary, SafeUserInfo } from "@gamenite/shared";
 import useAsync from "../hooks/useAsync.ts";
 import useReplaysForUser from "../hooks/useReplaysForUser.ts";
 import useReplayFilters from "../hooks/useReplayFilters.ts";
 import useWatchLater from "../hooks/useWatchLater.ts";
 import useLoginContext from "../hooks/useLoginContext.ts";
+import useLiveBroadcasts from "../hooks/useLiveBroadcasts.ts";
+import useFollow from "../hooks/useFollow.ts";
+import { listFollowers, listFollowing } from "../services/followService.ts";
+import FollowList from "../components/follow/FollowList.tsx";
+import { findLiveBroadcastForUser } from "../util/liveGames.ts";
+import LiveDot from "../components/live/LiveDot.tsx";
 
 import Avatar from "../components/ui/Avatar.tsx";
 import Badge from "../components/ui/Badge.tsx";
@@ -43,7 +49,7 @@ import type { ReplaySummary } from "../util/types.ts";
 
 const PROFILE_MATCHES_PER_PAGE = 12;
 
-type ProfileTab = "matches" | "settings" | "watch-later";
+type ProfileTab = "matches" | "settings" | "watch-later" | "followers";
 
 export default function Profile() {
   const { username } = useParams<{ username: string }>();
@@ -52,7 +58,9 @@ export default function Profile() {
   const isOwner = viewer.username === username;
   const tabParam = searchParams.get("tab");
   const tab: ProfileTab =
-    tabParam === "settings" || tabParam === "watch-later" ? tabParam : "matches";
+    tabParam === "settings" || tabParam === "watch-later" || tabParam === "followers"
+      ? tabParam
+      : "matches";
   const scope = parseProfileScope(searchParams.get(SCOPE_PARAM));
 
   // ONE real fetch powers every scope; pill switches are client-side only.
@@ -73,6 +81,37 @@ export default function Profile() {
   });
   const { page, loading: matchesLoading } = useReplaysForUser(username, filters);
   const watchLater = useWatchLater();
+
+  // Is this user currently a human player in a live broadcast? Drives the red
+  // "watch live" indicator in the header. Best-effort: matched by username
+  // against the enriched live list.
+  const liveBroadcasts = useLiveBroadcasts();
+  const liveBroadcastId = useMemo(
+    () =>
+      username
+        ? findLiveBroadcastForUser(liveBroadcasts.data ?? [], username)?.broadcast.broadcastId
+        : undefined,
+    [liveBroadcasts.data, username],
+  );
+
+  // This profile's followers + following lists (for the counts + Followers
+  // tab), plus the viewer's own follow graph for inline follow/unfollow.
+  const followCtl = useFollow();
+  const followsProducer = useCallback(async (): Promise<{
+    followers: SafeUserInfo[];
+    following: SafeUserInfo[];
+  }> => {
+    if (!username) return { followers: [], following: [] };
+    const [followers, following] = await Promise.all([
+      listFollowers(username),
+      listFollowing(username),
+    ]);
+    return { followers, following };
+  }, [username]);
+  const { data: follows, loading: followsLoading } = useAsync(followsProducer, [username], {
+    followers: [],
+    following: [],
+  });
 
   const filtersKey = useMemo(() => JSON.stringify(filters), [filters]);
   const [extraReplays, setExtraReplays] = useState<ReplaySummary[]>([]);
@@ -192,6 +231,16 @@ export default function Profile() {
         isOwner={isOwner}
         onTabChange={setTab}
         activeTab={tab}
+        liveBroadcastId={liveBroadcastId}
+        followerCount={follows?.followers.length ?? 0}
+        followingCount={follows?.following.length ?? 0}
+        viewerFollows={!!username && followCtl.isFollowing(username)}
+        followBusy={!!username && followCtl.busy === username}
+        onToggleFollow={() => {
+          if (!username) return;
+          if (followCtl.isFollowing(username)) void followCtl.unfollow(username);
+          else void followCtl.follow(username);
+        }}
       />
 
       {tab === "settings" && isOwner && (
@@ -270,6 +319,16 @@ export default function Profile() {
       {tab === "watch-later" && (
         <WatchLaterTab username={username} watchLaterIds={watchLater.ids} />
       )}
+
+      {tab === "followers" && (
+        <FollowersTab
+          followers={follows?.followers ?? []}
+          following={follows?.following ?? []}
+          loading={followsLoading}
+          followCtl={followCtl}
+          viewerUsername={viewer.username}
+        />
+      )}
     </div>
   );
 }
@@ -338,9 +397,29 @@ interface ProfileHeaderProps {
   isOwner: boolean;
   activeTab: ProfileTab;
   onTabChange: (next: ProfileTab) => void;
+  /** Set when this user is currently in a live broadcast; links to watch it. */
+  liveBroadcastId?: string;
+  followerCount?: number;
+  followingCount?: number;
+  /** Whether the signed-in viewer follows this profile (non-owner only). */
+  viewerFollows?: boolean;
+  followBusy?: boolean;
+  onToggleFollow?: () => void;
 }
 
-function ProfileHeader({ summary, loading, isOwner, activeTab, onTabChange }: ProfileHeaderProps) {
+function ProfileHeader({
+  summary,
+  loading,
+  isOwner,
+  activeTab,
+  onTabChange,
+  liveBroadcastId,
+  followerCount = 0,
+  followingCount = 0,
+  viewerFollows = false,
+  followBusy = false,
+  onToggleFollow,
+}: ProfileHeaderProps) {
   if (loading || !summary) {
     return (
       <Card className="ga-profile-header" testId="profile-header-skeleton">
@@ -374,9 +453,47 @@ function ProfileHeader({ summary, loading, isOwner, activeTab, onTabChange }: Pr
           <div className="ga-profile-header__name-row">
             <h1 className="ga-profile-header__display">{user.display}</h1>
             <span className="ga-profile-header__handle">@{user.username}</span>
+            {liveBroadcastId && (
+              <Link
+                to={`/live/${liveBroadcastId}`}
+                className="ga-profile-header__live"
+                data-testid="profile-live-indicator"
+                title="This player is in a live game — watch now"
+              >
+                <LiveDot label="LIVE — watch" />
+              </Link>
+            )}
+            {!isOwner && onToggleFollow && (
+              <Button
+                variant={viewerFollows ? "ghost" : "primary"}
+                size="sm"
+                loading={followBusy}
+                onClick={onToggleFollow}
+              >
+                {viewerFollows ? "Following" : "Follow"}
+              </Button>
+            )}
           </div>
           <div className="ga-profile-header__since">
             Joined <TimeAgo date={new Date(user.createdAt)} />
+          </div>
+          <div className="ga-profile-header__counts">
+            <button
+              type="button"
+              className="ga-profile-header__count"
+              onClick={() => onTabChange("followers")}
+              data-testid="profile-followers-count"
+            >
+              <strong>{followerCount}</strong> {followerCount === 1 ? "follower" : "followers"}
+            </button>
+            <button
+              type="button"
+              className="ga-profile-header__count"
+              onClick={() => onTabChange("followers")}
+              data-testid="profile-following-count"
+            >
+              <strong>{followingCount}</strong> following
+            </button>
           </div>
           <div className="ga-profile-header__chips" data-testid="profile-elo-chips">
             <div className="ga-profile-header__overall" data-testid="overall-elo">
@@ -409,6 +526,14 @@ function ProfileHeader({ summary, loading, isOwner, activeTab, onTabChange }: Pr
         >
           Overview
         </Button>
+        <Button
+          variant={activeTab === "followers" ? "primary" : "ghost"}
+          onClick={() => onTabChange("followers")}
+          aria-pressed={activeTab === "followers"}
+          role="tab"
+        >
+          Followers
+        </Button>
         {isOwner && (
           <Button
             variant={activeTab === "watch-later" ? "primary" : "ghost"}
@@ -431,6 +556,62 @@ function ProfileHeader({ summary, loading, isOwner, activeTab, onTabChange }: Pr
         )}
       </div>
     </Card>
+  );
+}
+
+/**
+ * Followers + Following lists with inline follow / follow-back, driven by the
+ * viewer's follow graph (Instagram-style). Data is fetched once at the Profile
+ * level and passed in, so the header counts and these lists stay consistent.
+ */
+function FollowersTab({
+  followers,
+  following,
+  loading,
+  followCtl,
+  viewerUsername,
+}: {
+  followers: SafeUserInfo[];
+  following: SafeUserInfo[];
+  loading: boolean;
+  followCtl: ReturnType<typeof useFollow>;
+  viewerUsername: string;
+}) {
+  return (
+    <>
+      <Section title={`Followers (${followers.length})`} testId="profile-followers">
+        {loading ? (
+          <Skeleton variant="rect" height={80} />
+        ) : (
+          <FollowList
+            users={followers}
+            viewerUsername={viewerUsername}
+            isFollowing={followCtl.isFollowing}
+            onFollow={(u) => void followCtl.follow(u)}
+            onUnfollow={(u) => void followCtl.unfollow(u)}
+            busy={followCtl.busy}
+            emptyTitle="No followers yet"
+            testId="profile-followers-list"
+          />
+        )}
+      </Section>
+      <Section title={`Following (${following.length})`} testId="profile-following">
+        {loading ? (
+          <Skeleton variant="rect" height={80} />
+        ) : (
+          <FollowList
+            users={following}
+            viewerUsername={viewerUsername}
+            isFollowing={followCtl.isFollowing}
+            onFollow={(u) => void followCtl.follow(u)}
+            onUnfollow={(u) => void followCtl.unfollow(u)}
+            busy={followCtl.busy}
+            emptyTitle="Not following anyone yet"
+            testId="profile-following-list"
+          />
+        )}
+      </Section>
+    </>
   );
 }
 

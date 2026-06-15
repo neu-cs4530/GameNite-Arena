@@ -1,0 +1,33 @@
+.ga-follow-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ga-follow-list__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.ga-follow-list__name {
+  font-weight: var(--weight-semibold);
+  text-decoration: none;
+  color: var(--color-fg);
+}
+
+.ga-follow-list__handle {
+  color: var(--color-fg-muted);
+  font-size: var(--text-small);
+}
+
+.ga-follow-list__btn {
+  margin-left: auto;
+}

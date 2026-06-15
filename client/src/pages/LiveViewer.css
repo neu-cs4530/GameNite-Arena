@@ -1,0 +1,85 @@
+.ga-live-viewer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: var(--space-4);
+}
+
+.ga-live-viewer__titlebar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.ga-live-viewer__title {
+  margin: 0;
+}
+
+.ga-live-viewer__players {
+  margin-top: var(--space-1);
+  font-size: var(--text-body);
+  color: var(--color-fg);
+}
+
+.ga-live-viewer__delay {
+  margin-top: var(--space-1);
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}
+
+.ga-live-viewer__layout {
+  display: grid;
+  grid-template-columns: 1fr 22rem;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.ga-live-viewer__stage {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-4);
+  min-height: 24rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ga-live-viewer__boardwrap {
+  width: 100%;
+  max-width: 34rem;
+}
+
+.ga-live-viewer__notice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-fg-muted);
+  font-size: var(--text-body);
+}
+
+.ga-live-viewer__rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ga-live-viewer__center {
+  display: flex;
+  justify-content: center;
+}
+
+.ga-live-viewer__chat-loading {
+  padding: var(--space-2);
+  color: var(--color-fg-muted);
+  font-size: var(--text-small);
+}
+
+@media (max-width: 56rem) {
+  .ga-live-viewer__layout {
+    grid-template-columns: 1fr;
+  }
+}
