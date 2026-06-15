@@ -37,7 +37,10 @@ export default function useReplaysForUser(username: string | undefined, filters:
 
   // Synchronous in-flight placeholder (fixture-derived; see header).
   const placeholder = useMemo<ReplayListPage>(() => {
-    if (!username) {
+    // In production never use the fixture placeholder — the profile shows the
+    // real (possibly empty) list. The fixture seed is a dev/e2e-only device
+    // for the immediate-render contract.
+    if (!username || import.meta.env.PROD) {
       return { replays: [], total: 0, page: 1, pageSize: filters.pageSize };
     }
     const { replays, total } = filterMockReplays({ ...filters, forUser: username });

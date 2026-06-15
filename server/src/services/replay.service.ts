@@ -185,12 +185,18 @@ export class CompositeReplayStore implements ReplayStore {
   }
 }
 
-/** Builds the production store stack: real matches first, dev seed second. */
+/**
+ * Builds the store stack. Production serves REAL matches only — the dev seed
+ * (SEED_REPLAYS) is never composed in when MODE=production, so prod never
+ * surfaces the `mock-match-*` fixtures. Dev and tests (MODE unset) still get
+ * the seed for local browsing and the in-memory fixtures the specs rely on.
+ */
 export function makeDefaultStore(): ReplayStore {
-  return new CompositeReplayStore([
-    new KeyvMatchReplayStore(),
-    new InMemoryReplayStore(SEED_REPLAYS),
-  ]);
+  const stores: ReplayStore[] = [new KeyvMatchReplayStore()];
+  if (process.env.MODE !== "production") {
+    stores.push(new InMemoryReplayStore(SEED_REPLAYS));
+  }
+  return new CompositeReplayStore(stores);
 }
 
 // Module-level store singleton. Real-match watch counts persist in
