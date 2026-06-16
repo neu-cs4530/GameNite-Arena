@@ -93,6 +93,64 @@ function authedInit(extra: RequestInit): RequestInit {
   return init;
 }
 
+/**
+ * Retry/timeout policy for outbound inference calls.
+ *
+ * The inference service is a separate Render Web Service. On the free tier it
+ * spins down after ~15 min idle, so the first request after an idle period
+ * fails with `fetch failed` until it cold-starts (~50s); a brief redeploy or
+ * network blip looks the same. A single hard failure there used to stall a
+ * live match forever (the AI's turn never completes — see game.service
+ * maybeFireAiMove), so transient unreachability is retried with exponential
+ * backoff before giving up. Every knob is env-tunable with conservative
+ * defaults; total time is bounded (attempts * timeout + backoff), never
+ * infinite.
+ */
+interface RetryConfig {
+  /** Total attempts including the first try (1 disables retries). */
+  maxAttempts: number;
+  /** Base backoff before attempt N+1; grows ~2^n with light jitter. */
+  baseDelayMs: number;
+  /** Per-attempt deadline; the request is aborted past this. */
+  timeoutMs: number;
+}
+
+function intFromEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function defaultRetryConfig(): RetryConfig {
+  return {
+    maxAttempts: Math.max(1, intFromEnv("INFERENCE_MAX_ATTEMPTS", 3)),
+    baseDelayMs: intFromEnv("INFERENCE_RETRY_BASE_MS", 300),
+    timeoutMs: Math.max(1, intFromEnv("INFERENCE_TIMEOUT_MS", 10000)),
+  };
+}
+
+let retryConfig: RetryConfig = defaultRetryConfig();
+
+/**
+ * Overrides the retry/timeout policy. Test hook — specs use this to make the
+ * backoff instant and deterministic. Never call in production code.
+ */
+export function setInferenceRetryConfigForTests(overrides: Partial<RetryConfig>): void {
+  retryConfig = { ...retryConfig, ...overrides };
+}
+
+/** Restores the env-derived retry policy. Test hook — never call in prod. */
+export function resetInferenceRetryConfigForTests(): void {
+  retryConfig = defaultRetryConfig();
+}
+
+/** HTTP statuses that mean "try again": gateway/unavailable/timeout. A 4xx is
+ * deterministic (bad request, invalid move) and is never retried. */
+const retryableStatuses = new Set([502, 503, 504]);
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
 export class InferenceError extends Error {
   status: number;
   /**
@@ -165,7 +223,11 @@ async function postOnce<T>(path: string, body: unknown, timeoutMs: number): Prom
   try {
     res = await fetch(
       `${BASE_URL}${path}`,
-      authedInit({ method: "POST", body: JSON.stringify(body) }),
+      authedInit({
+        method: "POST",
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(timeoutMs),
+      }),
     );
   } catch (err) {
     const e = err as Error;

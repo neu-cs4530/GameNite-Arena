@@ -55,6 +55,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   resetInferenceClientForTests();
+  resetInferenceRetryConfigForTests();
   delete process.env["INFERENCE_SHARED_TOKEN"];
   delete process.env["INFERENCE_TLS_CA"];
 });
