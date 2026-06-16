@@ -11,6 +11,13 @@ interface TicTacToeReplayViewProps {
   /** Cell [row, col] the selected AI model would play from this position —
    * highlighted green so the move is visible on the board. */
   aiMove?: [number, number];
+  /** The built-in engine's verdict on the move that PRODUCED this position: its
+   * cell is tinted by quality (green best / amber inaccuracy / red blunder) so
+   * the analysis is visible on the board. */
+  engineMoveQuality?: {
+    move: [number, number];
+    flag: "best" | "blunder" | "inaccuracy" | "neutral";
+  };
 }
 
 /**
@@ -23,6 +30,7 @@ export default function TicTacToeReplayView({
   participants,
   onCellClick,
   aiMove,
+  engineMoveQuality,
 }: TicTacToeReplayViewProps): JSX.Element {
   const gameOver = view.winningEntry !== null;
   const winnerIndex = 1 - view.nextPlayer; // whoever just moved
@@ -38,6 +46,19 @@ export default function TicTacToeReplayView({
   const isAiTarget = (row: number, col: number) =>
     !gameOver && aiMove?.[0] === row && aiMove[1] === col && view.board[row][col] === ".";
 
+  // Tint the cell of the move the engine just judged, by its quality.
+  const engineQualityClass = (row: number, col: number): string => {
+    if (
+      engineMoveQuality === undefined ||
+      engineMoveQuality.flag === "neutral" ||
+      engineMoveQuality.move[0] !== row ||
+      engineMoveQuality.move[1] !== col
+    ) {
+      return "";
+    }
+    return ` ttt-cell--eng-${engineMoveQuality.flag}`;
+  };
+
   function renderMark(entry: TicTacEntry) {
     if (entry === ".") return null;
     const markClass = entry === "O" ? "ttt-mark ttt-mark--o" : "ttt-mark ttt-mark--x";
@@ -48,7 +69,7 @@ export default function TicTacToeReplayView({
   function renderCell(row: number, col: number, entry: TicTacEntry) {
     const cellClass = `ttt-cell${isWinningCell(row, col) ? " ttt-cell--winner" : ""}${
       isAiTarget(row, col) ? " ttt-cell--ai" : ""
-    }`;
+    }${engineQualityClass(row, col)}`;
     const testId = `ttt-cell-${row}-${col}`;
 
     if (entry !== "." || gameOver || onCellClick === undefined) {

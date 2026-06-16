@@ -26,6 +26,7 @@ function initialsFrom(name: string): string {
     .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .trim()
     .split(/\s+/);
+  /* v8 ignore next -- split always yields ≥1 element; guard is unreachable */
   if (parts.length === 0) return "?";
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
