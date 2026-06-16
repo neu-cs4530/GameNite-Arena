@@ -500,4 +500,23 @@ describe("training kit distribution", () => {
     expect(res.text).toContain("session_reporter.py");
     expect(res.text).toContain("curl");
   });
+
+  it("bakes an https base URL behind a TLS-terminating proxy (X-Forwarded-Proto)", async () => {
+    // Render terminates TLS and forwards http, so req.protocol is "http". If
+    // the kit bakes an http BASE, the reporter's progress POST gets a 307
+    // http->https redirect that stdlib urllib won't re-POST across. Trust the
+    // forwarded proto so the baked BASE is https and the POST lands directly.
+    const res = await supertest(app)
+      .get("/api/training/kit/install.sh")
+      .set("X-Forwarded-Proto", "https");
+    expect(res.status).toBe(200);
+    expect(res.text).toMatch(/BASE="\$\{GAMENITE_URL:-https:\/\//);
+    expect(res.text).not.toMatch(/BASE="\$\{GAMENITE_URL:-http:\/\//);
+  });
+
+  it("falls back to the request protocol with no forwarded header (local dev)", async () => {
+    const res = await supertest(app).get("/api/training/kit/install.sh");
+    expect(res.status).toBe(200);
+    expect(res.text).toMatch(/BASE="\$\{GAMENITE_URL:-http:\/\//);
+  });
 });
