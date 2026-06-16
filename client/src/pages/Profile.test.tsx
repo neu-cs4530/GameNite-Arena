@@ -195,6 +195,40 @@ describe("Profile page — header", () => {
   });
 });
 
+describe("Profile page — tabs", () => {
+  it("has no Overview tab; matches view is the default", async () => {
+    renderProfile();
+    expect(await screen.findByTestId("profile-header")).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Overview" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("profile-recent-matches")).toBeInTheDocument();
+  });
+
+  it("shows an owner-only Following tab with the follow feed", async () => {
+    renderProfile("/profile/viewer9");
+    expect(await screen.findByTestId("profile-header")).toBeInTheDocument();
+
+    const followingTab = screen.getByRole("tab", { name: "Following" });
+    await userEvent.click(followingTab);
+    expect(await screen.findByTestId("following-feed")).toBeInTheDocument();
+  });
+
+  it("hides the Following tab on someone else's profile", async () => {
+    renderProfile("/profile/user0");
+    expect(await screen.findByTestId("profile-header")).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Following" })).not.toBeInTheDocument();
+  });
+
+  it("reaches the Followers/Following lists via the count links, with no dedicated tab button", async () => {
+    renderProfile();
+    expect(await screen.findByTestId("profile-header")).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Followers" })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("profile-followers-count"));
+    expect(await screen.findByTestId("profile-followers")).toBeInTheDocument();
+    expect(screen.getByTestId("profile-following")).toBeInTheDocument();
+  });
+});
+
 describe("Profile page — fetch states", () => {
   it("renders the user-not-found state on a 404", async () => {
     mockedFetch.mockRejectedValue(new ProfileNotFoundError("ghost"));

@@ -18,9 +18,9 @@ export default function Login({ setAuth }: LoginProps) {
 
   return (
     <div className="container">
-      <h1>GameNite</h1>
+      <h1>FourNight</h1>
       <form className="login" onSubmit={(e) => handleSubmit(e)}>
-        <h2>Log into GameNite</h2>
+        <h2>Log into FourNight</h2>
         <input
           type="text"
           value={username}
@@ -72,7 +72,7 @@ export default function Login({ setAuth }: LoginProps) {
         </button>
       </form>
       <div className="smallAndGray" style={{ marginTop: "1rem" }}>
-        GameNite stores passwords in cleartext; reusing passwords here is a catastrophically bad
+        FourNight stores passwords in cleartext; reusing passwords here is a catastrophically bad
         idea
       </div>
     </div>

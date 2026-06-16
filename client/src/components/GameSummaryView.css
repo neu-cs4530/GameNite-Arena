@@ -1,21 +1,37 @@
-.gameSummary {
+.ga-game-summary {
   display: flex;
-  flex-direction: row;
-  border-top: 1px dashed black;
-  color: var(--gray-foreground);
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  transition: border-color 0.15s;
 }
 
-.gameSummary div {
-  white-space: nowrap;
+.ga-game-summary:hover {
+  border-color: var(--color-border-strong);
 }
 
-.gameSummary .mid {
-  flex-grow: 1;
-  color: cornflowerblue;
+.ga-game-summary__title {
+  font-size: var(--text-body);
+  font-weight: var(--weight-bold);
+  color: var(--color-primary);
+  text-decoration: none;
 }
 
-.gameSummary .stats {
-  text-align: center;
-  width: 10rem;
+.ga-game-summary__title:hover {
+  text-decoration: underline;
+}
+
+.ga-game-summary__meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}
+
+.ga-game-summary__badge {
   flex-shrink: 0;
+  text-transform: capitalize;
 }

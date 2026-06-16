@@ -12,7 +12,7 @@
 
 .menu_button {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   align-items: center;
   min-height: 2.5rem;
   width: 100%;
@@ -43,24 +43,46 @@
   color: var(--color-primary);
 }
 
-.menu_dropdown_toggle {
-  display: grid;
-  grid-template-columns: 1.5rem 1fr 1.5rem;
+/* A group header that is both a link (to the group's hub page) and a
+   collapse toggle: the link grows to fill the row, the toggle stays a
+   small square button beside it. */
+.menu_group_header {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-1);
+}
+
+.menu_group_header > .menu_button {
+  flex: 1;
+}
+
+.menu_chevron_btn {
+  display: flex;
   align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  min-height: 2.5rem;
+  border: none;
+  border-radius: var(--radius-md);
+  background-color: transparent;
+  color: var(--color-fg-muted);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
 }
 
-.menu_label {
-  grid-column: 2;
+.menu_chevron_btn:hover {
+  background-color: var(--color-surface-2);
+  color: var(--color-fg);
 }
 
-.menu_chevron {
-  grid-column: 3;
-  justify-self: center;
+.menu_chevron_btn .menu_chevron {
   font-size: var(--text-h2);
   transition: transform var(--duration-fast) var(--ease-standard);
 }
 
-.menu_button[aria-expanded="true"] .menu_chevron {
+.menu_chevron_btn[aria-expanded="true"] .menu_chevron {
   transform: rotate(90deg);
 }
 
@@ -80,6 +102,14 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+}
+
+/* Leaf links revealed by a group's chevron toggle (Daily Puzzle/Practice,
+   Replays/Live Games/Highlights, Trainer/Models) center under their
+   left-aligned header to read as a list of options. Flat top-level links
+   (Matchmaking, Leaderboards, Forums) keep the default left alignment. */
+.menu_submenu--dropdown > .menu_button {
+  justify-content: center;
 }
 
 /* Mobile: collapse sidebar into a horizontal scroll top-bar */

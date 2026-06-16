@@ -1,12 +1,9 @@
 import "./GameSummaryView.css";
 import type { GameInfo } from "@gamenite/shared";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink } from "react-router-dom";
 import { gameNames } from "../util/consts.ts";
 import useTimeSince from "../hooks/useTimeSince.ts";
 
-/**
- * Summarizes information for a single game as part of a list of games
- */
 export default function GameSummaryView({
   gameId,
   status,
@@ -16,19 +13,20 @@ export default function GameSummaryView({
   createdBy,
 }: GameInfo) {
   const timeSince = useTimeSince();
-  const navigate = useNavigate();
   const numPlayers = players.length;
   return (
-    <div className="gameSummary" role="listitem">
-      <div className="stats" onClick={() => navigate(`/game/${gameId}`)}>
-        {status}
-        {status !== "done" && `, ${numPlayers} player${numPlayers === 1 ? "" : "s"}`}
-      </div>
-      <NavLink to={`/game/${gameId}`} className="mid">
-        A game of {gameNames[type]}
+    <div className="ga-game-summary" role="listitem">
+      <NavLink to={`/game/${gameId}`} className="ga-game-summary__title">
+        {gameNames[type]}
       </NavLink>
-      <div className="lastActivity">
-        {createdBy.display} created {timeSince(createdAt)}
+      <div className="ga-game-summary__meta">
+        <span>
+          {createdBy.display} &middot; {timeSince(createdAt)}
+        </span>
+        <span className="ga-game-summary__badge">
+          {status}
+          {status !== "done" && ` · ${numPlayers}p`}
+        </span>
       </div>
     </div>
   );

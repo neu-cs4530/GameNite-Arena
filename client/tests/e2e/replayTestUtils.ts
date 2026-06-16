@@ -77,5 +77,7 @@ export async function logInAndReady(
   password: string = DEFAULT_PASSWORD,
 ) {
   await logIn(page, username, password);
+  await page.getByTestId("profile-menu-toggle").click();
   await expect(page.getByText(/signed in as/i)).toBeVisible();
+  await page.getByTestId("profile-menu-toggle").click();
 }

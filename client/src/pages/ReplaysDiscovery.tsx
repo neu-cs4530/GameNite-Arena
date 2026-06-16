@@ -43,7 +43,7 @@ export default function ReplaysDiscovery(): JSX.Element {
     <div className="ga-discovery">
       <header className="ga-discovery__hero">
         <h1>Replays</h1>
-        <p>Browse, study, and learn from every match GameNite Arena has ever played.</p>
+        <p>Browse, study, and learn from every match FourNight Arena has ever played.</p>
       </header>
 
       <ReplayFilterBar
