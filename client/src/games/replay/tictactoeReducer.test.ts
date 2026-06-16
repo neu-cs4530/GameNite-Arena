@@ -43,27 +43,47 @@ describe("tictactoeViewFromState — winning lines", () => {
   }
 
   it("detects a row win", () => {
-    const board = [["X", "X", "X"], ["O", "O", "."], [".", ".", "."]];
+    const board = [
+      ["X", "X", "X"],
+      ["O", "O", "."],
+      [".", ".", "."],
+    ];
     expect(tictactoeViewFromState(stateWith(board)).winningEntry).not.toBeNull();
   });
 
   it("detects a column win", () => {
-    const board = [["X", "O", "."], ["X", "O", "."], ["X", ".", "."]];
+    const board = [
+      ["X", "O", "."],
+      ["X", "O", "."],
+      ["X", ".", "."],
+    ];
     expect(tictactoeViewFromState(stateWith(board)).winningEntry).not.toBeNull();
   });
 
   it("detects a main-diagonal win", () => {
-    const board = [["X", "O", "."], [".", "X", "O"], [".", ".", "X"]];
+    const board = [
+      ["X", "O", "."],
+      [".", "X", "O"],
+      [".", ".", "X"],
+    ];
     expect(tictactoeViewFromState(stateWith(board)).winningEntry).not.toBeNull();
   });
 
   it("detects an anti-diagonal win", () => {
-    const board = [[".", "O", "X"], [".", "X", "O"], ["X", ".", "."]];
+    const board = [
+      [".", "O", "X"],
+      [".", "X", "O"],
+      ["X", ".", "."],
+    ];
     expect(tictactoeViewFromState(stateWith(board)).winningEntry).not.toBeNull();
   });
 
   it("returns null when no line is complete", () => {
-    const board = [["X", "O", "X"], ["O", ".", "O"], ["O", "X", "X"]];
+    const board = [
+      ["X", "O", "X"],
+      ["O", ".", "O"],
+      ["O", "X", "X"],
+    ];
     expect(tictactoeViewFromState(stateWith(board)).winningEntry).toBeNull();
   });
 });

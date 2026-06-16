@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { SafeUserInfo, TrainingPackEntry } from "@gamenite/shared";
+import type { Connect4Entry, SafeUserInfo, TrainingPackEntry } from "@gamenite/shared";
 import { LoginContext } from "../../contexts/LoginContext.ts";
 import type { GameSocket } from "../../util/types.ts";
 import { fetchTrainingPack, submitTrainingAttempt } from "../../services/puzzleService.ts";
@@ -132,7 +132,9 @@ describe("TrainingPackFeed: card result variants", () => {
   });
 
   it("submits via board click for a connect4 puzzle", async () => {
-    const c4Board = Array.from({ length: 6 }, () => Array(7).fill("."));
+    const c4Board = Array.from({ length: 6 }, (): Connect4Entry[] =>
+      Array<Connect4Entry>(7).fill("."),
+    );
     const c4Entry: TrainingPackEntry = {
       gameKey: "connect4",
       position: { board: c4Board, nextPlayer: 0, winningEntry: null },

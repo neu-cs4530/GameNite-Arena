@@ -24,14 +24,21 @@ function fakeEvent() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockedLoginContext.mockReturnValue({ user: viewer, pass: "pw", reset: mockReset, socket: {} as GameSocket });
+  mockedLoginContext.mockReturnValue({
+    user: viewer,
+    pass: "pw",
+    reset: mockReset,
+    socket: {} as GameSocket,
+  });
   mockedUseAuth.mockReturnValue({ username: "ada", password: "pw" });
 });
 
 describe("useEditProfileForm: no-change guard", () => {
   it("sets error when nothing has changed", async () => {
     const { result } = renderHook(useEditProfileForm);
-    await act(async () => { await result.current.handleSubmit(fakeEvent()); });
+    await act(async () => {
+      await result.current.handleSubmit(fakeEvent());
+    });
     expect(result.current.err).toBe("No changes to submit");
   });
 });
@@ -39,15 +46,23 @@ describe("useEditProfileForm: no-change guard", () => {
 describe("useEditProfileForm: display validation", () => {
   it("sets error when display has leading whitespace", async () => {
     const { result } = renderHook(useEditProfileForm);
-    act(() => { result.current.setDisplay(" Ada"); });
-    await act(async () => { await result.current.handleSubmit(fakeEvent()); });
+    act(() => {
+      result.current.setDisplay(" Ada");
+    });
+    await act(async () => {
+      await result.current.handleSubmit(fakeEvent());
+    });
     expect(result.current.err).toMatch(/whitespace/i);
   });
 
   it("sets error when display is blank", async () => {
     const { result } = renderHook(useEditProfileForm);
-    act(() => { result.current.setDisplay(""); });
-    await act(async () => { await result.current.handleSubmit(fakeEvent()); });
+    act(() => {
+      result.current.setDisplay("");
+    });
+    await act(async () => {
+      await result.current.handleSubmit(fakeEvent());
+    });
     expect(result.current.err).toMatch(/display name/i);
   });
 });
@@ -55,15 +70,27 @@ describe("useEditProfileForm: display validation", () => {
 describe("useEditProfileForm: password validation", () => {
   it("sets error when password has leading whitespace", async () => {
     const { result } = renderHook(useEditProfileForm);
-    act(() => { result.current.setDisplay("Bob"); result.current.setPassword(" pw"); result.current.setConfirm(" pw"); });
-    await act(async () => { await result.current.handleSubmit(fakeEvent()); });
+    act(() => {
+      result.current.setDisplay("Bob");
+      result.current.setPassword(" pw");
+      result.current.setConfirm(" pw");
+    });
+    await act(async () => {
+      await result.current.handleSubmit(fakeEvent());
+    });
     expect(result.current.err).toMatch(/password.*whitespace/i);
   });
 
   it("sets error when passwords don't match", async () => {
     const { result } = renderHook(useEditProfileForm);
-    act(() => { result.current.setDisplay("Bob"); result.current.setPassword("abc"); result.current.setConfirm("xyz"); });
-    await act(async () => { await result.current.handleSubmit(fakeEvent()); });
+    act(() => {
+      result.current.setDisplay("Bob");
+      result.current.setPassword("abc");
+      result.current.setConfirm("xyz");
+    });
+    await act(async () => {
+      await result.current.handleSubmit(fakeEvent());
+    });
     expect(result.current.err).toMatch(/don't match/i);
   });
 });
@@ -72,8 +99,12 @@ describe("useEditProfileForm: successful submit", () => {
   it("sends only display when only display changed", async () => {
     mockedUpdate.mockResolvedValueOnce(viewer);
     const { result } = renderHook(useEditProfileForm);
-    act(() => { result.current.setDisplay("Bob"); });
-    await act(async () => { await result.current.handleSubmit(fakeEvent()); });
+    act(() => {
+      result.current.setDisplay("Bob");
+    });
+    await act(async () => {
+      await result.current.handleSubmit(fakeEvent());
+    });
     expect(mockedUpdate).toHaveBeenCalledWith(
       { username: "ada", password: "pw" },
       { display: "Bob" },
@@ -85,8 +116,14 @@ describe("useEditProfileForm: successful submit", () => {
   it("includes password in the update when it's changed", async () => {
     mockedUpdate.mockResolvedValueOnce(viewer);
     const { result } = renderHook(useEditProfileForm);
-    act(() => { result.current.setDisplay("Bob"); result.current.setPassword("newpw"); result.current.setConfirm("newpw"); });
-    await act(async () => { await result.current.handleSubmit(fakeEvent()); });
+    act(() => {
+      result.current.setDisplay("Bob");
+      result.current.setPassword("newpw");
+      result.current.setConfirm("newpw");
+    });
+    await act(async () => {
+      await result.current.handleSubmit(fakeEvent());
+    });
     expect(mockedUpdate).toHaveBeenCalledWith(
       { username: "ada", password: "pw" },
       { display: "Bob", password: "newpw" },
@@ -96,8 +133,13 @@ describe("useEditProfileForm: successful submit", () => {
   it("sends only password when only password changed", async () => {
     mockedUpdate.mockResolvedValueOnce(viewer);
     const { result } = renderHook(useEditProfileForm);
-    act(() => { result.current.setPassword("newpw"); result.current.setConfirm("newpw"); });
-    await act(async () => { await result.current.handleSubmit(fakeEvent()); });
+    act(() => {
+      result.current.setPassword("newpw");
+      result.current.setConfirm("newpw");
+    });
+    await act(async () => {
+      await result.current.handleSubmit(fakeEvent());
+    });
     expect(mockedUpdate).toHaveBeenCalledWith(
       { username: "ada", password: "pw" },
       { password: "newpw" },
@@ -108,8 +150,12 @@ describe("useEditProfileForm: successful submit", () => {
   it("sets error from the server message when updateUser throws", async () => {
     mockedUpdate.mockRejectedValueOnce(new Error("server down"));
     const { result } = renderHook(useEditProfileForm);
-    act(() => { result.current.setDisplay("Bob"); });
-    await act(async () => { await result.current.handleSubmit(fakeEvent()); });
+    act(() => {
+      result.current.setDisplay("Bob");
+    });
+    await act(async () => {
+      await result.current.handleSubmit(fakeEvent());
+    });
     expect(result.current.err).toContain("server down");
     expect(mockReset).not.toHaveBeenCalled();
   });

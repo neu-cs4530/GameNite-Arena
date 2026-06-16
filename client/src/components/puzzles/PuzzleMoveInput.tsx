@@ -79,11 +79,18 @@ function GuessMoveInput({
 }
 
 /** Renders the per-game attempt controls for a daily puzzle. */
-export default function PuzzleMoveInput({ position, disabled, onSubmit }: MoveInputProps): JSX.Element {
+export default function PuzzleMoveInput({
+  position,
+  disabled,
+  onSubmit,
+}: MoveInputProps): JSX.Element {
   switch (position.kind) {
-    case "nim": return <NimMoveInput view={position.view} disabled={disabled} onSubmit={onSubmit} />;
-    case "guess": return <GuessMoveInput view={position.view} disabled={disabled} onSubmit={onSubmit} />;
+    case "nim":
+      return <NimMoveInput view={position.view} disabled={disabled} onSubmit={onSubmit} />;
+    case "guess":
+      return <GuessMoveInput view={position.view} disabled={disabled} onSubmit={onSubmit} />;
     // these games are played by clicking the board itself (see PuzzleBoard)
-    default: return <></>;
+    default:
+      return <></>;
   }
 }

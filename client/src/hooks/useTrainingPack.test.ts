@@ -17,7 +17,9 @@ function entry(id: string): TrainingPackEntry {
   };
 }
 
-beforeEach(() => { vi.clearAllMocks(); });
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe("useTrainingPack: initial load", () => {
   it("is pending until the fetch resolves", () => {
@@ -48,7 +50,9 @@ describe("useTrainingPack: gameKey change", () => {
     });
     await waitFor(() => expect(result.current.status).toBe("ok"));
 
-    act(() => { rerender("guess"); });
+    act(() => {
+      rerender("guess");
+    });
     await waitFor(() => expect(mockedFetch).toHaveBeenCalledWith("guess", expect.anything()));
     expect(result.current.items.length).toBeGreaterThanOrEqual(0);
   });
@@ -56,14 +60,14 @@ describe("useTrainingPack: gameKey change", () => {
 
 describe("useTrainingPack: loadMore", () => {
   it("appends a second batch", async () => {
-    mockedFetch
-      .mockResolvedValueOnce([entry("m1")])
-      .mockResolvedValueOnce([entry("m2")]);
+    mockedFetch.mockResolvedValueOnce([entry("m1")]).mockResolvedValueOnce([entry("m2")]);
     const { result } = renderHook(() => useTrainingPack("nim"));
     await waitFor(() => expect(result.current.status).toBe("ok"));
     expect(result.current.items).toHaveLength(1);
 
-    act(() => { result.current.loadMore(); });
+    act(() => {
+      result.current.loadMore();
+    });
     await waitFor(() => expect(result.current.items).toHaveLength(2));
     expect(mockedFetch).toHaveBeenLastCalledWith("nim", { limit: 5, exclude: ["m1"] });
   });

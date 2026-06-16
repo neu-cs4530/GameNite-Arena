@@ -6,7 +6,9 @@ import useQueueCounts from "./useQueueCounts.ts";
 vi.mock("../services/matchmakingService.ts", () => ({ fetchQueueCounts: vi.fn() }));
 const mockedFetch = vi.mocked(fetchQueueCounts);
 
-beforeEach(() => { vi.clearAllMocks(); });
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe("useQueueCounts", () => {
   it("returns counts after the fetch resolves", async () => {
@@ -17,7 +19,11 @@ describe("useQueueCounts", () => {
 
   it("does not update state after unmount", async () => {
     let resolve: (v: Awaited<ReturnType<typeof fetchQueueCounts>>) => void;
-    mockedFetch.mockReturnValueOnce(new Promise((res) => { resolve = res; }));
+    mockedFetch.mockReturnValueOnce(
+      new Promise((res) => {
+        resolve = res;
+      }),
+    );
     const { unmount } = renderHook(() => useQueueCounts(10000));
     unmount();
     resolve!({ nim: { rated: 3, unrated: 0 } });

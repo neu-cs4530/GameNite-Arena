@@ -150,10 +150,15 @@ export default function PuzzleBoard({
 }: PuzzleBoardProps): JSX.Element {
   const interactive = { onSubmit, disabled };
   switch (position.kind) {
-    case "nim": return <NimPuzzleBoard view={position.view} />;
-    case "guess": return <GuessPuzzleBoard view={position.view} />;
-    case "tictactoe": return <TicTacToePuzzleBoard view={position.view} {...interactive} />;
-    case "connect4": return <Connect4PuzzleBoard view={position.view} {...interactive} />;
-    case "checkers": return <CheckersPuzzleBoard view={position.view} {...interactive} />;
+    case "nim":
+      return <NimPuzzleBoard view={position.view} />;
+    case "guess":
+      return <GuessPuzzleBoard view={position.view} />;
+    case "tictactoe":
+      return <TicTacToePuzzleBoard view={position.view} {...interactive} />;
+    case "connect4":
+      return <Connect4PuzzleBoard view={position.view} {...interactive} />;
+    case "checkers":
+      return <CheckersPuzzleBoard view={position.view} {...interactive} />;
   }
 }

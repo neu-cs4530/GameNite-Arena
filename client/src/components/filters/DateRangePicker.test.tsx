@@ -23,7 +23,9 @@ describe("DateRangePicker — preset buttons", () => {
 
   it("calls onChange with the clicked preset and current date bounds", async () => {
     const onChange = vi.fn();
-    render(<DateRangePicker value="all" dateFrom="2026-01-01" dateTo="2026-06-01" onChange={onChange} />);
+    render(
+      <DateRangePicker value="all" dateFrom="2026-01-01" dateTo="2026-06-01" onChange={onChange} />,
+    );
     await userEvent.click(screen.getByRole("button", { name: "This month" }));
     expect(onChange).toHaveBeenCalledWith("month", "2026-01-01", "2026-06-01");
   });
@@ -49,7 +51,12 @@ describe("DateRangePicker — custom date inputs", () => {
 
   it("populates inputs with the provided dateFrom and dateTo", () => {
     render(
-      <DateRangePicker value="custom" dateFrom="2026-01-01" dateTo="2026-06-30" onChange={vi.fn()} />,
+      <DateRangePicker
+        value="custom"
+        dateFrom="2026-01-01"
+        dateTo="2026-06-30"
+        onChange={vi.fn()}
+      />,
     );
     expect(screen.getByLabelText(/From/)).toHaveValue("2026-01-01");
     expect(screen.getByLabelText(/To/)).toHaveValue("2026-06-30");

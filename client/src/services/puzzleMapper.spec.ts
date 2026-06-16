@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { PuzzleView, TrainingPackEntry } from "@gamenite/shared";
+import type { CheckersEntry, Connect4Entry, PuzzleView, TrainingPackEntry } from "@gamenite/shared";
 import {
   applyPuzzleMove,
   describePuzzleMove,
@@ -308,24 +308,37 @@ describe("applyPuzzleMove", () => {
   const nimPos: PuzzlePosition = { kind: "nim", view: { remaining: 6, nextPlayer: 0 } };
   const tttPos: PuzzlePosition = {
     kind: "tictactoe",
-    view: { board: [[".", ".", "."], [".", ".", "."], [".", ".", "."]], nextPlayer: 1, winningEntry: null },
+    view: {
+      board: [
+        [".", ".", "."],
+        [".", ".", "."],
+        [".", ".", "."],
+      ],
+      nextPlayer: 1,
+      winningEntry: null,
+    },
   };
   const c4Pos: PuzzlePosition = {
     kind: "connect4",
     view: {
-      board: Array.from({ length: 6 }, () => Array(7).fill(".")),
+      board: Array.from({ length: 6 }, (): Connect4Entry[] => Array<Connect4Entry>(7).fill(".")),
       nextPlayer: 0,
       winningEntry: null,
     },
   };
-  const checkersBoard = Array.from({ length: 8 }, () => Array(8).fill("."));
+  const checkersBoard = Array.from({ length: 8 }, (): CheckersEntry[] =>
+    Array<CheckersEntry>(8).fill("."),
+  );
   checkersBoard[4][3] = "R";
   checkersBoard[3][4] = "B";
   const checkersPos: PuzzlePosition = {
     kind: "checkers",
-    view: { board: checkersBoard as never, nextPlayer: 0, winner: null, legalMoves: [] },
+    view: { board: checkersBoard, nextPlayer: 0, winner: null, legalMoves: [] },
   };
-  const guessPos: PuzzlePosition = { kind: "guess", view: { finished: false, guesses: [false, false] } };
+  const guessPos: PuzzlePosition = {
+    kind: "guess",
+    view: { finished: false, guesses: [false, false] },
+  };
 
   it("applies a valid nim move and advances remaining", () => {
     const result = applyPuzzleMove(nimPos, 3);
@@ -357,7 +370,12 @@ describe("applyPuzzleMove", () => {
   });
 
   it("applies a valid checkers move", () => {
-    const move = { squares: [[4, 3], [3, 4]] };
+    const move = {
+      squares: [
+        [4, 3],
+        [3, 4],
+      ],
+    };
     const result = applyPuzzleMove(checkersPos, move);
     expect(result.kind).toBe("checkers");
   });
@@ -406,7 +424,9 @@ describe("mapPuzzleView — non-record and invalid-field positions", () => {
   });
 
   it("returns null when guess guesses contains non-booleans", () => {
-    expect(mapPuzzleView({ ...guessWire, position: { finished: false, guesses: [1, 2] } })).toBeNull();
+    expect(
+      mapPuzzleView({ ...guessWire, position: { finished: false, guesses: [1, 2] } }),
+    ).toBeNull();
   });
 
   it("returns null when tictactoe position is not an object", () => {
@@ -422,7 +442,9 @@ describe("mapPuzzleView — non-record and invalid-field positions", () => {
   });
 
   it("returns null when connect4 nextPlayer is out of range", () => {
-    expect(mapPuzzleView({ ...connect4Wire, position: { ...connect4Position, nextPlayer: 2 } })).toBeNull();
+    expect(
+      mapPuzzleView({ ...connect4Wire, position: { ...connect4Position, nextPlayer: 2 } }),
+    ).toBeNull();
   });
 
   it("returns null when checkers position is not an object", () => {
@@ -430,10 +452,14 @@ describe("mapPuzzleView — non-record and invalid-field positions", () => {
   });
 
   it("returns null when checkers nextPlayer is out of range", () => {
-    expect(mapPuzzleView({ ...checkersWire, position: { ...checkersPosition, nextPlayer: 2 } })).toBeNull();
+    expect(
+      mapPuzzleView({ ...checkersWire, position: { ...checkersPosition, nextPlayer: 2 } }),
+    ).toBeNull();
   });
 
   it("returns null when checkers legalMoves is not an array", () => {
-    expect(mapPuzzleView({ ...checkersWire, position: { ...checkersPosition, legalMoves: "nope" } })).toBeNull();
+    expect(
+      mapPuzzleView({ ...checkersWire, position: { ...checkersPosition, legalMoves: "nope" } }),
+    ).toBeNull();
   });
 });
