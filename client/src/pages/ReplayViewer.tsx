@@ -23,6 +23,7 @@ import PlaybackControls from "../components/replay/PlaybackControls.tsx";
 import AnnotationPanel from "../components/replay/AnnotationPanel.tsx";
 import KeyboardShortcutsHelp from "../components/replay/KeyboardShortcutsHelp.tsx";
 import CompareToAIPanel from "../components/replay/CompareToAIPanel.tsx";
+import EngineInsightPanel from "../components/replay/EngineInsightPanel.tsx";
 import RailDrawer from "../components/replay/RailDrawer.tsx";
 
 import { recordView, downloadReplay } from "../services/replayService.ts";
@@ -127,6 +128,21 @@ export default function ReplayViewer(): JSX.Element {
   const aiSuggestedMove = analysisHook.analysis?.perMove.find(
     (p) => p.moveIndex === playback.currentMove,
   )?.engineMove;
+
+  // The built-in engine's verdict on the move that PRODUCED the current
+  // position (closed-form games: nim, tic-tac-toe). Pinned to the move you're
+  // viewing — moveIndex === currentMove - 1 — so it describes that move, not
+  // the next one. Drives its own insight box + the on-board quality tint.
+  const engineMoveIndex = playback.currentMove - 1;
+  const engineItem =
+    caps.engine && engineMoveIndex >= 0
+      ? analysisHook.analysis?.perMove.find((p) => p.moveIndex === engineMoveIndex)
+      : undefined;
+  const enginePlayedMove = replay.moves[engineMoveIndex]?.move;
+  const engineQuality =
+    engineItem !== undefined && enginePlayedMove !== undefined
+      ? { move: enginePlayedMove, flag: engineItem.flag }
+      : undefined;
 
   // Unfold the analysis drawer the moment results first exist — running the
   // engine from the collapsed header should reveal what it produced. Derived
@@ -358,7 +374,13 @@ export default function ReplayViewer(): JSX.Element {
             <span className="ga-viewer__filmstrip-fill" style={{ width: `${progressPct}%` }} />
           </div>
           <div className="ga-viewer__boardwrap">
-            <GameViewer view={view} replay={replay} readOnly aiMove={aiSuggestedMove} />
+            <GameViewer
+              view={view}
+              replay={replay}
+              readOnly
+              aiMove={aiSuggestedMove}
+              engineQuality={engineQuality}
+            />
           </div>
           {aiSuggestedMove !== undefined && (
             <div className="ga-viewer__ai-move" data-testid="ai-move-callout">
@@ -390,6 +412,14 @@ export default function ReplayViewer(): JSX.Element {
         </main>
 
         <aside className="ga-viewer__rail">
+          {engineItem !== undefined && enginePlayedMove !== undefined && (
+            <EngineInsightPanel
+              gameKey={replay.gameKey}
+              item={engineItem}
+              playedMove={enginePlayedMove}
+              moveNumber={playback.currentMove}
+            />
+          )}
           {/* Quiet utility row — files, links, help. */}
           <div className="ga-viewer__toolbar" role="toolbar" aria-label="Replay actions">
             {/*
