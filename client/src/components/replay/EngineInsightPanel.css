@@ -1,0 +1,78 @@
+/* ============================================================================
+ * EngineInsightPanel — the built-in engine's verdict on the move that produced
+ * the current position. Top of the rail; tone (border + dot) by quality.
+ * ============================================================================ */
+
+.ga-engine-insight {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-left-width: 3px;
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
+}
+
+.ga-engine-insight--best {
+  border-left-color: var(--color-success);
+}
+.ga-engine-insight--inaccuracy {
+  border-left-color: var(--color-warning);
+}
+.ga-engine-insight--blunder {
+  border-left-color: var(--color-danger);
+}
+.ga-engine-insight--neutral {
+  border-left-color: var(--color-border-strong);
+}
+
+.ga-engine-insight__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ga-engine-insight__dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-border-strong);
+}
+.ga-engine-insight--best .ga-engine-insight__dot {
+  background: var(--color-success);
+}
+.ga-engine-insight--inaccuracy .ga-engine-insight__dot {
+  background: var(--color-warning);
+}
+.ga-engine-insight--blunder .ga-engine-insight__dot {
+  background: var(--color-danger);
+}
+
+.ga-engine-insight__headline {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+}
+
+.ga-engine-insight__movenum {
+  font-size: var(--text-micro);
+  color: var(--color-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.ga-engine-insight__played,
+.ga-engine-insight__best,
+.ga-engine-insight__notes {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-small);
+  line-height: var(--leading-normal);
+}
+
+.ga-engine-insight__best {
+  color: var(--color-success);
+}
+
+.ga-engine-insight__notes {
+  color: var(--color-fg-muted);
+}

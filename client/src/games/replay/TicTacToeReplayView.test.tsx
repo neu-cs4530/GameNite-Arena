@@ -113,3 +113,46 @@ describe("TicTacToeReplayView", () => {
     expect(screen.getByTestId("ttt-ai-target")).toHaveTextContent("X");
   });
 });
+
+describe("TicTacToeReplayView AI + engine highlights", () => {
+  const ongoing = () =>
+    ({ board: EMPTY_BOARD, nextPlayer: 1, winningEntry: null }) as TicTacToeView;
+
+  it("marks the AI's suggested empty cell green", () => {
+    render(<TicTacToeReplayView view={ongoing()} participants={PLAYERS} aiMove={[1, 1]} />);
+    expect(screen.getByTestId("ttt-cell-1-1").className).toContain("ttt-cell--ai");
+    expect(screen.getByTestId("ttt-ai-target")).toBeInTheDocument();
+  });
+
+  it("tints the played cell by engine quality, but not for neutral", () => {
+    const view = ongoing();
+    const { rerender } = render(
+      <TicTacToeReplayView
+        view={view}
+        participants={PLAYERS}
+        engineMoveQuality={{ move: [0, 0], flag: "blunder" }}
+      />,
+    );
+    expect(screen.getByTestId("ttt-cell-0-0").className).toContain("ttt-cell--eng-blunder");
+
+    for (const flag of ["best", "inaccuracy"] as const) {
+      rerender(
+        <TicTacToeReplayView
+          view={view}
+          participants={PLAYERS}
+          engineMoveQuality={{ move: [0, 0], flag }}
+        />,
+      );
+      expect(screen.getByTestId("ttt-cell-0-0").className).toContain(`ttt-cell--eng-${flag}`);
+    }
+
+    rerender(
+      <TicTacToeReplayView
+        view={view}
+        participants={PLAYERS}
+        engineMoveQuality={{ move: [0, 0], flag: "neutral" }}
+      />,
+    );
+    expect(screen.getByTestId("ttt-cell-0-0").className).not.toContain("ttt-cell--eng");
+  });
+});

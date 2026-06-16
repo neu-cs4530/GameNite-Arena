@@ -17,6 +17,9 @@ interface GameViewerProps {
   /** The selected AI model's move from the currently-displayed position, if
    * analysis with a model has run — highlighted green on the board. */
   aiMove?: unknown;
+  /** The built-in engine's verdict on the move that produced the current
+   * position (closed-form games) — tints that cell on the board by quality. */
+  engineQuality?: { move: unknown; flag: "best" | "blunder" | "inaccuracy" | "neutral" };
 }
 
 /**
@@ -24,7 +27,12 @@ interface GameViewerProps {
  * on the replay's `gameKey`. The `view` prop is the derived state at the
  * current move from `useDerivedGameView`.
  */
-export default function GameViewer({ view, replay, aiMove }: GameViewerProps): JSX.Element {
+export default function GameViewer({
+  view,
+  replay,
+  aiMove,
+  engineQuality,
+}: GameViewerProps): JSX.Element {
   const participants = replay.participants;
   if (view?.type === "nim") {
     return (
@@ -40,11 +48,17 @@ export default function GameViewer({ view, replay, aiMove }: GameViewerProps): J
   }
   if (view?.type === "tictactoe") {
     const ai = zTicTacToeMove.safeParse(aiMove);
+    const engParsed = engineQuality ? zTicTacToeMove.safeParse(engineQuality.move) : null;
     return (
       <TicTacToeReplayView
         view={view.view}
         participants={participants}
         aiMove={ai.success ? ai.data : undefined}
+        engineMoveQuality={
+          engParsed?.success && engineQuality
+            ? { move: engParsed.data, flag: engineQuality.flag }
+            : undefined
+        }
       />
     );
   }

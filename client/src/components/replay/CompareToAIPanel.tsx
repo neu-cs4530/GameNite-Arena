@@ -3,7 +3,6 @@ import type { JSX } from "react";
 import type { GameKey } from "@gamenite/shared";
 import type { AnalysisResult, ReplayDetail } from "../../util/types.ts";
 import { describePuzzleMove } from "../../services/puzzleMapper.ts";
-import Badge from "../ui/Badge.tsx";
 
 interface CompareToAIPanelProps {
   replay: ReplayDetail;
@@ -87,50 +86,16 @@ export default function CompareToAIPanel({
               {aiParticipant?.displayName ?? "Engine"} played {move.notation}.
             </div>
           )}
-          {analysisItem ? (
-            <>
-              {analysisItem.flag !== "neutral" && (
-                <>
-                  <div className="ga-compare__value">
-                    {analysisItem.flag === "best" ? "Same — best move" : "A stronger move existed"}
-                  </div>
-                  <Badge
-                    variant={
-                      analysisItem.flag === "best"
-                        ? "success"
-                        : analysisItem.flag === "blunder"
-                          ? "danger"
-                          : "warning"
-                    }
-                  >
-                    {analysisItem.flag}
-                  </Badge>
-                </>
-              )}
-              {analysisItem.suggestedMove !== undefined && (
-                <div className="ga-compare__sub" data-testid="ai-comparison-best-move">
-                  Engine&apos;s best line:{" "}
-                  <strong>{describePuzzleMove(gameKey, analysisItem.suggestedMove)}</strong>
-                </div>
-              )}
-              {analysisItem.engineMove !== undefined && (
-                <div className="ga-compare__sub" data-testid="ai-comparison-model-move">
-                  Selected model plays:{" "}
-                  <strong>{describePuzzleMove(gameKey, analysisItem.engineMove)}</strong>
-                </div>
-              )}
-              {analysisItem.flag === "neutral" &&
-                analysisItem.suggestedMove === undefined &&
-                analysisItem.engineMove === undefined && (
-                  <div className="ga-compare__sub">No engine verdict for this move.</div>
-                )}
-              {analysisItem.notes !== undefined && analysisItem.notes !== "" && (
-                <p className="ga-compare__notes">{analysisItem.notes}</p>
-              )}
-            </>
+          {/* This panel is the deployed-model comparison only — the built-in
+              engine's verdict now lives in its own EngineInsightPanel. */}
+          {analysisItem?.engineMove !== undefined ? (
+            <div className="ga-compare__sub" data-testid="ai-comparison-model-move">
+              Selected model plays:{" "}
+              <strong>{describePuzzleMove(gameKey, analysisItem.engineMove)}</strong>
+            </div>
           ) : (
             <div className="ga-compare__sub">
-              Engine analysis pending. Click &quot;Analyze with engine&quot; to populate.
+              Select a deployed model, then run analysis to see its move here.
             </div>
           )}
           {analysis.aiError !== undefined && analysis.aiError !== "" && (
