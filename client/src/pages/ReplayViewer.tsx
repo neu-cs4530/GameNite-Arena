@@ -32,6 +32,7 @@ import { listDeploymentViews } from "../services/trainerViewService.ts";
 import { analysisModelOptions } from "../util/analysisModels.ts";
 import { analysisCapabilities } from "../util/analysisCapabilities.ts";
 import { describePuzzleMove } from "../services/puzzleMapper.ts";
+import { aiSuggestionAt, engineInsightAt } from "../util/replayInsight.ts";
 import { replayGameNames } from "../util/consts.ts";
 import type { DeploymentView } from "@gamenite/shared";
 
@@ -125,23 +126,20 @@ export default function ReplayViewer(): JSX.Element {
   // The selected model's move from the position currently on the board — drives
   // the green on-board highlight + the callout under it, so the AI's choice is
   // visible at a glance instead of buried in the Compare panel.
-  const aiSuggestedMove = analysisHook.analysis?.perMove.find(
-    (p) => p.moveIndex === playback.currentMove,
-  )?.engineMove;
-
-  // The built-in engine's verdict on the move that PRODUCED the current
-  // position (closed-form games: nim, tic-tac-toe). Pinned to the move you're
-  // viewing — moveIndex === currentMove - 1 — so it describes that move, not
-  // the next one. Drives its own insight box + the on-board quality tint.
-  const engineMoveIndex = playback.currentMove - 1;
-  const engineItem =
-    caps.engine && engineMoveIndex >= 0
-      ? analysisHook.analysis?.perMove.find((p) => p.moveIndex === engineMoveIndex)
-      : undefined;
-  const enginePlayedMove = replay.moves[engineMoveIndex]?.move;
+  // The deployed model's forward suggestion (green on-board highlight + callout)
+  // and the built-in engine's verdict on the move you're VIEWING (its own
+  // insight box + quality tint, pinned to currentMove - 1 so it's the move that
+  // produced this position, not the next). Logic lives in util/replayInsight.
+  const aiSuggestedMove = aiSuggestionAt(analysisHook.analysis, playback.currentMove);
+  const engineInsight = engineInsightAt(
+    analysisHook.analysis,
+    caps.engine,
+    playback.currentMove,
+    replay.moves,
+  );
   const engineQuality =
-    engineItem !== undefined && enginePlayedMove !== undefined
-      ? { move: enginePlayedMove, flag: engineItem.flag }
+    engineInsight !== null
+      ? { move: engineInsight.playedMove, flag: engineInsight.item.flag }
       : undefined;
 
   // Unfold the analysis drawer the moment results first exist — running the
@@ -412,11 +410,11 @@ export default function ReplayViewer(): JSX.Element {
         </main>
 
         <aside className="ga-viewer__rail">
-          {engineItem !== undefined && enginePlayedMove !== undefined && (
+          {engineInsight !== null && (
             <EngineInsightPanel
               gameKey={replay.gameKey}
-              item={engineItem}
-              playedMove={enginePlayedMove}
+              item={engineInsight.item}
+              playedMove={engineInsight.playedMove}
               moveNumber={playback.currentMove}
             />
           )}
