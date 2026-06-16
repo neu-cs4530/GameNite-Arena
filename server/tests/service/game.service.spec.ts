@@ -213,7 +213,11 @@ describe("updateGame with an AI opponent", () => {
     expect(match.result.winnerId).toBe(user0.userId);
   });
 
-  it("keeps the human move when inference is unreachable", async () => {
+  it("abandons the match (no winner) when inference is unreachable", async () => {
+    // A 503 outage is not the model's fault, so the game is not forfeited
+    // against the AI; but the move can't land, so rather than hang on the
+    // AI's turn forever the match ends as a no-decision "abandoned". The
+    // human's accepted move stays on the board as the final position.
     const requestMove = vi
       .fn()
       .mockRejectedValue(new InferenceError("Inference service unreachable: down", 503));
@@ -230,10 +234,13 @@ describe("updateGame with an AI opponent", () => {
     expect(gameResult).toBeUndefined();
     expect(nimView(views)).toEqual({ remaining: 18, nextPlayer: 1 });
 
-    // The AI turn fails closed: logged, no move, the human's move stands.
-    expect(await maybeFireAiMove(gameId)).toBeNull();
+    // The AI turn can't reach inference: the match is abandoned, not hung.
+    const outcome = await maybeFireAiMove(gameId);
+    expect(outcome?.gameResult).toEqual({ outcome: "abandoned" });
+    expect(outcome?.gameResult?.winnerId).toBeUndefined();
     const stored = await GameRepo.get(gameId);
     expect(stored.state).toEqual({ remaining: 18, nextPlayer: 1 });
+    expect(stored.done).toBe(true);
     expect(consoleError).toHaveBeenCalled();
   });
 
@@ -635,12 +642,14 @@ describe("AI forfeit on persistent invalid moves (CoS 2.8)", () => {
     const { gameResult } = await updateGame(gameId, user0, 3);
     expect(gameResult).toBeUndefined();
 
-    // A 503 carries no consecutiveInvalid counter: the AI turn stands down
-    // without recording a streak.
-    expect(await maybeFireAiMove(gameId)).toBeNull();
+    // A 503 carries no consecutiveInvalid counter, so no invalid-move streak is
+    // recorded against the AI — the outage ends the match as abandoned rather
+    // than as a strike toward forfeit.
+    const outcome = await maybeFireAiMove(gameId);
+    expect(outcome?.gameResult).toEqual({ outcome: "abandoned" });
     const stored = await GameRepo.get(gameId);
     expect(stored.invalidMoveStreaks).toBeUndefined();
-    expect(stored.done).toBe(false);
+    expect(stored.done).toBe(true);
   });
 });
 
