@@ -339,7 +339,14 @@ export const getKit: RestAPI<KitManifest> = (_req, res) => {
 
 /** GET /api/training/kit/install.sh — one-line bootstrap for the kit. */
 export const getKitInstallScript: RestAPI<string> = (req, res) => {
-  const baseUrl = `${req.protocol}://${req.get("host") ?? "localhost:8000"}`;
+  // The reporter POSTs progress back to this baked-in BASE. Behind a
+  // TLS-terminating proxy (Render) req.protocol is "http", so an http BASE
+  // makes prod 307-redirect the POST to https — and stdlib urllib refuses to
+  // re-POST a body across a 307, so every progress report dies. Trust the
+  // X-Forwarded-Proto the proxy sets; fall back to req.protocol for local dev.
+  const forwarded = req.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const proto = forwarded !== undefined && forwarded !== "" ? forwarded : req.protocol;
+  const baseUrl = `${proto}://${req.get("host") ?? "localhost:8000"}`;
   res.type("text/x-shellscript").send(buildInstallScript(baseUrl));
   return Promise.resolve();
 };
