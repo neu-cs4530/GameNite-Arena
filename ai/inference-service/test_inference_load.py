@@ -225,6 +225,7 @@ def assert_targets(seq: Result, conc: Result) -> None:
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
+    global MODEL_ID
     parser = argparse.ArgumentParser(description="Inference service load test")
     parser.add_argument("--base-url", default=BASE_URL)
     parser.add_argument("--model-id", default=MODEL_ID)
@@ -234,7 +235,6 @@ def main() -> None:
     parser.add_argument("--sustained-seconds", type=float, default=10.0)
     args = parser.parse_args()
 
-    global MODEL_ID
     MODEL_ID = args.model_id
 
     setup(args.base_url)

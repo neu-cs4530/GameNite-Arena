@@ -149,6 +149,7 @@ class FakeSession:
         self.attached = None
         self.started = None
         self.job_id = None
+        self.reports = []
 
     def get_job(self, job_id=None):
         return self.job_info
@@ -163,6 +164,16 @@ class FakeSession:
                         "learningRate": learning_rate, **kwargs}
         self.job_id = "new-job-1"
         return self.job_id
+
+    def report(self, steps, *, metrics, message=""):
+        self.reports.append({"steps": steps, "metrics": metrics, "message": message})
+        return True
+
+    def complete(self, *, final_metrics):
+        pass
+
+    def upload_artifact(self, path):
+        return {"hasArtifact": True}
 
 
 @pytest.fixture
@@ -206,7 +217,7 @@ class TestMainDispatch:
         self, monkeypatch, fake_run, capsys
     ):
         use_session(monkeypatch, FakeSession(job_info={
-            "jobId": "web-8", "gameKey": "checkers", "status": "queued",
+            "jobId": "web-8", "gameKey": "poker", "status": "queued",
             "config": {"episodes": 100, "learningRate": 0.001},
         }))
 
@@ -215,7 +226,7 @@ class TestMainDispatch:
         assert rc == 2
         assert fake_run == []
         err = capsys.readouterr().err
-        assert "no local trainer for 'checkers'" in err
+        assert "no local trainer for 'poker'" in err
         assert "nim" in err
 
     def test_self_register_path_starts_a_session(self, monkeypatch, fake_run):
@@ -279,15 +290,19 @@ class TestMainDispatch:
         assert fake.attached == "web-9"
         assert calls and calls[0]["episodes"] == 2048
 
-    def test_checkers_still_unsupported(self, monkeypatch, capsys):
-        # checkers stays stubbed (dynamic action space + no rules engine).
-        use_session(monkeypatch, FakeSession(job_info={
+    def test_checkers_is_supported(self, monkeypatch, capsys):
+        # checkers now has a full rules engine and self-play trainer.
+        fake = use_session(monkeypatch, FakeSession(job_info={
             "jobId": "web-10", "gameKey": "checkers", "status": "queued",
             "config": {"episodes": 100, "learningRate": 0.001},
         }))
+        calls = []
+        monkeypatch.setitem(train.TRAINERS, "checkers",
+                            lambda session, **kw: calls.append(kw) or 0)
         rc = train.main(["--token", "t" * 32, "--job-id", "web-10"])
-        assert rc == 2
-        assert "no local trainer for 'checkers'" in capsys.readouterr().err
+        assert rc == 0
+        assert fake.attached == "web-10"
+        assert calls and calls[0]["episodes"] == 100
 
     def test_invalid_args_exit_2_before_any_network(self, monkeypatch, capsys):
         monkeypatch.delenv("GAMENITE_TOKEN", raising=False)
