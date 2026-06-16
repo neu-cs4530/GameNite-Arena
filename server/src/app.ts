@@ -23,6 +23,7 @@ import * as broadcastChat from "./controllers/broadcastChat.controller.ts";
 import * as highlight from "./controllers/highlight.controller.ts";
 import * as training from "./controllers/training.controller.ts";
 import * as deployment from "./controllers/deployment.controller.ts";
+import { inferenceRouter } from "./controllers/inference.controller.ts";
 import { type GameServer } from "./types.ts";
 
 export const app = express();
@@ -127,7 +128,8 @@ app.use(
       express.Router().post("/create", highlight.postCreate).post("/list", highlight.postList),
     )
     .use("/training", training.trainingRouter())
-    .use("/deployment", deployment.deploymentRouter()),
+    .use("/deployment", deployment.deploymentRouter())
+    .use("/inference", inferenceRouter()),
 );
 
 io.on("connection", (socket) => {
