@@ -203,3 +203,43 @@ def test_traversal_model_id_rejected_before_any_io(client, monkeypatch, model_st
             json={"deployment_id": "d1", "game": "nim", "model_id": bad},
         )
         assert r.status_code != 200, f"traversal id {bad!r} must be rejected"
+
+
+def test_url_injection_model_id_rejected(client, monkeypatch, model_store):
+    """The positive allowlist refuses query/fragment/host/whitespace chars so a
+    model_id can't tamper with the upstream pull URL — rejected before any fetch."""
+    monkeypatch.setattr(
+        svc.httpx, "get",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not fetch")),
+    )
+    for bad in ["m?x=1", "m#frag", "evil@host", "a b", "m%2e%2e", "m\x00"]:
+        r = client.post(
+            "/inference/load", headers=AUTH,
+            json={"deployment_id": "d1", "game": "nim", "model_id": bad},
+        )
+        assert r.status_code == 400, f"unsafe id {bad!r} must be 400, got {r.status_code}"
+
+
+def test_valid_uuid_model_id_is_allowed_through(client, monkeypatch, model_store):
+    """A normal UUID-shaped id passes the allowlist and proceeds to the pull."""
+    pulled = {}
+
+    class FakeResponse:
+        status_code = 200
+        content = b"PYTORCHFAKE"
+        headers = {"Content-Length": "11"}
+
+    def fake_get(url, headers=None, timeout=None):
+        pulled["url"] = url
+        return FakeResponse()
+
+    monkeypatch.setattr(svc.httpx, "get", fake_get)
+    monkeypatch.setattr(svc, "_load_policy", lambda path: (object(), 5))
+    monkeypatch.setattr(svc.encoders, "OBS_SIZES", {"nim": [5]})
+    uuid_id = "9f9d9b7c-9f5a-4aae-ac3d-0041b03ba218"
+    r = client.post(
+        "/inference/load", headers=AUTH,
+        json={"deployment_id": "d1", "game": "nim", "model_id": uuid_id},
+    )
+    assert r.status_code == 200, r.text
+    assert pulled["url"].endswith(f"/api/inference/artifact/{uuid_id}")

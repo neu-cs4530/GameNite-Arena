@@ -18,12 +18,24 @@
  * reach the caller.
  */
 
+import { timingSafeEqual } from "node:crypto";
 import { type RequestHandler } from "express";
 
 /** The configured shared token, or undefined when unset/empty (fail-closed). */
 export function inferenceSharedToken(): string | undefined {
   const token = process.env["INFERENCE_SHARED_TOKEN"];
   return token === undefined || token === "" ? undefined : token;
+}
+
+/**
+ * Constant-time token comparison so a network attacker can't recover the token
+ * byte-by-byte from response timing. A length mismatch short-circuits to false
+ * (the only thing it leaks is "wrong length", harmless for a fixed-size token).
+ */
+function tokensMatch(presented: string, expected: string): boolean {
+  const a = Buffer.from(presented);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 /** Parse the bearer credential out of an Authorization header value. */
@@ -46,7 +58,7 @@ export const requireInferenceToken: RequestHandler = (req, res, next) => {
     return;
   }
   const presented = bearerCredential(req.header("Authorization"));
-  if (presented === undefined || presented !== expected) {
+  if (presented === undefined || !tokensMatch(presented, expected)) {
     res.status(401).send({ error: "Invalid inference token" });
     return;
   }

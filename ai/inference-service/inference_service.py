@@ -37,9 +37,12 @@ SECURITY NOTES:
 
 from __future__ import annotations
 
+import hmac
 import os
+import re
 import threading
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 import numpy as np
@@ -76,13 +79,22 @@ def require_shared_token(authorization: str | None = Header(default=None)) -> No
     presented = None
     if authorization is not None and authorization.startswith("Bearer "):
         presented = authorization[len("Bearer "):]
-    if presented is None or presented != expected:
+    if presented is None or not hmac.compare_digest(presented, expected):
         raise HTTPException(401, "Invalid inference token")
 
 
+_MODEL_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
 def _safe_model_id(model_id: str) -> str:
-    """Reject any model_id that could escape MODEL_STORE; return it unchanged."""
-    if os.sep in model_id or (os.altsep and os.altsep in model_id) or ".." in model_id:
+    """Reject any model_id that isn't a plain artifact name (positive allowlist).
+
+    Only [A-Za-z0-9._-] is permitted, and ".." is rejected outright, so the id
+    can neither escape MODEL_STORE on disk nor inject query/fragment/host
+    characters (?, #, @, whitespace, NUL, %-encodings) into the upstream pull
+    URL. Real model ids are UUIDs, which satisfy this.
+    """
+    if ".." in model_id or _MODEL_ID_RE.match(model_id) is None:
         raise HTTPException(400, f"Invalid model_id: {model_id!r}")
     return model_id
 
@@ -121,7 +133,7 @@ def _ensure_artifact_cached(model_id: str) -> str:
     if not NODE_API_URL:
         raise HTTPException(502, "NODE_API_URL is not configured; cannot pull artifact")
 
-    url = f"{NODE_API_URL}/api/inference/artifact/{model_id}"
+    url = f"{NODE_API_URL}/api/inference/artifact/{quote(model_id, safe='')}"
     try:
         resp = httpx.get(
             url,
