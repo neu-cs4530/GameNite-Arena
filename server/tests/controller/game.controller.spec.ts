@@ -232,10 +232,10 @@ describe("sendViewUpdates", () => {
   it("emits a watcher event and per-player events", () => {
     const { io, emits } = makeIo();
     const fakeViews = {
-      watchers: { type: "nim", view: { remaining: 5, nextPlayer: 0 }, forPlayer: false },
+      watchers: { type: "nim" as const, view: { remaining: 5, nextPlayer: 0 } },
       players: [
-        { userId: "u-a", view: { type: "nim", view: { remaining: 5, nextPlayer: 0 } } },
-        { userId: "u-b", view: { type: "nim", view: { remaining: 5, nextPlayer: 0 } } },
+        { userId: "u-a", view: { type: "nim" as const, view: { remaining: 5, nextPlayer: 0 } } },
+        { userId: "u-b", view: { type: "nim" as const, view: { remaining: 5, nextPlayer: 0 } } },
       ],
     };
     gameCtrl.sendViewUpdates(io, "game-xyz", fakeViews);

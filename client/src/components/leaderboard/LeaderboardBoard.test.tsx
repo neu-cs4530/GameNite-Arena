@@ -33,7 +33,7 @@ function makeEntry(rank: number, username: string, entityType: "human" | "ai" = 
     username,
     rating: 1500 + rank * 10,
     rd: 80,
-    vol: 0.06,
+    provisional: false,
     gamesPlayed: 10,
     wins: 5,
     winRate: 0.5,
@@ -41,7 +41,7 @@ function makeEntry(rank: number, username: string, entityType: "human" | "ai" = 
 }
 
 function makePage(entries: LeaderboardEntry[]): LeaderboardPage {
-  return { entries, total: entries.length, page: 1, pageSize: 100 };
+  return { entries, total: entries.length, page: 1, gameKey: "nim" as const, entityType: "all" as const, period: "alltime" as const, limit: 100 };
 }
 
 function renderBoard(props: { compact?: boolean } = {}) {
