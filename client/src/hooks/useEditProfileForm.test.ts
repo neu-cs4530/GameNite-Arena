@@ -70,7 +70,7 @@ describe("useEditProfileForm: password validation", () => {
 
 describe("useEditProfileForm: successful submit", () => {
   it("sends only display when only display changed", async () => {
-    mockedUpdate.mockResolvedValueOnce(undefined);
+    mockedUpdate.mockResolvedValueOnce(viewer);
     const { result } = renderHook(useEditProfileForm);
     act(() => { result.current.setDisplay("Bob"); });
     await act(async () => { await result.current.handleSubmit(fakeEvent()); });
@@ -83,7 +83,7 @@ describe("useEditProfileForm: successful submit", () => {
   });
 
   it("includes password in the update when it's changed", async () => {
-    mockedUpdate.mockResolvedValueOnce(undefined);
+    mockedUpdate.mockResolvedValueOnce(viewer);
     const { result } = renderHook(useEditProfileForm);
     act(() => { result.current.setDisplay("Bob"); result.current.setPassword("newpw"); result.current.setConfirm("newpw"); });
     await act(async () => { await result.current.handleSubmit(fakeEvent()); });
@@ -94,7 +94,7 @@ describe("useEditProfileForm: successful submit", () => {
   });
 
   it("sends only password when only password changed", async () => {
-    mockedUpdate.mockResolvedValueOnce(undefined);
+    mockedUpdate.mockResolvedValueOnce(viewer);
     const { result } = renderHook(useEditProfileForm);
     act(() => { result.current.setPassword("newpw"); result.current.setConfirm("newpw"); });
     await act(async () => { await result.current.handleSubmit(fakeEvent()); });
