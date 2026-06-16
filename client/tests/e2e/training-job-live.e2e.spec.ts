@@ -29,22 +29,33 @@ test.afterAll(async () => {
 });
 
 test.describe("Queued: the handoff state", () => {
-  test("shows the connect-your-trainer card with the exact attach command", async ({ page }) => {
+  test("masks the attach command behind a copy button that copies the real command", async ({
+    page,
+    context,
+  }) => {
     const run = await registerSession(api, user, { name: "live-handoff-bot" });
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
 
     await logInTrainer(page, user);
     await page.goto(`/trainer/jobs/${run.jobId}`);
 
     await expect(page.getByTestId("connect-trainer-card")).toBeVisible();
-    await expect(page.getByTestId("connect-trainer-command")).toContainText(
-      `--job-id ${run.jobId}`,
-    );
-    // The card hands out the real kit bootstrap one-liner with a minted
-    // training token — never username/password on the page.
-    await expect(page.getByTestId("connect-trainer-command")).toContainText(
-      "/api/training/kit/install.sh",
-    );
-    await expect(page.getByTestId("connect-trainer-command")).toContainText("--token");
+    // The ugly bootstrap one-liner (and its token) is masked — never printed
+    // on the page; the user just gets a copy button.
+    const cmdField = page.getByTestId("connect-trainer-command");
+    await expect(page.getByTestId("connect-trainer-command-copy")).toHaveText("Copy command");
+    await expect(cmdField).not.toContainText("install.sh");
+    await expect(cmdField).not.toContainText("--token");
+
+    // …but the button still copies the REAL kit bootstrap one-liner, with the
+    // minted token — and never the user's password.
+    await page.getByTestId("connect-trainer-command-copy").click();
+    const copied = await page.evaluate(() => navigator.clipboard.readText());
+    expect(copied).toContain(`--job-id ${run.jobId}`);
+    expect(copied).toContain("/api/training/kit/install.sh");
+    expect(copied).toContain("--token");
+    expect(copied).not.toContain(user.password);
+
     // No chart noise while there is nothing to chart.
     await expect(page.getByTestId("live-chart-section")).toHaveCount(0);
   });

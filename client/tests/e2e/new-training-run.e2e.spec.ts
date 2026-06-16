@@ -82,7 +82,10 @@ test.describe("Registration hands off to the live page", () => {
     await expect(page).toHaveURL(/\/trainer\/jobs\/.+/, { timeout: 10_000 });
     await expect(page.getByTestId("connect-trainer-card")).toBeVisible();
     const jobId = page.url().split("/trainer/jobs/")[1];
-    await expect(page.getByTestId("connect-trainer-command")).toContainText(`--job-id ${jobId}`);
+    // The attach command is masked behind a copy button — the job id and token
+    // are never printed on the page.
+    await expect(page.getByTestId("connect-trainer-command-copy")).toHaveText("Copy command");
+    await expect(page.getByTestId("connect-trainer-command")).not.toContainText(jobId);
 
     // The registered session is real: the API can report against it.
     const status = await reportProgress(api, user, jobId, 5);
