@@ -44,6 +44,19 @@ async function seedNimPuzzle(): Promise<void> {
   });
 }
 
+async function seedConnect4Puzzle(): Promise<void> {
+  // An empty board: the raw watcher view stores "."/"R"/"Y" cells, but the
+  // inference encoder needs player-relative ints — exercising the encode step.
+  const board = Array.from({ length: 6 }, () => [".", ".", ".", ".", ".", ".", "."]);
+  await PuzzleRepo.set(`connect4:${DATE}`, {
+    gameKey: "connect4",
+    date: DATE,
+    position: { board, nextPlayer: 0 },
+    solution: { moves: [3], explanation: "seeded by test" },
+    createdAt: NOW.toISOString(),
+  });
+}
+
 beforeEach(async () => {
   await DeploymentRepo.clear();
   await PuzzleRepo.clear();
@@ -53,6 +66,25 @@ beforeEach(async () => {
 });
 
 describe("submitAiAttempt", () => {
+  it("encodes a board game's position for inference (not the raw watcher view)", async () => {
+    await seedConnect4Puzzle();
+    const deploymentId = await seedNimDeployment(user, "connect4");
+    mockedRequestMove.mockResolvedValue({ move: 3 });
+
+    const result = await submitAiAttempt(user, "connect4", deploymentId, DATE, NOW);
+
+    expect(result).not.toBeNull();
+    // The model must receive the ENCODED board (player-relative ints), not the
+    // raw "R"/"Y"/"." watcher view the Python encoder can't read — that
+    // mismatch was the 400 when deploying a connect4 model on the daily puzzle.
+    expect(mockedRequestMove).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deploymentId,
+        state: { board: Array.from({ length: 6 }, () => [0, 0, 0, 0, 0, 0, 0]) },
+      }),
+    );
+  });
+
   it("grades the model's winning move as a solve and rates it toward the user's Elo", async () => {
     await seedNimPuzzle();
     const deploymentId = await seedNimDeployment(user);
@@ -72,7 +104,9 @@ describe("submitAiAttempt", () => {
 
     // The model was driven through inference with the puzzle's position.
     expect(mockedRequestMove).toHaveBeenCalledWith(
-      expect.objectContaining({ deploymentId, state: { remaining: 6, nextPlayer: 1 } }),
+      // nim encodes to just { remaining } (the per-game inference encoding),
+      // not the raw watcher view.
+      expect.objectContaining({ deploymentId, state: { remaining: 6 } }),
     );
   });
 
