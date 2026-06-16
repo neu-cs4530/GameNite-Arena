@@ -47,6 +47,71 @@ describe("TicTacToeReplayView", () => {
     render(<TicTacToeReplayView view={view} participants={PLAYERS} />);
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
+
+  it("shows an em dash for the next player when participants are missing", () => {
+    const view = { board: EMPTY_BOARD, nextPlayer: 0, winningEntry: null } as TicTacToeView;
+    render(<TicTacToeReplayView view={view} participants={[]} />);
+    expect(screen.getByText(/next to move/i)).toHaveTextContent("—");
+  });
+
+  it("shows an em dash for the winner when participants are missing", () => {
+    const view = {
+      board: EMPTY_BOARD,
+      nextPlayer: 1,
+      winningEntry: [[0, 0]],
+    } as unknown as TicTacToeView;
+    render(<TicTacToeReplayView view={view} participants={[]} />);
+    expect(screen.getByText(/game over/i)).toHaveTextContent("—");
+  });
+
+  it("renders an X mark for player 1's placed cell", () => {
+    // nextPlayer 0 means O is up next; an "X" already on the board exercises
+    // the X branch of renderMark.
+    const board: TicTacToeView["board"] = [
+      ["X", ".", "."],
+      [".", ".", "."],
+      [".", ".", "."],
+    ];
+    const view = { board, nextPlayer: 0, winningEntry: null } as TicTacToeView;
+    render(<TicTacToeReplayView view={view} participants={PLAYERS} />);
+    const cell = screen.getByTestId("ttt-cell-0-0");
+    expect(cell.querySelector(".ttt-mark--x")).not.toBeNull();
+    expect(cell).toHaveTextContent("X");
+  });
+
+  it("ghosts the AI target on an empty cell using the mover's mark", () => {
+    // nextPlayer 0 → me = "O"; AI suggests empty cell (1,1).
+    const view = { board: EMPTY_BOARD, nextPlayer: 0, winningEntry: null } as TicTacToeView;
+    render(<TicTacToeReplayView view={view} participants={PLAYERS} aiMove={[1, 1]} />);
+
+    const target = screen.getByTestId("ttt-ai-target");
+    expect(target).toHaveTextContent("O");
+    expect(screen.getByTestId("ttt-cell-1-1").className).toContain("ttt-cell--ai");
+  });
+
+  it("does not ghost the AI target on an occupied cell", () => {
+    // AI "suggests" (0,0), which already holds O → isAiTarget is false.
+    const view = { board: EMPTY_BOARD, nextPlayer: 0, winningEntry: null } as TicTacToeView;
+    render(<TicTacToeReplayView view={view} participants={PLAYERS} aiMove={[0, 0]} />);
+    expect(screen.queryByTestId("ttt-ai-target")).not.toBeInTheDocument();
+  });
+
+  it("ignores the AI suggestion once the game is over", () => {
+    const view = {
+      board: EMPTY_BOARD,
+      nextPlayer: 0,
+      winningEntry: [[2, 2]],
+    } as unknown as TicTacToeView;
+    render(<TicTacToeReplayView view={view} participants={PLAYERS} aiMove={[1, 1]} />);
+    expect(screen.queryByTestId("ttt-ai-target")).not.toBeInTheDocument();
+  });
+
+  it("renders an AI ghost as the X mark when player 1 is to move", () => {
+    // nextPlayer 1 → me = "X"; AI ghost at empty (2,2).
+    const view = { board: EMPTY_BOARD, nextPlayer: 1, winningEntry: null } as TicTacToeView;
+    render(<TicTacToeReplayView view={view} participants={PLAYERS} aiMove={[2, 2]} />);
+    expect(screen.getByTestId("ttt-ai-target")).toHaveTextContent("X");
+  });
 });
 
 describe("TicTacToeReplayView AI + engine highlights", () => {

@@ -33,6 +33,20 @@ describe("puzzleSolverOptions", () => {
     expect(puzzleSolverOptions([dep({ gameKey: "nim" })], "checkers")).toEqual([]);
   });
 
+  it("treats an unrated deployment as the weakest when sorting against a rated one", () => {
+    // Listing the unrated model first makes it the `b` argument of the first
+    // comparison, exercising the `b.rating?.rating ?? -Infinity` fallback so
+    // an unrated AI never outranks a rated one.
+    const deployments = [
+      dep({ deploymentId: "unrated", displayName: "Rookie" }),
+      dep({ deploymentId: "rated", displayName: "Pro", rating: { rating: 1500, gamesPlayed: 4 } }),
+    ];
+    expect(puzzleSolverOptions(deployments, "nim").map((o) => o.deploymentId)).toEqual([
+      "rated",
+      "unrated",
+    ]);
+  });
+
   it("labels with rounded rating when present, unrated with the bare name, strongest first", () => {
     const deployments = [
       dep({ deploymentId: "low", displayName: "Low", rating: { rating: 1200, gamesPlayed: 3 } }),

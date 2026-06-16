@@ -5,6 +5,12 @@
   min-width: 0;
 }
 
+/* Masked: no value block, so keep the button at its natural width on the
+   left rather than letting the row stretch it. */
+.ga-copy-field--masked {
+  justify-content: flex-start;
+}
+
 .ga-copy-field__label {
   flex: none;
   font-size: var(--text-small);

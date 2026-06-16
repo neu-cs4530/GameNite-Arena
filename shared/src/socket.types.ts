@@ -31,6 +31,9 @@ export interface ClientToServerEvents {
   chatSendMessage: (payload: WithAuth<NewMessagePayload>) => void;
   gameJoinAsPlayer: (payload: WithAuth<string>) => void;
   gameMakeMove: (payload: WithAuth<GameMakeMovePayload>) => void;
+  /** A player resigns the game; the other seat wins by forfeit. The payload
+   *  is the game id. Works on any turn — including while an AI is mid-move. */
+  gameForfeit: (payload: WithAuth<string>) => void;
   gameStart: (payload: WithAuth<string>) => void;
   gameWatch: (payload: WithAuth<string>) => void;
   matchmakingJoin: (payload: WithAuth<MatchmakingJoinPayload>) => void;

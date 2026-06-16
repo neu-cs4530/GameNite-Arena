@@ -186,7 +186,7 @@ export async function maybeFireAiMove(gameId: string): Promise<GameUpdateOutcome
         await GameRepo.set(gameId, game);
       }
       if (err.forfeit) {
-        return forfeitAiSeat(gameId, nextPlayerIndex);
+        return forfeitSeat(gameId, nextPlayerIndex);
       }
       // Service unreachable (503) after the client's own retries: this is an
       // infrastructure outage, NOT the model playing an invalid move, so it is
@@ -223,14 +223,14 @@ export async function maybeFireAiMove(gameId: string): Promise<GameUpdateOutcome
 }
 
 /**
- * Ends a game as an AI forfeit (CoS 2.8): the model in `forfeitingSeat`
- * struck out on consecutive invalid moves, so the OTHER seat wins. Marks the
- * game done, archives the match with outcome "forfeit", applies rating
- * updates for rated games, and returns the outcome so gameResult emits. The
- * returned views show the last accepted position — the forfeit was decided
- * off the board.
+ * Ends a game as a forfeit: the player in `forfeitingSeat` resigns, so the
+ * OTHER seat wins. Marks the game done, archives the match with outcome
+ * "forfeit", applies rating updates for rated games, and returns the outcome
+ * so gameResult emits. The returned views show the last accepted position —
+ * the forfeit was decided off the board. Used both when an AI strikes out on
+ * invalid moves (CoS 2.8) and when a human resigns via {@link forfeitGame}.
  */
-async function forfeitAiSeat(gameId: string, forfeitingSeat: number): Promise<GameUpdateOutcome> {
+async function forfeitSeat(gameId: string, forfeitingSeat: number): Promise<GameUpdateOutcome> {
   const game = await GameRepo.get(gameId);
   const winnerId = game.players[forfeitingSeat === 0 ? 1 : 0];
 
@@ -270,6 +270,29 @@ async function forfeitAiSeat(gameId: string, forfeitingSeat: number): Promise<Ga
     },
     gameResult,
   };
+}
+
+/**
+ * A player resigns the game (the "Forfeit" button). The resigning player's
+ * seat loses and the other seat wins by forfeit. This is turn-INDEPENDENT by
+ * design: a human can resign even when it is the AI's turn to move (the AI is
+ * "driving"), so a player is never stuck waiting on a model to exit. A
+ * forfeit that lands while an AI move is in flight still wins — the AI turn
+ * runner re-reads the game and stops once `done` is set.
+ *
+ * @throws if the game is missing, hasn't started, is already over, or the
+ *         user isn't one of its players.
+ */
+export async function forfeitGame(gameId: string, user: UserWithId): Promise<GameUpdateOutcome> {
+  const game = await GameRepo.find(gameId);
+  if (!game) throw new Error(`user ${user.username} forfeited an invalid game`);
+  if (!game.state) throw new Error(`user ${user.username} forfeited a game that hadn't started`);
+  if (game.done) throw new Error(`user ${user.username} forfeited a game that was already over`);
+  const playerIndex = game.players.findIndex((userId) => userId === user.userId);
+  if (playerIndex < 0) {
+    throw new Error(`user ${user.username} forfeited a game they weren't playing`);
+  }
+  return forfeitSeat(gameId, playerIndex);
 }
 
 /**

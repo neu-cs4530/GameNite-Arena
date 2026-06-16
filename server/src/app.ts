@@ -146,6 +146,7 @@ io.on("connection", (socket) => {
 
   socket.on("gameJoinAsPlayer", game.socketJoinAsPlayer(socket, io));
   socket.on("gameMakeMove", game.socketMakeMove(socket, io));
+  socket.on("gameForfeit", game.socketForfeit(socket, io));
   socket.on("gameStart", game.socketStart(socket, io));
   socket.on("gameWatch", game.socketWatch(socket, io));
 
