@@ -45,8 +45,24 @@ executes TypeScript directly (`node ./src/server.ts`), so a recent Node with
 native type stripping is required — older LTS versions will not start it. The
 optional AI training kit additionally needs Python 3.10+.
 
-Run `npm install` in the root directory to install dependencies for the
-`client`, `server`, and `shared` workspaces.
+### Quick start
+
+The fastest way to a working local instance is the `start_up.sh` script in the
+repository root. It provisions the local environment the server needs to boot
+(notably `REDIS_URL`, without which the server will not start) and launches
+the app in development mode:
+
+```sh
+chmod +x start_up.sh   # first run only — makes the script executable
+./start_up.sh
+```
+
+When it finishes, open the URL it prints (usually <http://localhost:4530/>)
+and log in with a seeded account such as `user0`/`pwd0000`.
+
+To set things up by hand instead, run `npm install` in the repository root to
+install dependencies for the `client`, `server`, and `shared` workspaces, then
+follow the manual steps below.
 
 ### Working on the application (development mode)
 
@@ -63,9 +79,10 @@ with any of the seeded accounts: `user0`/`pwd0000`, `user1`/`pwd1111`,
 
 ### Environment / external services
 
-Core gameplay runs with no extra setup (an in‑memory store is used by
-default). The advanced subsystems read configuration from the server
-environment:
+The `start_up.sh` script sets these up for local development. The server reads
+them from its environment (a `server/.env` file, loaded via `dotenv`). Note
+that `REDIS_URL` is **required for the server to start**; MongoDB is optional
+and falls back to an in‑memory store when `MONGODB_URI` is omitted.
 
 | Variable                                                                | Used for                                                                                                                             |
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
