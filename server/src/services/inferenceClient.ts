@@ -2,12 +2,20 @@
  * server/src/services/inferenceClient.ts
  * ======================================
  * Thin HTTP client the main backend uses to talk to the inference service
- * (a separate Render Web Service). Base URL comes from env so local dev and
- * Render deploys differ only by config.
+ * (now a self-hosted box reached over HTTPS). Base URL comes from env so local
+ * dev and the deployed box differ only by config.
  *
  * Env:
  *   INFERENCE_SERVICE_URL   e.g. http://localhost:8001 (dev)
- *                                https://gamenite-inference.onrender.com (prod)
+ *                                https://inference.your-box.example (prod box)
+ *   INFERENCE_SHARED_TOKEN  shared secret; sent as `Authorization: Bearer ...`
+ *                           on every request so only this backend can drive
+ *                           load/move/unload. Never logged.
+ *   INFERENCE_TLS_CA        the box's SELF-SIGNED CA, either inline PEM or a
+ *                           path to a PEM file. When set, Node's fetch trusts
+ *                           it via an undici dispatcher — verification stays ON
+ *                           (we never disable TLS globally). Mirrors the
+ *                           self-signed approach in redis.ts (redisTlsOptions).
  *
  * Note: the inference service API uses snake_case field names (Python/FastAPI
  * convention). We suppress the naming-convention lint rule on those objects only.
@@ -19,9 +27,71 @@
  * seam is unused because the active client IS the HTTP client.
  */
 
+import * as fs from "node:fs";
+import { Agent } from "undici";
 import { z } from "zod";
 
 const BASE_URL = process.env["INFERENCE_SERVICE_URL"] ?? "http://localhost:8001";
+
+/**
+ * The shared secret for the box, or undefined when unset/empty. When present
+ * it is attached as `Authorization: Bearer <token>`; when absent the header is
+ * simply omitted (the box itself fails closed). Read at call time so tests and
+ * deploys can set it via env without re-importing the module.
+ */
+function sharedToken(): string | undefined {
+  const token = process.env["INFERENCE_SHARED_TOKEN"];
+  return token === undefined || token === "" ? undefined : token;
+}
+
+/**
+ * The PEM for the box's self-signed CA, or undefined to verify against the
+ * system trust store. INFERENCE_TLS_CA is either inline PEM (begins with
+ * `-----BEGIN`) or a path to a PEM file. Exported under a test name so the
+ * resolution is unit-testable without spinning a TLS server.
+ */
+function resolveInferenceTlsCa(): string | undefined {
+  const raw = process.env["INFERENCE_TLS_CA"];
+  if (raw === undefined || raw === "") return undefined;
+  if (raw.includes("-----BEGIN")) return raw;
+  return fs.readFileSync(raw, "utf8");
+}
+
+/** Test hook: re-exported resolver for the self-signed CA (see spec). */
+export function inferenceTlsCaForTests(): string | undefined {
+  return resolveInferenceTlsCa();
+}
+
+/**
+ * An undici dispatcher that trusts the box's self-signed CA, built once on
+ * first use. Returns undefined when no CA is configured so fetch keeps its
+ * default (system-CA) dispatcher. We pin the CA rather than disabling
+ * verification — NODE_TLS_REJECT_UNAUTHORIZED is never touched.
+ */
+let tlsDispatcher: Agent | undefined;
+let tlsDispatcherResolved = false;
+function inferenceDispatcher(): Agent | undefined {
+  if (!tlsDispatcherResolved) {
+    const ca = resolveInferenceTlsCa();
+    tlsDispatcher = ca === undefined ? undefined : new Agent({ connect: { ca } });
+    tlsDispatcherResolved = true;
+  }
+  return tlsDispatcher;
+}
+
+/** Common request init: JSON, the shared-token header, and the TLS dispatcher. */
+function authedInit(extra: RequestInit): RequestInit {
+  const headers = new Headers(extra.headers);
+  headers.set("Content-Type", "application/json");
+  const token = sharedToken();
+  if (token !== undefined) headers.set("Authorization", `Bearer ${token}`);
+  // `dispatcher` is an undici extension to RequestInit that Node's fetch honors
+  // (declared by undici-types); an Agent is a Dispatcher, so this type-checks.
+  const init: RequestInit = { ...extra, headers };
+  const dispatcher = inferenceDispatcher();
+  if (dispatcher !== undefined) init.dispatcher = dispatcher;
+  return init;
+}
 
 /**
  * Retry/timeout policy for outbound inference calls.
@@ -151,12 +221,14 @@ function isRetryable(err: InferenceError): boolean {
 async function postOnce<T>(path: string, body: unknown, timeoutMs: number): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${BASE_URL}${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+    res = await fetch(
+      `${BASE_URL}${path}`,
+      authedInit({
+        method: "POST",
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(timeoutMs),
+      }),
+    );
   } catch (err) {
     const e = err as Error;
     const reason = e.name === "TimeoutError" || e.name === "AbortError" ? "timed out" : e.message;
@@ -210,7 +282,7 @@ interface InferenceClient {
     state: unknown;
     legalMoves?: unknown[];
   }): Promise<unknown>;
-  health(): Promise<{ status: string; loaded: string[] }>;
+  health(): Promise<{ status: string; loaded: number }>;
 }
 
 const httpClient: InferenceClient = {
@@ -241,9 +313,11 @@ const httpClient: InferenceClient = {
   },
 
   async health() {
-    const res = await fetch(`${BASE_URL}/inference/health`);
+    const res = await fetch(`${BASE_URL}/inference/health`, authedInit({ method: "GET" }));
     if (!res.ok) throw new InferenceError("Inference health failed", res.status);
-    return (await res.json()) as { status: string; loaded: string[] };
+    // The box's open /health returns minimal info: a status and an occupancy
+    // COUNT (never the deployment-id list — that requires the token).
+    return (await res.json()) as { status: string; loaded: number };
   },
 };
 
@@ -286,6 +360,6 @@ export function requestMove(input: {
 }
 
 /** Liveness check. */
-export function health(): Promise<{ status: string; loaded: string[] }> {
+export function health(): Promise<{ status: string; loaded: number }> {
   return activeClient.health();
 }

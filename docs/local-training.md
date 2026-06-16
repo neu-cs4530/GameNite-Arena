@@ -147,6 +147,50 @@ trained-model files. The contract:
 Migration `001_canonical_artifact_refs` rewrites legacy absolute-path refs
 into this shape (`npm run -w server migrate`).
 
+## Self-hosted inference box (artifact pull-and-cache)
+
+The Python inference service can run on a **self-hosted box** instead of
+sharing Render's disk. Render stays the **canonical** artifact store; the box
+keeps a **local cache** filled lazily on demand. The upload/deploy flow and
+the frontend are unchanged.
+
+Topology:
+
+- **Node (on Render)** exposes `GET /api/inference/artifact/:modelId`, which
+  streams the canonical `<modelId>.pth` (resolved through the same
+  `resolveArtifactRef` so traversal/absolute `:modelId` values 404, never
+  escape the store). It is gated by a **shared bearer token**, not user
+  body-auth, and **fails closed** (503) when the token is unconfigured.
+- **Node → box**: `inferenceClient.ts` calls the box's `/inference/load`,
+  `/inference/move`, `/inference/unload` over HTTPS, sending
+  `Authorization: Bearer <INFERENCE_SHARED_TOKEN>`. For the box's
+  **self-signed cert** it trusts a pinned CA via an undici dispatcher (it
+  never disables TLS verification globally — mirrors `redis.ts`'s self-signed
+  handling).
+- **Box → Render**: on `/inference/load`, if `MODEL_STORE/<model_id>.pth` is
+  missing the box pulls it once from
+  `NODE_API_URL/api/inference/artifact/<model_id>` (with the shared token),
+  writes it to disk, then loads it. If the file already exists it loads from
+  disk with **no** network call. The box verifies Render's (valid) cert
+  normally. `model_id` is sanitized (no path separators / `..`) before it
+  touches the filesystem or the URL.
+- `/inference/health` stays open but returns minimal info (status + occupancy
+  count); it never leaks the loaded deployment-id list without the token.
+
+### Environment variables
+
+| Var                      | Side | Purpose                                                                                                                                                           |
+| ------------------------ | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `INFERENCE_SHARED_TOKEN` | both | Shared bearer secret for the Node↔box link. Unset/empty ⇒ the gated endpoints fail closed (Node 503; box 503). Never logged.                                      |
+| `INFERENCE_SERVICE_URL`  | Node | Base URL Node uses to reach the box, e.g. `https://inference.your-box.example` (dev: `http://localhost:8001`).                                                    |
+| `INFERENCE_TLS_CA`       | Node | The box's self-signed CA, either inline PEM or a path to a PEM file. When set, Node's fetch trusts it (verification stays on). Unset ⇒ verify against system CAs. |
+| `NODE_API_URL`           | box  | The Render base URL the box pulls canonical artifacts from, e.g. `https://gamenite.onrender.com`.                                                                 |
+| `MODEL_STORE_PATH`       | box  | Local cache directory for `<model_id>.pth` (default `models`).                                                                                                    |
+
+Combined (single-host) deploys still work: leave `INFERENCE_TLS_CA` /
+`NODE_API_URL` unset, point `MODEL_STORE_PATH` at `server/models`, and the
+artifact is already on disk so no pull happens.
+
 ## The trainer CLI
 
 `ai/train.py` is the canonical workflow with nothing faked: chunked SB3 PPO

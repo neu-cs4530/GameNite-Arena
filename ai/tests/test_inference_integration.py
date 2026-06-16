@@ -20,6 +20,16 @@ from fastapi.testclient import TestClient
 
 import inference_service as svc
 
+# The load/move/unload endpoints are gated by the shared token (self-host
+# contract). Configure it once and send it on every gated call.
+TOKEN = "integration-shared-token"
+AUTH = {"Authorization": f"Bearer {TOKEN}"}
+
+
+@pytest.fixture(autouse=True)
+def shared_token(monkeypatch):
+    monkeypatch.setattr(svc, "INFERENCE_SHARED_TOKEN", TOKEN)
+
 
 # stubs
 
@@ -72,7 +82,7 @@ def _load(client, monkeypatch, model_store, *, dep_id, game, action,
         obs_size = max(svc.encoders.OBS_SIZES[game])   # newest contract
     stub = StubModel(action)
     monkeypatch.setattr(svc, "_load_policy", lambda path: (stub, obs_size))
-    response = client.post("/inference/load", json={
+    response = client.post("/inference/load", headers=AUTH, json={
         "deployment_id": dep_id,
         "game": game,
         "model_id": model_id,
@@ -86,28 +96,31 @@ def _load(client, monkeypatch, model_store, *, dep_id, game, action,
 def test_health_empty(client):
     r = client.get("/inference/health")
     assert r.status_code == 200
-    assert r.json()["loaded"] == []
+    # Minimal health: occupancy count only, never the deployment-id list.
+    assert r.json()["loaded"] == 0
 
 
 def test_load_unknown_game_rejected(client, model_store):
-    r = client.post("/inference/load", json={
+    r = client.post("/inference/load", headers=AUTH, json={
         "deployment_id": "d1", "game": "chess", "model_id": "m1",
     })
     assert r.status_code == 422
 
 
-def test_load_missing_artifact_is_404(client, model_store):
-    # No file written — should 404
-    r = client.post("/inference/load", json={
+def test_load_missing_artifact_pulls_then_502_on_no_node(client, model_store, monkeypatch):
+    # No local file and no NODE_API_URL configured -> the lazy pull can't run,
+    # so the load fails as a bad upstream (502) rather than a local 404.
+    monkeypatch.setattr(svc, "NODE_API_URL", "")
+    r = client.post("/inference/load", headers=AUTH, json={
         "deployment_id": "d1", "game": "nim", "model_id": "missing",
     })
-    assert r.status_code == 404
+    assert r.status_code == 502
 
 
 def test_move_nim_decodes_action(client, monkeypatch, model_store):
     # action index 2 -> nim "take 3"
     assert _load(client, monkeypatch, model_store, dep_id="d1", game="nim", action=2).status_code == 200
-    r = client.post("/inference/move", json={
+    r = client.post("/inference/move", headers=AUTH, json={
         "deployment_id": "d1", "state": {"remaining": 7},
     })
     assert r.status_code == 200
@@ -119,7 +132,7 @@ def test_move_nim_v2_model_gets_v2_observation(client, monkeypatch, model_store)
     loaded = _load(client, monkeypatch, model_store,
                    dep_id="d1", game="nim", action=0, obs_size=5)
     assert loaded.status_code == 200
-    r = client.post("/inference/move", json={
+    r = client.post("/inference/move", headers=AUTH, json={
         "deployment_id": "d1", "state": {"remaining": 7},
     })
     assert r.status_code == 200
@@ -136,7 +149,7 @@ def test_move_nim_legacy_model_gets_normalized_scalar(client, monkeypatch, model
     loaded = _load(client, monkeypatch, model_store,
                    dep_id="d1", game="nim", action=0, obs_size=1)
     assert loaded.status_code == 200
-    r = client.post("/inference/move", json={
+    r = client.post("/inference/move", headers=AUTH, json={
         "deployment_id": "d1", "state": {"remaining": 7},
     })
     assert r.status_code == 200
@@ -154,7 +167,7 @@ def test_load_nim_rejects_unsupported_obs_size(client, monkeypatch, model_store)
 def test_move_checkers_uses_legal_moves(client, monkeypatch, model_store):
     # action 5 % 3 == 2 -> third legal move
     assert _load(client, monkeypatch, model_store, dep_id="d2", game="checkers", action=5).status_code == 200
-    r = client.post("/inference/move", json={
+    r = client.post("/inference/move", headers=AUTH, json={
         "deployment_id": "d2",
         "state": {"squares": ["empty"] * 32},
         "legal_moves": ["mA", "mB", "mC"],
@@ -164,7 +177,7 @@ def test_move_checkers_uses_legal_moves(client, monkeypatch, model_store):
 
 
 def test_move_on_missing_deployment_is_404(client):
-    r = client.post("/inference/move", json={
+    r = client.post("/inference/move", headers=AUTH, json={
         "deployment_id": "nope", "state": {"remaining": 3},
     })
     assert r.status_code == 404
@@ -175,21 +188,21 @@ def test_forfeit_after_three_invalid(client, monkeypatch, model_store):
     assert _load(client, monkeypatch, model_store, dep_id="d3", game="nim", action=0).status_code == 200
     bad = {"deployment_id": "d3", "state": {"remaining": "not-an-int"}}
 
-    r1 = client.post("/inference/move", json=bad)
+    r1 = client.post("/inference/move", headers=AUTH, json=bad)
     assert r1.status_code == 422
     assert r1.json()["detail"]["consecutive_invalid"] == 1
     assert r1.json()["detail"]["forfeit"] is False
 
-    client.post("/inference/move", json=bad)
-    r3 = client.post("/inference/move", json=bad)
+    client.post("/inference/move", headers=AUTH, json=bad)
+    r3 = client.post("/inference/move", headers=AUTH, json=bad)
     assert r3.json()["detail"]["consecutive_invalid"] == 3
     assert r3.json()["detail"]["forfeit"] is True
 
 
 def test_valid_move_resets_invalid_counter(client, monkeypatch, model_store):
     assert _load(client, monkeypatch, model_store, dep_id="d4", game="nim", action=1).status_code == 200
-    client.post("/inference/move", json={"deployment_id": "d4", "state": {"remaining": "x"}})
-    ok = client.post("/inference/move", json={"deployment_id": "d4", "state": {"remaining": 5}})
+    client.post("/inference/move", headers=AUTH, json={"deployment_id": "d4", "state": {"remaining": "x"}})
+    ok = client.post("/inference/move", headers=AUTH, json={"deployment_id": "d4", "state": {"remaining": 5}})
     assert ok.status_code == 200
     assert svc._REGISTRY["d4"].consecutive_invalid == 0
 
@@ -197,11 +210,11 @@ def test_valid_move_resets_invalid_counter(client, monkeypatch, model_store):
 def test_unload_frees_slot(client, monkeypatch, model_store):
     _load(client, monkeypatch, model_store, dep_id="d5", game="nim", action=0)
     assert "d5" in svc._REGISTRY
-    r = client.post("/inference/unload", json={"deployment_id": "d5"})
+    r = client.post("/inference/unload", headers=AUTH, json={"deployment_id": "d5"})
     assert r.status_code == 200
     assert "d5" not in svc._REGISTRY
 
 
 def test_unload_missing_is_404(client):
-    r = client.post("/inference/unload", json={"deployment_id": "ghost"})
+    r = client.post("/inference/unload", headers=AUTH, json={"deployment_id": "ghost"})
     assert r.status_code == 404
