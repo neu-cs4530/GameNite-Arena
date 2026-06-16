@@ -97,6 +97,17 @@ export const zMatchmakingJoinPayload = z.object({
 export const AI_PLAYABLE_GAME_KEYS: GameKey[] = ["nim", "tictactoe", "connect4", "checkers"];
 
 /**
+ * Games with a built-in closed-form / perfect-play engine for replay analysis.
+ * For these the server can compute the optimal move from any position, so the
+ * analyzer flags every played move (best / blunder / inaccuracy) and surfaces
+ * the best line. Nim is closed-form (misère, mod-4); tic-tac-toe is fully
+ * solved by minimax. Connect 4 and checkers have no feasible perfect solver
+ * here, and guess is hidden-information — those games get optional AI-model
+ * insight only, never a built-in engine verdict.
+ */
+export const ENGINE_SOLVABLE_GAME_KEYS: GameKey[] = ["nim", "tictactoe"];
+
+/**
  * The TaggedGameView type allows the views for different game to be
  * distinguished.
  *

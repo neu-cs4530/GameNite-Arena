@@ -135,4 +135,10 @@ export interface AnalysisResult {
   matchId: string;
   generatedAt: string;
   perMove: AnalysisMoveResult[];
+  /**
+   * Set when a deploymentId was supplied but the model could not be run
+   * (inference unreachable, model not loadable, unsupported game) — so the
+   * client can say the AI insight failed instead of silently showing nothing.
+   */
+  aiError?: string;
 }

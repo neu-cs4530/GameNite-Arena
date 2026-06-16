@@ -48,8 +48,11 @@ async function populateGameInfo(gameId: string): Promise<GameInfo> {
 /**
  * Build the state payload for the inference service from the raw game state.
  * Must match the observation encoding in ai/inference-service/encoders.py.
+ *
+ * Exported so the replay analyzer feeds models the SAME per-game encoding the
+ * live AI-move loop uses, instead of a hardcoded placeholder.
  */
-function encodeStateForInference(gameKey: GameKey, state: unknown): Record<string, unknown> {
+export function encodeStateForInference(gameKey: GameKey, state: unknown): Record<string, unknown> {
   if (gameKey === "nim") {
     const s = state as { remaining: number; nextPlayer: number };
     return { remaining: s.remaining };

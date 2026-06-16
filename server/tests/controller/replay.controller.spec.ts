@@ -289,6 +289,43 @@ describe("POST /api/replay/:matchId/analysis", () => {
     expect(res.body.perMove[0]).toMatchObject({ moveIndex: 0, flag: "neutral" });
   });
 
+  it("returns real tic-tac-toe engine verdicts (a blunder + best line) through the route", async () => {
+    // X (player 1) has an immediate win in the middle row; playing [2,2] throws
+    // it away and lets O win — a blunder with a concrete suggested move. Before
+    // this fix tic-tac-toe fell through to the guess analyzer and came back all
+    // neutral/0 (no insight).
+    await MatchRepo.set("ctrl-ttt", {
+      gameId: "game-ttt-1",
+      gameKey: "tictactoe",
+      rated: true,
+      participants: [
+        { id: "u-a", type: "human", displayName: "Alice" },
+        { id: "u-b", type: "human", displayName: "Bob" },
+      ],
+      moves: [{ actor: "u-a", move: [2, 2], timestamp: "2026-06-09T02:00:00.000Z" }],
+      result: { outcome: "win", winnerId: "u-b" },
+      initialState: {
+        board: [
+          ["O", "O", "."],
+          ["X", "X", "."],
+          [".", ".", "."],
+        ],
+        nextPlayer: 1,
+      },
+      createdAt: "2026-06-09T02:10:00.000Z",
+      completedAt: "2026-06-09T02:10:00.000Z",
+    });
+
+    const res = await supertest(makeApp())
+      .post("/api/replay/ctrl-ttt/analysis")
+      .send({ auth: auth1, payload: {} });
+
+    expect(res.status).toBe(200);
+    expect(res.body.perMove).toHaveLength(1);
+    expect(res.body.perMove[0]).toMatchObject({ moveIndex: 0, flag: "blunder", confidence: 1 });
+    expect(res.body.perMove[0].suggestedMove).toBeDefined();
+  });
+
   it("returns 400 when the request body omits auth", async () => {
     await MatchRepo.set("ctrl-nim", nimRecord());
 
