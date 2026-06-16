@@ -244,6 +244,64 @@ describe("updateGame with an AI opponent", () => {
     expect(consoleError).toHaveBeenCalled();
   });
 
+  it("loads the model on demand on a 'no such deployment' 404, then retries the move", async () => {
+    // The box's model registry is in-memory and resets on restart, and a model
+    // deployed while inference had no URL was never loaded — both surface as a
+    // 404 on /move. The live path must pull-and-load on that 404 and retry.
+    const requestMove = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new InferenceError("Inference /inference/move failed: No such deployment", 404),
+      )
+      .mockResolvedValueOnce({ move: 2 });
+    const loadModel = vi.fn().mockResolvedValue({ status: "loaded" });
+    setInferenceClientForTests({ requestMove, loadModel });
+    const gameId = await seedNimGame({
+      players: [user0.userId, botSeat.deploymentId],
+      aiPlayers: [null, botSeat],
+      state: { remaining: 18, nextPlayer: 1 },
+    });
+
+    const reply = await maybeFireAiMove(gameId);
+
+    expect(loadModel).toHaveBeenCalledExactlyOnceWith({
+      deploymentId: botSeat.deploymentId,
+      game: "nim",
+      modelId: botSeat.modelId,
+    });
+    expect(requestMove).toHaveBeenCalledTimes(2);
+    expect(reply).not.toBeNull();
+    expect(nimView(reply!.views)).toEqual({ remaining: 16, nextPlayer: 0 });
+  });
+
+  it("abandons (no decision) when the model can't be loaded — e.g. its artifact is gone", async () => {
+    // 404 on move -> load -> the box can't pull the .pth from the API (502).
+    // Not the model's fault and not recoverable, so abandon rather than hang.
+    const requestMove = vi
+      .fn()
+      .mockRejectedValue(
+        new InferenceError("Inference /inference/move failed: No such deployment", 404),
+      );
+    const loadModel = vi
+      .fn()
+      .mockRejectedValue(
+        new InferenceError("Inference /inference/load failed: artifact pull failed", 502),
+      );
+    setInferenceClientForTests({ requestMove, loadModel });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const gameId = await seedNimGame({
+      players: [user0.userId, botSeat.deploymentId],
+      aiPlayers: [null, botSeat],
+      state: { remaining: 18, nextPlayer: 1 },
+    });
+
+    const outcome = await maybeFireAiMove(gameId);
+
+    expect(outcome?.gameResult).toEqual({ outcome: "abandoned" });
+    expect(loadModel).toHaveBeenCalledOnce();
+    expect(consoleError).toHaveBeenCalled();
+  });
+
   it("keeps the human move when the AI's move is illegal for the game", async () => {
     scriptAiMoves(15); // larger than remaining: nim rejects it
     const gameId = await seedNimGame({
