@@ -207,6 +207,44 @@ locally.
 **Base URL (local):** `http://localhost:8001`  
 **Base URL (Render):** set `INFERENCE_SERVICE_URL` on the Node server.
 
+> **Production checklist (required for AI matches to work on Render).** The
+> Node server reaches the inference service purely through
+> `INFERENCE_SERVICE_URL`. If it is unset, the server falls back to
+> `http://localhost:8001`, which does not exist inside the Render container —
+> every AI move then fails with
+> `InferenceError: Inference service unreachable: fetch failed` (status 503).
+> Set it to the inference service's public URL, e.g.
+> `INFERENCE_SERVICE_URL=https://gamenite-inference.onrender.com`. Use
+> **https** for any non-localhost host (Render terminates TLS at its proxy;
+> plain http can 307-redirect and break the POST body).
+>
+> The inference service must actually be a running Render service. On the free
+> tier a Web Service spins down after ~15 min idle and the first request after
+> that fails (`fetch failed`) until it cold-starts (~50s). The Node client now
+> retries transient unreachability with backoff (see "Resilience" below),
+> which covers a single cold start, but for a smoother experience keep the
+> service warm (a paid instance, or an external cron pinging
+> `/inference/health` every few minutes).
+
+### Resilience (retry / timeout)
+
+`server/src/services/inferenceClient.ts` retries transient failures (network
+error, cold-start `503`, gateway `502`/`504`) with exponential backoff before
+giving up; deterministic `4xx` responses (including the `422` invalid-move /
+forfeit signal) are never retried. All knobs are env-tunable on the Node
+server:
+
+| Env var                   | Default | Meaning                                          |
+| ------------------------- | ------- | ------------------------------------------------ |
+| `INFERENCE_MAX_ATTEMPTS`  | `3`     | Total attempts per call (1 disables retries)     |
+| `INFERENCE_RETRY_BASE_MS` | `300`   | Base backoff; grows ~2^n with jitter             |
+| `INFERENCE_TIMEOUT_MS`    | `10000` | Per-attempt deadline (request aborted past this) |
+
+If inference stays unreachable after the retry budget is spent, a live AI
+match is **not** left hanging on the AI's turn: it ends as a no-decision
+`abandoned` result (no winner, no rating change — an outage is not the model's
+fault). This is distinct from the `422`/forfeit path, which still applies.
+
 | Method | Path                | Description                                            |
 | ------ | ------------------- | ------------------------------------------------------ |
 | `GET`  | `/inference/health` | Liveness check + list of loaded deployment IDs         |
@@ -288,12 +326,13 @@ INFERENCE_SERVICE_URL   Node server uses this to reach the inference service
 
 ## Troubleshooting
 
-| Symptom                                | Likely cause                        | Fix                                                                                              |
-| -------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `422 Unknown game: numguesser`         | Old game key                        | Use `"guess"` not `"numguesser"`                                                                 |
-| `422 Adapter version mismatch`         | Stale artifact                      | Retrain with current `base_adapter.py`                                                           |
-| `404 Artifact not found`               | Wrong `model_id` or missing file    | Check file exists in `models/<model_id>.pth`                                                     |
-| `500 Loaded artifact has no predict()` | Wrong export format                 | Ensure `base_adapter.save()` was used                                                            |
-| Nim model plays randomly / won't learn | Legacy `(1,)` obs or wrong encoding | Retrain with v2 `NimAdapter` — v2 obs `(5,)` with mod-4 one-hot is required for PPO to learn nim |
-| AI never takes its turn (guess game)   | Old `game.service.ts`               | Update to Sprint 3 version                                                                       |
-| AI freezes on nim endgame              | Old `game.service.ts`               | Update to Sprint 3 version (move clamping)                                                       |
+| Symptom                                                                            | Likely cause                                                                                                           | Fix                                                                                                                                                                           |
+| ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `422 Unknown game: numguesser`                                                     | Old game key                                                                                                           | Use `"guess"` not `"numguesser"`                                                                                                                                              |
+| `422 Adapter version mismatch`                                                     | Stale artifact                                                                                                         | Retrain with current `base_adapter.py`                                                                                                                                        |
+| `404 Artifact not found`                                                           | Wrong `model_id` or missing file                                                                                       | Check file exists in `models/<model_id>.pth`                                                                                                                                  |
+| `500 Loaded artifact has no predict()`                                             | Wrong export format                                                                                                    | Ensure `base_adapter.save()` was used                                                                                                                                         |
+| Nim model plays randomly / won't learn                                             | Legacy `(1,)` obs or wrong encoding                                                                                    | Retrain with v2 `NimAdapter` — v2 obs `(5,)` with mod-4 one-hot is required for PPO to learn nim                                                                              |
+| AI never takes its turn (guess game)                                               | Old `game.service.ts`                                                                                                  | Update to Sprint 3 version                                                                                                                                                    |
+| AI freezes on nim endgame                                                          | Old `game.service.ts`                                                                                                  | Update to Sprint 3 version (move clamping)                                                                                                                                    |
+| `InferenceError: Inference service unreachable: fetch failed` (503) in server logs | `INFERENCE_SERVICE_URL` unset (server hits localhost:8001 inside Render), or the inference service is down / spun down | Set `INFERENCE_SERVICE_URL=https://<inference-host>` on the Node server and confirm the inference service is up (`GET /inference/health`); see the production checklist above |
