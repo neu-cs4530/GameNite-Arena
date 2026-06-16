@@ -128,6 +128,10 @@ def test_load_pulls_from_node_when_no_local_file(client, monkeypatch, model_stor
     class FakeResponse:
         status_code = 200
         content = fetched
+        # A real httpx 200 from res.download() carries Content-Length; the box
+        # uses it to reject truncated pulls, so a clean pull must declare the
+        # matching length.
+        headers = {"Content-Length": str(len(fetched))}
 
     def fake_get(url, headers=None, timeout=None):
         calls["url"] = url

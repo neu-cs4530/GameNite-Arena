@@ -93,7 +93,25 @@ def _ensure_artifact_cached(model_id: str) -> str:
     Lazy pull-and-cache: when MODEL_STORE/<model_id>.pth is missing, fetch it
     from NODE_API_URL/api/inference/artifact/<model_id> with the shared token,
     write the bytes to disk, then return the path. When the file already exists
-    it is returned WITHOUT any network call. A non-200 pull is a 502.
+    it is returned WITHOUT any network call.
+
+    Failure handling (a bad pull must surface clearly and never poison the
+    cache, since `os.path.exists()` short-circuits future loads with no
+    re-fetch):
+
+      * Network failure / non-200 pull  -> 502.
+      * Integrity: an empty (0-byte) body, or a body shorter than the
+        Content-Length the Node endpoint advertises (a connection dropped
+        mid-stream after a 200), is a truncated/corrupt artifact -> 502, with
+        nothing written. The Node endpoint serves via res.download(), which
+        sets Content-Length but exposes no sha256, so this size check is the
+        strongest integrity signal available without a server-side hash.
+      * Disk-write failure (full disk, read-only fs, permissions) -> 507,
+        instead of a raw OSError surfacing as a 500 stack trace.
+
+    The bytes are written to a temp file in MODEL_STORE and os.replace()'d into
+    the canonical name atomically, so a partial write or a crash mid-write can
+    never become the cached file; the temp is unlinked on any failure.
     """
     _safe_model_id(model_id)
     artifact_path = os.path.join(MODEL_STORE, f"{model_id}.pth")
@@ -119,9 +137,37 @@ def _ensure_artifact_cached(model_id: str) -> str:
             f"Artifact pull failed for {model_id} ({resp.status_code})",
         )
 
-    os.makedirs(MODEL_STORE, exist_ok=True)
-    with open(artifact_path, "wb") as f:
-        f.write(resp.content)
+    content = resp.content
+    # Integrity: reject empty or truncated bodies before they can be cached.
+    if len(content) == 0:
+        raise HTTPException(502, f"Artifact pull for {model_id} returned an empty body")
+    declared = resp.headers.get("Content-Length")
+    if declared is not None:
+        try:
+            expected_len = int(declared)
+        except ValueError:
+            expected_len = None
+        if expected_len is not None and len(content) != expected_len:
+            raise HTTPException(
+                502,
+                f"Artifact pull for {model_id} was truncated "
+                f"({len(content)} of {expected_len} bytes)",
+            )
+
+    # Atomic write: temp file + os.replace, so a partial write never becomes
+    # the canonical cache file. A disk-write OSError surfaces as 507, not 500.
+    tmp_path = f"{artifact_path}.{os.getpid()}.tmp"
+    try:
+        os.makedirs(MODEL_STORE, exist_ok=True)
+        with open(tmp_path, "wb") as f:
+            f.write(content)
+        os.replace(tmp_path, artifact_path)
+    except OSError as e:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise HTTPException(507, f"Failed to cache artifact for {model_id}: {e}")
     return artifact_path
 
 
