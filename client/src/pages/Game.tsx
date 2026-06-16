@@ -6,6 +6,7 @@ import type { GameInfo } from "@gamenite/shared";
 import ChatPanel from "../components/ChatPanel.tsx";
 import GamePanel from "../components/GamePanel.tsx";
 import HighlightButton from "../components/live/HighlightButton.tsx";
+import GoLiveButton from "../components/live/GoLiveButton.tsx";
 import useAuth from "../hooks/useAuth.ts";
 
 export default function Game() {
@@ -38,6 +39,7 @@ export default function Game() {
       <div className="gameWrapper">
         {isPlayer && game.status === "active" && (
           <div className="gameToolbar">
+            <GoLiveButton gameId={game.gameId} />
             <HighlightButton gameId={game.gameId} />
           </div>
         )}
