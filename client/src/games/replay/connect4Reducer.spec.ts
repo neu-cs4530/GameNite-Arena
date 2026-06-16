@@ -85,7 +85,7 @@ describe("connect4ViewFromState", () => {
     let s = emptyState();
     // Red: cols 0–3, Yellow: cols 4–6 (losing moves)
     for (let i = 0; i < 4; i++) {
-      s = applyConnect4Move(s, i);     // R
+      s = applyConnect4Move(s, i); // R
       if (i < 3) s = applyConnect4Move(s, 4 + i); // Y (interleaved)
     }
     const view = connect4ViewFromState(s);
@@ -107,10 +107,6 @@ describe("connect4ViewFromState", () => {
   it("detects a diagonal four-in-a-row", () => {
     // Build a diagonal win for R: cells (5,0),(4,1),(3,2),(2,3)
     // Lay foundations first (Y sacrifices).
-    const moves = [
-      // col: 1,1,1, 2,2, 3  then 0,1,2,3
-      1, 0, 1, 0, 1, 0, // col 1 gets 3 Y, col 0 gets 3 R (foundation)
-    ];
     let s = emptyState();
     for (const m of [1, 0, 1, 0, 2, 0, 2, 0, 3, 0, 2, 0, 3, 1, 3, 2, 3]) {
       s = applyConnect4Move(s, m);

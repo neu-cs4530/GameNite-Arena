@@ -3,8 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import React from "react";
 import LeaderboardBoard from "./LeaderboardBoard.tsx";
-import type { LeaderboardPage } from "../../util/types.ts";
-import type { LeaderboardEntry } from "../../util/types.ts";
+import type { LeaderboardPage, LeaderboardEntry } from "../../util/types.ts";
 
 // ── Mocks ──────────────────────────────────────────────────────────────────────
 
@@ -19,12 +18,16 @@ vi.mock("../../hooks/useLoginContext.ts", () => ({
 
 const mockedGetLeaderboard = vi.fn();
 vi.mock("../../services/leaderboardService.ts", () => ({
-  getLeaderboard: (...args: unknown[]) => mockedGetLeaderboard(...args),
+  getLeaderboard: (...args: unknown[]) => mockedGetLeaderboard(...args) as unknown,
 }));
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function makeEntry(rank: number, username: string, entityType: "human" | "ai" = "human"): LeaderboardEntry {
+function makeEntry(
+  rank: number,
+  username: string,
+  entityType: "human" | "ai" = "human",
+): LeaderboardEntry {
   return {
     rank,
     entityId: `id-${username}`,
@@ -41,7 +44,15 @@ function makeEntry(rank: number, username: string, entityType: "human" | "ai" = 
 }
 
 function makePage(entries: LeaderboardEntry[]): LeaderboardPage {
-  return { entries, total: entries.length, page: 1, gameKey: "nim" as const, entityType: "all" as const, period: "alltime" as const, limit: 100 };
+  return {
+    entries,
+    total: entries.length,
+    page: 1,
+    gameKey: "nim" as const,
+    entityType: "all" as const,
+    period: "alltime" as const,
+    limit: 100,
+  };
 }
 
 function renderBoard(props: { compact?: boolean } = {}) {
@@ -99,9 +110,7 @@ describe("LeaderboardBoard — populated state", () => {
   });
 
   it("marks the viewer's own row with the self testid", async () => {
-    mockedGetLeaderboard.mockResolvedValue(
-      makePage([makeEntry(1, "alice"), makeEntry(2, "bob")]),
-    );
+    mockedGetLeaderboard.mockResolvedValue(makePage([makeEntry(1, "alice"), makeEntry(2, "bob")]));
     renderBoard();
     await waitFor(() => {
       expect(screen.getByTestId("lb-row-self")).toBeInTheDocument();

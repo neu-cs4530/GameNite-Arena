@@ -389,10 +389,7 @@ describe("production store stack over HTTP", () => {
 
 // ── handleReplayDisconnecting ────────────────────────────────────────────────
 
-import {
-  handleReplayDisconnecting,
-  replayRoom,
-} from "../../src/controllers/replay.controller.ts";
+import { handleReplayDisconnecting, replayRoom } from "../../src/controllers/replay.controller.ts";
 import type { GameServer } from "../../src/types.ts";
 
 function makePresenceIo(rooms: Map<string, Set<string>>) {

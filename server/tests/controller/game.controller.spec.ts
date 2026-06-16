@@ -3,11 +3,7 @@ import express from "express";
 import supertest from "supertest";
 import * as gameCtrl from "../../src/controllers/game.controller.ts";
 import { GameRepo } from "../../src/repository.ts";
-import {
-  createGame,
-  joinGame,
-  startGame,
-} from "../../src/services/game.service.ts";
+import { createGame, joinGame, startGame } from "../../src/services/game.service.ts";
 import { getUserByUsername } from "../../src/services/auth.service.ts";
 import type { GameServer } from "../../src/types.ts";
 
@@ -117,9 +113,7 @@ describe("GET /api/game/list", () => {
   });
 
   it("includes freshly-created games", async () => {
-    await supertest(makeApp())
-      .post("/api/game/create")
-      .send({ auth: caster, payload: "nim" });
+    await supertest(makeApp()).post("/api/game/create").send({ auth: caster, payload: "nim" });
     const res = await supertest(makeApp()).get("/api/game/list");
     expect(res.status).toBe(200);
     expect((res.body as unknown[]).length).toBeGreaterThanOrEqual(1);
@@ -201,7 +195,10 @@ describe("socketMakeMove", () => {
     await startGame(info.gameId, user0);
     const { io, emits } = makeIo();
     const { socket } = makeSocket();
-    await gameCtrl.socketMakeMove(socket, io)({
+    await gameCtrl.socketMakeMove(
+      socket,
+      io,
+    )({
       auth: caster,
       payload: { gameId: info.gameId, move: 1 },
     });
@@ -220,7 +217,10 @@ describe("socketMakeMove", () => {
     await GameRepo.set(info.gameId, { ...game, state: { remaining: 1, nextPlayer: 0 } });
     const { io, emits } = makeIo();
     const { socket } = makeSocket();
-    await gameCtrl.socketMakeMove(socket, io)({
+    await gameCtrl.socketMakeMove(
+      socket,
+      io,
+    )({
       auth: caster,
       payload: { gameId: info.gameId, move: 1 },
     });

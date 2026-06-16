@@ -15,7 +15,13 @@ function makeMatch(overrides: Partial<ReplaySummary> = {}): ReplaySummary {
     gameKey: "nim",
     rated: true,
     participants: [
-      { id: "u-a", type: "human", displayName: "Alice", username: "alice", ratingAtMatchTime: 1500 },
+      {
+        id: "u-a",
+        type: "human",
+        displayName: "Alice",
+        username: "alice",
+        ratingAtMatchTime: 1500,
+      },
       { id: "u-b", type: "human", displayName: "Bob", username: "bob", ratingAtMatchTime: 1600 },
     ],
     result: { outcome: "win", winnerId: "u-a" },
@@ -62,26 +68,17 @@ describe("MatchCard", () => {
   });
 
   it("shows 'Draw' chip for a draw outcome", () => {
-    render(
-      <MatchCard match={makeMatch({ result: { outcome: "draw" } })} />,
-      { wrapper },
-    );
+    render(<MatchCard match={makeMatch({ result: { outcome: "draw" } })} />, { wrapper });
     expect(screen.getByTestId("match-card-result")).toHaveTextContent("Draw");
   });
 
   it("shows 'Abandoned' chip for an abandoned outcome", () => {
-    render(
-      <MatchCard match={makeMatch({ result: { outcome: "abandoned" } })} />,
-      { wrapper },
-    );
+    render(<MatchCard match={makeMatch({ result: { outcome: "abandoned" } })} />, { wrapper });
     expect(screen.getByTestId("match-card-result")).toHaveTextContent("Abandoned");
   });
 
   it("shows 'Forfeit' chip for a forfeit outcome", () => {
-    render(
-      <MatchCard match={makeMatch({ result: { outcome: "forfeit" } })} />,
-      { wrapper },
-    );
+    render(<MatchCard match={makeMatch({ result: { outcome: "forfeit" } })} />, { wrapper });
     expect(screen.getByTestId("match-card-result")).toHaveTextContent("Forfeit");
   });
 

@@ -99,13 +99,36 @@ describe("analyzeReplay request contract", () => {
     // "synth-match-xxx" is not pre-keyed in mockAnalysis so the synthesis path runs.
     // We also mock api.get so getReplay can return a detail object.
     const mockedGet = vi.mocked(api.get);
-    const detail: AnalysisResult & { moves: { index: number; actor: string; actorDisplayName: string; move: unknown; notation: string; timestamp: string }[] } = {
+    const detail: AnalysisResult & {
+      moves: {
+        index: number;
+        actor: string;
+        actorDisplayName: string;
+        move: unknown;
+        notation: string;
+        timestamp: string;
+      }[];
+    } = {
       matchId: "synth-match-xxx",
       generatedAt: new Date().toISOString(),
       perMove: [],
       moves: [
-        { index: 0, actor: "u-a", actorDisplayName: "A", move: 1, notation: "take 1", timestamp: new Date().toISOString() },
-        { index: 1, actor: "u-b", actorDisplayName: "B", move: 2, notation: "take 2", timestamp: new Date().toISOString() },
+        {
+          index: 0,
+          actor: "u-a",
+          actorDisplayName: "A",
+          move: 1,
+          notation: "take 1",
+          timestamp: new Date().toISOString(),
+        },
+        {
+          index: 1,
+          actor: "u-b",
+          actorDisplayName: "B",
+          move: 2,
+          notation: "take 2",
+          timestamp: new Date().toISOString(),
+        },
       ],
     };
     mockedGet.mockResolvedValueOnce({ data: detail });

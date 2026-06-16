@@ -87,8 +87,8 @@ describe("setDbInitializer", () => {
     // We exercise this by importing a fresh createRepo (the first call to
     // setDbInitializer in this process was made implicitly by any prior
     // createRepo call, so we just call it again and expect the throw).
-    expect(() => setDbInitializer((_name) => ({ get: async () => undefined } as never))).toThrow(
-      "Database initializer cannot be set a second time",
-    );
+    expect(() =>
+      setDbInitializer((_name) => ({ get: () => Promise.resolve(undefined) }) as never),
+    ).toThrow("Database initializer cannot be set a second time");
   });
 });

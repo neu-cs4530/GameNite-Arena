@@ -18,7 +18,7 @@ vi.mock("./api.ts", () => ({
 const mockedGet = vi.mocked(api.get);
 const mockedPost = vi.mocked(api.post);
 
-const DEFAULT_FILTERS: ReplayFilters = {
+const defaultFilters: ReplayFilters = {
   sort: "newest",
   games: [],
   participantType: "all",
@@ -67,13 +67,13 @@ function makeDetail(matchId: string): ReplayDetail {
 
 function make404(): AxiosError {
   const err = new AxiosError("Not found");
-  err.response = { status: 404, data: {}, headers: {}, config: {} as never, statusText: "Not Found" };
-  return err;
-}
-
-function make500(): AxiosError {
-  const err = new AxiosError("Server error");
-  err.response = { status: 500, data: {}, headers: {}, config: {} as never, statusText: "Error" };
+  err.response = {
+    status: 404,
+    data: {},
+    headers: {},
+    config: {} as never,
+    statusText: "Not Found",
+  };
   return err;
 }
 
@@ -120,14 +120,14 @@ describe("listReplays", () => {
   it("returns the server response on success", async () => {
     const page = { replays: [], total: 0, page: 1, pageSize: 24 };
     mockedGet.mockResolvedValueOnce({ data: page });
-    const result = await listReplays(DEFAULT_FILTERS);
+    const result = await listReplays(defaultFilters);
     expect(result.total).toBe(0);
   });
 
   it("falls back to the mock fixture on network error (dev mode)", async () => {
     const netErr = new AxiosError("Network Error");
     mockedGet.mockRejectedValueOnce(netErr);
-    const result = await listReplays(DEFAULT_FILTERS);
+    const result = await listReplays(defaultFilters);
     expect(typeof result.total).toBe("number");
     expect(Array.isArray(result.replays)).toBe(true);
   });
@@ -136,13 +136,13 @@ describe("listReplays", () => {
     const err = new AxiosError("Bad Request");
     err.response = { status: 400, data: {}, headers: {}, config: {} as never, statusText: "Bad" };
     mockedGet.mockRejectedValueOnce(err);
-    await expect(listReplays(DEFAULT_FILTERS)).rejects.toThrow();
+    await expect(listReplays(defaultFilters)).rejects.toThrow();
   });
 
   it("strips default values from the query (sort=newest is omitted)", async () => {
     const page = { replays: [], total: 0, page: 1, pageSize: 24 };
     mockedGet.mockResolvedValueOnce({ data: page });
-    await listReplays({ ...DEFAULT_FILTERS, sort: "newest" });
+    await listReplays({ ...defaultFilters, sort: "newest" });
     const callArgs = mockedGet.mock.calls[0];
     const params = (callArgs[1] as { params: Record<string, unknown> }).params;
     // sort "newest" (default) should NOT be in params when it equals default
@@ -155,7 +155,7 @@ describe("listReplays", () => {
     const page = { replays: [], total: 0, page: 1, pageSize: 24 };
     mockedGet.mockResolvedValueOnce({ data: page });
     await listReplays({
-      ...DEFAULT_FILTERS,
+      ...defaultFilters,
       games: ["nim"],
       participantType: "humans",
       ratedOnly: true,
@@ -189,7 +189,7 @@ describe("listReplaysForUser", () => {
   it("returns the server response and passes forUser in the params", async () => {
     const page = { replays: [], total: 0, page: 1, pageSize: 24 };
     mockedGet.mockResolvedValueOnce({ data: page });
-    const result = await listReplaysForUser("alice", DEFAULT_FILTERS);
+    const result = await listReplaysForUser("alice", defaultFilters);
     expect(result.total).toBe(0);
     const params = (mockedGet.mock.calls[0][1] as { params: Record<string, unknown> }).params;
     expect(params.forUser).toBe("alice");
@@ -197,7 +197,7 @@ describe("listReplaysForUser", () => {
 
   it("rethrows errors (no mock fallback for user replays)", async () => {
     mockedGet.mockRejectedValueOnce(new Error("network down"));
-    await expect(listReplaysForUser("alice", DEFAULT_FILTERS)).rejects.toThrow("network down");
+    await expect(listReplaysForUser("alice", defaultFilters)).rejects.toThrow("network down");
   });
 });
 
@@ -225,7 +225,13 @@ describe("recordView", () => {
 
   it("rethrows non-network, non-404 errors", async () => {
     const err = new AxiosError("Auth error");
-    err.response = { status: 401, data: {}, headers: {}, config: {} as never, statusText: "Unauthorized" };
+    err.response = {
+      status: 401,
+      data: {},
+      headers: {},
+      config: {} as never,
+      statusText: "Unauthorized",
+    };
     mockedPost.mockRejectedValueOnce(err);
     await expect(recordView("m-auth")).rejects.toThrow();
   });
@@ -259,7 +265,7 @@ describe("listReplays — date filter", () => {
   it("includes a non-default date param", async () => {
     const page = { replays: [] as ReplaySummary[], total: 0, page: 1, pageSize: 24 };
     mockedGet.mockResolvedValueOnce({ data: page });
-    await listReplays({ ...DEFAULT_FILTERS, date: "week" });
+    await listReplays({ ...defaultFilters, date: "week" });
     const params = (mockedGet.mock.calls[0][1] as { params: Record<string, unknown> }).params;
     expect(params.date).toBe("week");
   });
