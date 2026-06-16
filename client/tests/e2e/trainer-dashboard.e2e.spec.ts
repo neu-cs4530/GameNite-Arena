@@ -47,8 +47,10 @@ test.describe("Fresh trainer (tier 0 at rest)", () => {
 
     await expect(page.getByTestId("trainer-quickstart")).toBeVisible();
     await expect(page.getByTestId("quickstart-kit-command")).toContainText("install.sh");
-    // The quickstart's run command is the real trainer, not the demo harness.
-    await expect(page.getByTestId("quickstart-run-command")).toContainText("train.py");
+    // The run command is masked behind a copy button (the full `train.py …`
+    // line is intentionally not shown) — the button copies it on click.
+    await expect(page.getByTestId("quickstart-run-command")).not.toContainText("train.py");
+    await expect(page.getByTestId("quickstart-run-command-copy")).toHaveText("Copy run command");
     await expect(page.getByTestId("status-chips")).toHaveCount(0);
     // Sections are present but closed — their bodies don't exist in the DOM.
     await expect(page.getByTestId("trainer-section-runs")).toBeVisible();
