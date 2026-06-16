@@ -87,11 +87,11 @@ From the repository root:
 
 ### Database migrations
 
-FourNight! stores its data as JSON documents in MongoDB via the `keyv` library.
-Because there is no enforced schema, every schema change ships as a small
-idempotent TypeScript migration under `server/src/migrations/`. The migration
-runner records applied migrations in `MigrationLogRepo` so every developer's
-MongoDB instance converges on the current shape.
+FourNight! stores its data as JSON documents in MongoDB via the `keyv`
+library. Because there is no enforced schema, every schema change ships as a
+small idempotent TypeScript migration under `server/src/migrations/`. The
+migration runner records applied migrations in `MigrationLogRepo` so every
+developer's MongoDB instance converges on the current shape.
 
 The first thing to do after pulling teammate changes (and before
 `npm run dev`) is bring your local DB up to date:
