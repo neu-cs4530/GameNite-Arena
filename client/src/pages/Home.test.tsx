@@ -1,91 +1,55 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
-import type { SafeUserInfo } from "@gamenite/shared";
-import { LoginContext } from "../contexts/LoginContext.ts";
-import type { GameSocket } from "../util/types.ts";
-import type { DailyPuzzle } from "../services/puzzleMapper.ts";
-import { fetchDailyPuzzle } from "../services/puzzleService.ts";
+import { describe, expect, it } from "vitest";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter, Routes, Route } from "react-router-dom";
 import Home from "./Home.tsx";
-
-vi.mock("../services/puzzleService.ts", () => ({
-  fetchDailyPuzzle: vi.fn(),
-  submitPuzzleAttempt: vi.fn(),
-  requestPuzzleHint: vi.fn(),
-}));
-
-// Home's other strips fetch on mount; keep them quiet and empty so the
-// puzzle card is the only network-shaped thing under test.
-vi.mock("../services/gameService.ts", () => ({
-  gameList: vi.fn().mockResolvedValue([]),
-}));
-vi.mock("../services/threadService.ts", () => ({
-  threadList: vi.fn().mockResolvedValue([]),
-}));
-
-const mockedFetch = vi.mocked(fetchDailyPuzzle);
-
-const viewer: SafeUserInfo = { username: "ada", display: "Ada", createdAt: new Date(0) };
-
-const nimPuzzle: DailyPuzzle = {
-  gameKey: "nim",
-  date: "2026-06-11",
-  position: { kind: "nim", view: { remaining: 6, nextPlayer: 0 } },
-  viewerAttempt: { attempted: false, solved: false, rated: false },
-};
 
 function renderHome(): void {
   render(
-    <LoginContext.Provider
-      value={{ user: viewer, pass: "pw", reset: () => {}, socket: {} as GameSocket }}
-    >
-      <MemoryRouter>
-        <Home />
-      </MemoryRouter>
-    </LoginContext.Provider>,
+    <MemoryRouter initialEntries={["/"]}>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/games" element={<div data-testid="games-page" />} />
+        <Route path="/puzzles" element={<div data-testid="puzzles-hub-page" />} />
+        <Route path="/watch" element={<div data-testid="watch-hub-page" />} />
+        <Route path="/leaderboards" element={<div data-testid="leaderboards-page" />} />
+        <Route path="/forum" element={<div data-testid="forum-page" />} />
+      </Routes>
+    </MemoryRouter>,
   );
 }
 
-beforeEach(() => {
-  vi.clearAllMocks();
-});
-
-describe("Home: daily puzzle card", () => {
-  it("shows today's puzzle game with a CTA to /puzzles", async () => {
-    mockedFetch.mockResolvedValue(nimPuzzle);
+describe("Home", () => {
+  it("renders a tile for every destination", () => {
     renderHome();
-
-    const card = await screen.findByTestId("home-puzzle-card");
-    expect(card).toHaveTextContent("Nim");
-    expect(screen.getByTestId("home-puzzle-cta")).toHaveAttribute("href", "/puzzles");
-    expect(mockedFetch).toHaveBeenCalledWith("nim", "ada");
+    expect(screen.getByTestId("home-tile-matchmaking")).toBeInTheDocument();
+    expect(screen.getByTestId("home-tile-puzzles")).toBeInTheDocument();
+    expect(screen.getByTestId("home-tile-watch")).toBeInTheDocument();
+    expect(screen.getByTestId("home-tile-leaderboards")).toBeInTheDocument();
+    expect(screen.getByTestId("home-tile-forum")).toBeInTheDocument();
   });
 
-  it("shows the real solved-today state from viewerAttempt", async () => {
-    mockedFetch.mockResolvedValue({
-      ...nimPuzzle,
-      viewerAttempt: { attempted: true, solved: true, rated: true },
-    });
+  it("navigates to /games when the Matchmaking tile is clicked", async () => {
     renderHome();
-
-    expect(await screen.findByTestId("home-puzzle-solved-nim")).toHaveTextContent(/solved today/i);
+    await userEvent.click(screen.getByTestId("home-tile-matchmaking"));
+    expect(screen.getByTestId("games-page")).toBeInTheDocument();
   });
 
-  it("hides the card entirely on a puzzle outage — Home never breaks", async () => {
-    mockedFetch.mockRejectedValue(new Error("puzzle service down"));
+  it("navigates to /puzzles when the Puzzles tile is clicked", async () => {
     renderHome();
-
-    await waitFor(() => expect(mockedFetch).toHaveBeenCalled());
-    await waitFor(() => expect(screen.queryByTestId("home-puzzle-card")).not.toBeInTheDocument());
-    // the rest of Home still renders
-    expect(screen.getByText("Recent games")).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId("home-tile-puzzles"));
+    expect(screen.getByTestId("puzzles-hub-page")).toBeInTheDocument();
   });
 
-  it("hides the card when no game has a puzzle today (honest absence, not a husk)", async () => {
-    mockedFetch.mockResolvedValue(null);
+  it("navigates to /watch when the Watch Games tile is clicked", async () => {
     renderHome();
+    await userEvent.click(screen.getByTestId("home-tile-watch"));
+    expect(screen.getByTestId("watch-hub-page")).toBeInTheDocument();
+  });
 
-    await waitFor(() => expect(mockedFetch).toHaveBeenCalled());
-    await waitFor(() => expect(screen.queryByTestId("home-puzzle-card")).not.toBeInTheDocument());
+  it("navigates to /leaderboards and /forum from their tiles", async () => {
+    renderHome();
+    await userEvent.click(screen.getByTestId("home-tile-leaderboards"));
+    expect(screen.getByTestId("leaderboards-page")).toBeInTheDocument();
   });
 });

@@ -96,33 +96,32 @@ export default function GamePanel({
   return hasWatched ? (
     <div className="gamePanel">
       <div className="gameRoster">
-        <h2>{gameNames[type]}</h2>
-        <div className="smallAndGray">Game room created {timeSince(createdAt)}</div>
-        <div className="dottedList">
+        <div className="ga-game-panel__roster-header">
+          <h2 className="ga-game-panel__title">{gameNames[type]}</h2>
+          <span className="ga-game-panel__created">created {timeSince(createdAt)}</span>
+        </div>
+        <div className="ga-game-panel__players">
           {players.map((player, index) => (
-            <div className="dottedListItem" role="listitem" key={player.username}>
-              {player.username === user.username
-                ? `you are player #${index + 1}`
-                : `Player #${index + 1} is ${player.display}`}
+            <div className="ga-game-panel__player" key={player.username}>
+              <span className="ga-game-panel__player-slot">P{index + 1}</span>
+              <span className="ga-game-panel__player-name">
+                {player.username === user.username
+                  ? `you are player #${index + 1}`
+                  : player.display}
+              </span>
             </div>
           ))}
         </div>
-        {
-          // If the game hasn't started and user hasn't joined, they can join
-          userPlayerIndex < 0 && !view && (
-            <button className="primary narrow" onClick={joinGame}>
-              Join Game
-            </button>
-          )
-        }
-        {
-          // If the game hasn't started and the user has joined, they can start the game if a minimum number of players are present
-          userPlayerIndex >= 0 && !view && players.length >= minPlayers && (
-            <button className="primary narrow" onClick={startGame}>
-              Start Game
-            </button>
-          )
-        }
+        {userPlayerIndex < 0 && !view && (
+          <button className="primary narrow" onClick={joinGame}>
+            Join Game
+          </button>
+        )}
+        {userPlayerIndex >= 0 && !view && players.length >= minPlayers && (
+          <button className="primary narrow" onClick={startGame}>
+            Start Game
+          </button>
+        )}
       </div>
       {view ? (
         <div className="gameFrame">
@@ -134,7 +133,7 @@ export default function GamePanel({
           />
         </div>
       ) : (
-        <div className="gameFrame waiting content">waiting for game to begin</div>
+        <div className="gameFrame waiting">Waiting for game to begin…</div>
       )}
       {recap === "rated" && effectiveResult && (
         <RecapPanel

@@ -20,24 +20,74 @@
 }
 
 .gameRoster {
-  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
 }
 
-/* Join/Start sit in normal flow below the roster, not absolutely pinned to
-   the top-right corner — at narrow column widths an absolute button overlaps
-   a wrapped game title ("Number Guesser", "Tic-Tac-Toe"). */
+.ga-game-panel__roster-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.ga-game-panel__title {
+  margin: 0;
+  font-size: var(--text-h2);
+  font-weight: var(--weight-bold);
+  color: var(--color-fg);
+}
+
+.ga-game-panel__created {
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}
+
+.ga-game-panel__players {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.ga-game-panel__player {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-small);
+}
+
+.ga-game-panel__player-slot {
+  padding: 0 var(--space-2);
+  background: var(--color-surface-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-bold);
+  color: var(--color-fg-muted);
+  letter-spacing: 0.04em;
+}
+
+.ga-game-panel__player-name {
+  color: var(--color-fg);
+}
+
 .gameRoster button {
-  margin-top: var(--space-3, 0.75rem);
+  align-self: flex-start;
 }
 
 .gameFrame {
-  border: 1px solid black;
-  border-radius: 0.5rem;
-  margin-top: 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  margin-top: var(--space-2);
 }
 
 .gameFrame.waiting {
-  background-color: var(--gray-background);
+  padding: var(--space-6);
+  color: var(--color-fg-muted);
+  font-size: var(--text-small);
+  text-align: center;
+  background: var(--color-surface);
 }
 
 @media (max-width: 900px) {

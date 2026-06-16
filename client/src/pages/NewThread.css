@@ -1,0 +1,105 @@
+.ga-new-thread {
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.ga-new-thread__hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-6);
+  background: linear-gradient(135deg, var(--color-primary-soft) 0%, var(--color-accent-soft) 100%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.ga-new-thread__hero h1 {
+  margin: 0;
+  font-size: var(--text-h1);
+  font-weight: var(--weight-bold);
+  color: var(--color-fg);
+  letter-spacing: -0.02em;
+}
+
+.ga-new-thread__hero p {
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--color-fg-muted);
+}
+
+.ga-new-thread__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-6);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.ga-new-thread__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ga-new-thread__label {
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  color: var(--color-fg-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ga-new-thread__input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-fg);
+  font-size: var(--text-body);
+  font-family: inherit;
+}
+
+.ga-new-thread__input:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+  border-color: var(--color-primary);
+}
+
+.ga-new-thread__textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-3) var(--space-4);
+  min-height: 10rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-fg);
+  font-size: var(--text-body);
+  font-family: inherit;
+  resize: vertical;
+}
+
+.ga-new-thread__textarea:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+  border-color: var(--color-primary);
+}
+
+@media (max-width: 768px) {
+  .ga-new-thread {
+    padding: var(--space-4);
+    gap: var(--space-4);
+  }
+  .ga-new-thread__hero,
+  .ga-new-thread__form {
+    padding: var(--space-4);
+  }
+}
