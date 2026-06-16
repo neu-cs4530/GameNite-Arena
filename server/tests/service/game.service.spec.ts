@@ -7,6 +7,7 @@ import { getUserByUsername } from "../../src/services/auth.service.ts";
 import {
   createGame,
   createGameWithAi,
+  forfeitGame,
   getGameById,
   joinGame,
   joinGameAsAi,
@@ -1027,5 +1028,74 @@ describe("maybeFireAiMove — unknown game type", () => {
     } as unknown as GameRecord);
     scriptAiMoves(1);
     await expect(maybeFireAiMove(gameId)).rejects.toThrow();
+  });
+});
+
+describe("forfeitGame (player resigns)", () => {
+  it("ends the game as a forfeit — the resigning player loses, the other wins", async () => {
+    const user1 = (await getUserByUsername("user1"))!;
+    const gameId = await seedNimGame({
+      players: [user0.userId, user1.userId],
+      aiPlayers: [null, null],
+      state: { remaining: 12, nextPlayer: 0 },
+      rated: false,
+    });
+
+    const { gameResult } = await forfeitGame(gameId, user0);
+
+    expect(gameResult).toEqual({ outcome: "forfeit", winnerId: user1.userId });
+    const stored = await GameRepo.get(gameId);
+    expect(stored.done).toBe(true);
+    // Archived as a forfeit win for the other seat.
+    const match = await MatchRepo.get(gameId);
+    expect(match.result).toEqual({ outcome: "forfeit", winnerId: user1.userId });
+  });
+
+  it("lets a human resign while the AI is driving (it is the AI's turn)", async () => {
+    // nextPlayer = 1 is the AI seat — the human (seat 0) is waiting on the
+    // model, and must still be able to leave.
+    const gameId = await seedNimGame({
+      players: [user0.userId, botSeat.deploymentId],
+      aiPlayers: [null, botSeat],
+      state: { remaining: 7, nextPlayer: 1 },
+      rated: false,
+    });
+
+    const { gameResult } = await forfeitGame(gameId, user0);
+
+    expect(gameResult!.outcome).toBe("forfeit");
+    expect(gameResult!.winnerId).toBe(botSeat.deploymentId);
+    expect((await GameRepo.get(gameId)).done).toBe(true);
+  });
+
+  it("rejects a forfeit from someone who isn't a player in the game", async () => {
+    const user1 = (await getUserByUsername("user1"))!;
+    const stranger = (await getUserByUsername("user2"))!;
+    const gameId = await seedNimGame({
+      players: [user0.userId, user1.userId],
+      aiPlayers: [null, null],
+      state: { remaining: 12, nextPlayer: 0 },
+      rated: false,
+    });
+
+    await expect(forfeitGame(gameId, stranger)).rejects.toThrow(/weren't playing/);
+    expect((await GameRepo.get(gameId)).done).toBe(false);
+  });
+
+  it("rejects a forfeit on a game that is already over", async () => {
+    const user1 = (await getUserByUsername("user1"))!;
+    const gameId = await seedNimGame({
+      players: [user0.userId, user1.userId],
+      aiPlayers: [null, null],
+      state: { remaining: 12, nextPlayer: 0 },
+      rated: false,
+    });
+    await forfeitGame(gameId, user0);
+
+    await expect(forfeitGame(gameId, user1)).rejects.toThrow(/already over/);
+  });
+
+  it("rejects a forfeit on a missing game", async () => {
+    await expect(forfeitGame("no-such-game", user0)).rejects.toThrow(/invalid game/);
   });
 });

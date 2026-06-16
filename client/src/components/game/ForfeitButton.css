@@ -1,0 +1,10 @@
+.ga-forfeit {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ga-forfeit__prompt {
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}
