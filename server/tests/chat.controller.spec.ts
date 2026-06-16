@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GameServer, GameServerSocket } from "../src/types.ts";
 import { logSocketError } from "../src/controllers/socket.controller.ts";
-import { socketJoin } from "../src/controllers/chat.controller.ts";
+import { socketJoin, socketLeave, socketSendMessage } from "../src/controllers/chat.controller.ts";
 import { createChat } from "../src/services/chat.service.ts";
 import { populateSafeUserInfo } from "../src/services/user.service.ts";
 import { getUserByUsername } from "../src/services/auth.service.ts";
@@ -78,5 +78,64 @@ describe("socketJoin", () => {
       chatId: chat.chatId,
       user,
     });
+  });
+});
+
+/** A mock socket that already belongs to the given rooms. */
+function socketInRooms(rooms: string[]): GameServerSocket {
+  const socket = new MockGameServerSocket() as unknown as GameServerSocket & { rooms: Set<string> };
+  socket.rooms = new Set(rooms);
+  return socket;
+}
+
+describe("socketLeave", () => {
+  it("rejects leaving a chat the user isn't in", async () => {
+    const socket = socketInRooms([]); // not in any room
+    await socketLeave(socket, mockServer)({ auth, payload: "some-chat" });
+    expect(logSocketError).toHaveBeenCalledExactlyOnceWith(
+      socket,
+      new Error("user user1 left chat they weren't in"),
+    );
+  });
+
+  it("leaves the room and notifies the others when the user is in the chat", async () => {
+    const chat = await createChat(new Date());
+    const socket = socketInRooms([chat.chatId]);
+    await socketLeave(socket, mockServer)({ auth, payload: chat.chatId });
+
+    expect(logSocketError).not.toHaveBeenCalled();
+    expect(socket.leave).toHaveBeenCalledExactlyOnceWith(chat.chatId);
+    expect(socket.emit).toHaveBeenCalledWith(
+      "chatUserLeft",
+      expect.objectContaining({
+        chatId: chat.chatId,
+      }),
+    );
+  });
+});
+
+describe("socketSendMessage", () => {
+  it("rejects invalid auth", async () => {
+    const chat = await createChat(new Date());
+    await socketSendMessage(
+      mockSocket,
+      mockServer,
+    )({ auth: badAuth, payload: { chatId: chat.chatId, text: "hi" } });
+    expect(logSocketError).toHaveBeenCalledExactlyOnceWith(mockSocket, new Error("Invalid auth"));
+  });
+
+  it("stores the message and broadcasts it to everyone in the chat", async () => {
+    const chat = await createChat(new Date());
+    await socketSendMessage(
+      mockSocket,
+      mockServer,
+    )({ auth, payload: { chatId: chat.chatId, text: "hello all" } });
+
+    expect(logSocketError).not.toHaveBeenCalled();
+    expect(mockServer.to).toHaveBeenCalledWith(chat.chatId);
+    expect(mockServer.emit).toHaveBeenCalledWith(
+      "chatNewMessage",
+      expect.objectContaining({ chatId: chat.chatId }),
+    );
   });
 });

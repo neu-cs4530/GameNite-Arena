@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -140,6 +140,21 @@ describe("auditTrainingDataIntegrity", () => {
 
     const kinds = (await auditTrainingDataIntegrity()).map((v) => v.kind);
     expect(kinds).toContain("artifact-file-missing");
+  });
+
+  it("skips a model whose record vanishes between listing keys and reading it", async () => {
+    // A key can be listed but read back as null if the record is deleted
+    // mid-audit. The audit must skip it (the `if (!model) continue` guard),
+    // not crash or report a false violation.
+    await startTrainingSession(user0, nimStart);
+    const spy = vi.spyOn(ModelRepo, "find").mockResolvedValueOnce(null);
+
+    // The audit must not crash on the missing record; the model is simply
+    // skipped, so it produces no model-specific violation of its own.
+    const violations = await auditTrainingDataIntegrity();
+    expect(violations.some((v) => v.kind === "model-owner-missing")).toBe(false);
+
+    spy.mockRestore();
   });
 
   it("flags unexpired tokens whose user is gone, ignores expired ones", async () => {

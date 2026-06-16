@@ -83,6 +83,15 @@ describe("POST /api/broadcast/:id/slowmode", () => {
     expect(res.status).toBe(400);
   });
 
+  it("returns 403 for invalid credentials", async () => {
+    const bc = await liveBroadcast();
+    const res = await supertest(makeApp())
+      .post(`/api/broadcast/${bc.broadcastId}/slowmode`)
+      .send({ auth: { username: "user0", password: "wrong" }, payload: { seconds: 5 } });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/invalid credentials/i);
+  });
+
   it("returns 403 when a non-broadcaster sets slow mode", async () => {
     // Broadcast owned by a different user id than either seeded account.
     const bc = await liveBroadcast("someone-else");
@@ -111,6 +120,18 @@ describe("socketBroadcastChatSend", () => {
       "chatNewMessage",
       expect.objectContaining({ chatId: bc.chatChannel }),
     );
+  });
+
+  it("does not broadcast a message when the target broadcast isn't live", async () => {
+    const { socket, io, ioEmit } = socketMocks();
+    await broadcastChat.socketBroadcastChatSend(
+      socket,
+      io,
+    )({
+      auth: caster,
+      payload: { broadcastId: "missing", text: "hi" },
+    });
+    expect(ioEmit).not.toHaveBeenCalled();
   });
 
   it("rejects a message blocked by slow mode, notifying only the author", async () => {
