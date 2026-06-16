@@ -8,6 +8,9 @@ interface TicTacToeReplayViewProps {
   participants: MatchParticipantView[];
   /** When set, empty cells become clickable buttons (for puzzles). */
   onCellClick?: (row: number, col: number) => void;
+  /** Cell [row, col] the selected AI model would play from this position —
+   * highlighted green so the move is visible on the board. */
+  aiMove?: [number, number];
 }
 
 /**
@@ -19,6 +22,7 @@ export default function TicTacToeReplayView({
   view,
   participants,
   onCellClick,
+  aiMove,
 }: TicTacToeReplayViewProps): JSX.Element {
   const gameOver = view.winningEntry !== null;
   const winnerIndex = 1 - view.nextPlayer; // whoever just moved
@@ -29,6 +33,11 @@ export default function TicTacToeReplayView({
   const isWinningCell = (row: number, col: number) =>
     view.winningEntry?.some(([winRow, winCol]) => winRow === row && winCol === col) ?? false;
 
+  // The empty cell the AI would play from this position — shown as a green
+  // ghost mark so the suggestion is visible directly on the board.
+  const isAiTarget = (row: number, col: number) =>
+    !gameOver && aiMove?.[0] === row && aiMove[1] === col && view.board[row][col] === ".";
+
   function renderMark(entry: TicTacEntry) {
     if (entry === ".") return null;
     const markClass = entry === "O" ? "ttt-mark ttt-mark--o" : "ttt-mark ttt-mark--x";
@@ -37,13 +46,21 @@ export default function TicTacToeReplayView({
 
   // a placed mark, or (if playable) a move button
   function renderCell(row: number, col: number, entry: TicTacEntry) {
-    const cellClass = `ttt-cell${isWinningCell(row, col) ? " ttt-cell--winner" : ""}`;
+    const cellClass = `ttt-cell${isWinningCell(row, col) ? " ttt-cell--winner" : ""}${
+      isAiTarget(row, col) ? " ttt-cell--ai" : ""
+    }`;
     const testId = `ttt-cell-${row}-${col}`;
 
     if (entry !== "." || gameOver || onCellClick === undefined) {
       return (
         <div className={cellClass} key={testId} data-testid={testId}>
-          {renderMark(entry)}
+          {entry !== "." ? (
+            renderMark(entry)
+          ) : isAiTarget(row, col) ? (
+            <span className="ttt-mark ttt-mark--ai" data-testid="ttt-ai-target">
+              {me}
+            </span>
+          ) : null}
         </div>
       );
     }
