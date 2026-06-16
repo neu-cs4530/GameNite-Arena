@@ -1,24 +1,19 @@
 import {
+  ENGINE_SOLVABLE_GAME_KEYS,
   type AnalysisMoveResult,
   type AnalysisResult,
-  type GuessState,
-  type NimState,
+  type GameKey,
 } from "@gamenite/shared";
 import { type MatchRecord } from "../models.ts";
+import { checkersGameService } from "../games/checkers.ts";
 import { DeploymentRepo, MatchRepo } from "../repository.ts";
+import { encodeStateForInference, gameServices } from "./game.service.ts";
+import { analyzeClosedFormMove } from "./replayEngine.ts";
 import * as inferenceClient from "./inferenceClient.ts";
 
-const NIM_START_OBJECTS = 21;
-
-// in misere nim (take 1-3), leaving the opponent at remaining % 4 === 1
-// always loses for them. if we're already at that point, no move helps.
-function nimWinningTake(remaining: number): number | null {
-  const take = (remaining - 1) % 4;
-  return take === 0 ? null : take;
-}
-
 // best-effort: make sure the model behind deploymentId is loaded into
-// inference before we start asking it for moves.
+// inference before we start asking it for moves. A real failure surfaces (and
+// is reported) from the requestMove pass below.
 async function ensureLoaded(deploymentId: string | undefined): Promise<void> {
   if (!deploymentId) return;
   try {
@@ -30,115 +25,85 @@ async function ensureLoaded(deploymentId: string | undefined): Promise<void> {
       modelId: deployment.modelId,
     });
   } catch {
-    // requestMove below will just fail too if this didn't work.
+    // requestMove will surface and report any real failure.
   }
-}
-
-// best-effort: skip if there's no deploymentId or inference is unreachable.
-async function getEngineMove(deploymentId: string | undefined, state: unknown): Promise<unknown> {
-  if (!deploymentId) return undefined;
-  try {
-    const { move } = (await inferenceClient.requestMove({ deploymentId, state })) as {
-      move: unknown;
-    };
-    return move;
-  } catch {
-    return undefined;
-  }
-}
-
-async function analyzeNim(
-  record: MatchRecord,
-  deploymentId?: string,
-): Promise<AnalysisMoveResult[]> {
-  const initial = record.initialState as NimState | undefined;
-  let remaining = initial?.remaining ?? NIM_START_OBJECTS;
-
-  const perMove: AnalysisMoveResult[] = [];
-  for (const [moveIndex, m] of record.moves.entries()) {
-    const playerMove = m.move as number;
-    const winningTake = nimWinningTake(remaining);
-
-    let result: AnalysisMoveResult;
-    if (winningTake === null) {
-      result = {
-        moveIndex,
-        flag: "neutral",
-        confidence: 1,
-        notes: "Already a lost position - no move avoids leaving a winning pile.",
-      };
-    } else if (playerMove === winningTake) {
-      result = { moveIndex, flag: "best", confidence: 1 };
-    } else {
-      result = {
-        moveIndex,
-        flag: "blunder",
-        confidence: 1,
-        notes: `Taking ${winningTake} would have left the opponent a losing pile.`,
-        suggestedMove: winningTake,
-      };
-    }
-
-    const engineMove = await getEngineMove(deploymentId, { remaining });
-    if (engineMove !== undefined) result.engineMove = engineMove;
-
-    remaining -= playerMove;
-    perMove.push(result);
-  }
-  return perMove;
-}
-
-// no positional info before the secret is revealed, so the "best" move is
-// just whichever guess ended up closest to it.
-async function analyzeGuess(
-  record: MatchRecord,
-  deploymentId?: string,
-): Promise<AnalysisMoveResult[]> {
-  const secret = (record.initialState as GuessState | undefined)?.secret;
-
-  const perMove: AnalysisMoveResult[] = [];
-  if (secret === undefined) {
-    for (const moveIndex of record.moves.keys()) {
-      const result: AnalysisMoveResult = { moveIndex, flag: "neutral", confidence: 0 };
-      const engineMove = await getEngineMove(deploymentId, { low: 1, high: 100 });
-      if (engineMove !== undefined) result.engineMove = engineMove;
-      perMove.push(result);
-    }
-    return perMove;
-  }
-
-  const distances = record.moves.map((m) => Math.abs((m.move as number) - secret));
-  const minDistance = Math.min(...distances);
-  const maxDistance = Math.max(...distances);
-
-  for (const [moveIndex, m] of record.moves.entries()) {
-    const guess = m.move as number;
-    const distance = distances[moveIndex];
-
-    let flag: AnalysisMoveResult["flag"] = "neutral";
-    if (minDistance !== maxDistance) {
-      if (distance === minDistance) flag = "best";
-      else if (distance === maxDistance) flag = "inaccuracy";
-    }
-
-    const result: AnalysisMoveResult = {
-      moveIndex,
-      flag,
-      confidence: 1,
-      notes: `The secret was ${secret} - this guess was off by ${distance}.`,
-      suggestedMove: guess === secret ? undefined : secret,
-    };
-    const engineMove = await getEngineMove(deploymentId, { low: 1, high: 100 });
-    if (engineMove !== undefined) result.engineMove = engineMove;
-    perMove.push(result);
-  }
-  return perMove;
 }
 
 /**
+ * Rebuild the position BEFORE each move by replaying the archived moves through
+ * the game's own logic, so both the engine and the inference model see the
+ * exact state the player faced. Falls back to the game's canonical start when
+ * the archive didn't snapshot an initial state.
+ */
+function reconstructStates(record: MatchRecord): unknown[] {
+  const service = gameServices[record.gameKey];
+  let state: unknown =
+    record.initialState !== undefined && record.initialState !== null
+      ? record.initialState
+      : service.create(["p0", "p1"]).state;
+
+  const states: unknown[] = [];
+  for (const m of record.moves) {
+    states.push(state);
+    const nextPlayer = (state as { nextPlayer?: number }).nextPlayer ?? 0;
+    const updated = service.update(state, m.move, nextPlayer, ["p0", "p1"]);
+    state = updated ? updated.state : state;
+  }
+  return states;
+}
+
+function describeInferenceFailure(err: unknown): string {
+  if (err instanceof inferenceClient.InferenceError) {
+    if (err.status === 503) return "The inference service is unreachable right now.";
+    if (err.status === 404) return "That model isn't available for inference.";
+    return err.message;
+  }
+  return "The model could not be run.";
+}
+
+function checkersLegalMoves(state: unknown): unknown[] {
+  const tagged = checkersGameService.view(state, -1) as { view?: { legalMoves?: unknown[] } };
+  return tagged.view?.legalMoves ?? [];
+}
+
+/**
+ * Ask the deployed model for its move at each reconstructed position. These are
+ * real reached states, so a failure here is environmental (service down, model
+ * not loadable, game unsupported) and all-or-nothing — stop on the first error
+ * and report it, rather than silently degrading every move to "no insight".
+ */
+async function collectModelMoves(
+  deploymentId: string,
+  gameKey: GameKey,
+  states: unknown[],
+): Promise<{ moves: unknown[]; error?: string }> {
+  const moves: unknown[] = [];
+  for (const state of states) {
+    try {
+      const legalMoves = gameKey === "checkers" ? checkersLegalMoves(state) : undefined;
+      const { move } = (await inferenceClient.requestMove({
+        deploymentId,
+        state: encodeStateForInference(gameKey, state),
+        legalMoves,
+      })) as { move: unknown };
+      moves.push(move);
+    } catch (err) {
+      return { moves, error: describeInferenceFailure(err) };
+    }
+  }
+  return { moves };
+}
+
+/**
+ * Per-move analysis of an archived match: the built-in perfect-play engine's
+ * verdict (best / blunder / inaccuracy plus the best line) for games with a
+ * closed-form engine (nim, tic-tac-toe), and — when a deploymentId is given —
+ * what that deployed model would play at each position. Games without a
+ * built-in engine still get the model comparison; their flags are just neutral.
+ *
  * @param matchId - the match to analyze
  * @param deploymentId - optional loaded model to also ask for its move
- * @returns per-move engine flags, or null if no match with this id exists
+ * @returns per-move results, or null if no match with this id exists
  */
 export async function analyzeReplay(
   matchId: string,
@@ -147,12 +112,38 @@ export async function analyzeReplay(
   const record = await MatchRepo.find(matchId);
   if (!record) return null;
 
+  const gameKey = record.gameKey;
+  const engineSolvable = ENGINE_SOLVABLE_GAME_KEYS.includes(gameKey);
+  // Reconstruction is only needed to feed the engine or the model; skip it for
+  // games that get neither (e.g. an un-deployed guess match).
+  const states = engineSolvable || deploymentId !== undefined ? reconstructStates(record) : [];
+
   await ensureLoaded(deploymentId);
+  let modelMoves: unknown[] = [];
+  let aiError: string | undefined;
+  if (deploymentId) {
+    ({ moves: modelMoves, error: aiError } = await collectModelMoves(
+      deploymentId,
+      gameKey,
+      states,
+    ));
+  }
 
-  const perMove =
-    record.gameKey === "nim"
-      ? await analyzeNim(record, deploymentId)
-      : await analyzeGuess(record, deploymentId);
+  const perMove: AnalysisMoveResult[] = record.moves.map((m, moveIndex) => {
+    const verdict = engineSolvable
+      ? analyzeClosedFormMove(gameKey, states[moveIndex], m.move)
+      : null;
+    const result: AnalysisMoveResult = verdict
+      ? { moveIndex, ...verdict }
+      : { moveIndex, flag: "neutral", confidence: 0 };
+    if (modelMoves[moveIndex] !== undefined) result.engineMove = modelMoves[moveIndex];
+    return result;
+  });
 
-  return { matchId, generatedAt: new Date().toISOString(), perMove };
+  return {
+    matchId,
+    generatedAt: new Date().toISOString(),
+    perMove,
+    ...(aiError !== undefined ? { aiError } : {}),
+  };
 }

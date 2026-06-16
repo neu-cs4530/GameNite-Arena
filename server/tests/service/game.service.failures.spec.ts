@@ -59,6 +59,14 @@ function scriptForfeit(): void {
   });
 }
 
+function scriptUnreachable(): void {
+  setInferenceClientForTests({
+    requestMove: vi
+      .fn()
+      .mockRejectedValue(new InferenceError("Inference service unreachable: fetch failed", 503)),
+  });
+}
+
 beforeEach(async () => {
   user0 = (await getUserByUsername("user0"))!;
   vi.mocked(updateRatingsForGame).mockReset();
@@ -124,5 +132,58 @@ describe("rating failures", () => {
       winnerId: user0.userId,
       outcome: "forfeit",
     });
+  });
+});
+
+/* ---------------------------------------------------------------------------
+ * Inference-unreachable tolerance (the prod "fetch failed" / 503 path). A
+ * service outage is NOT the model playing an invalid move, so it must not be
+ * scored as a forfeit-loss against either side. After the client's own
+ * retries are exhausted the move still cannot land, and the match must not be
+ * left hanging on the AI's turn forever — it ends as a no-decision
+ * "abandoned" with no winner and no rating change.
+ * ------------------------------------------------------------------------- */
+describe("inference unreachable", () => {
+  it("ends the match as abandoned (no winner) when inference is unreachable", async () => {
+    scriptUnreachable();
+    // Seat 1 is the bot, so it must be the AI's turn for maybeFireAiMove to act.
+    const gameId = await seedNimGame({ remaining: 10, nextPlayer: 1 });
+
+    const outcome = await maybeFireAiMove(gameId);
+
+    expect(outcome).not.toBeNull();
+    expect(outcome!.gameResult).toEqual({ outcome: "abandoned" });
+    expect(outcome!.gameResult!.winnerId).toBeUndefined();
+    expect((await GameRepo.get(gameId)).done).toBe(true);
+  });
+
+  it("does NOT apply rating changes for an inference-outage abandonment", async () => {
+    scriptUnreachable();
+    const gameId = await seedNimGame({ remaining: 10, nextPlayer: 1 });
+
+    await maybeFireAiMove(gameId);
+
+    expect(vi.mocked(updateRatingsForGame)).not.toHaveBeenCalled();
+  });
+
+  it("does NOT abandon on a 422 invalid-move (that path still forfeits)", async () => {
+    // Guards the boundary: a 422 with consecutiveInvalid must keep flowing
+    // through the existing streak/forfeit logic, not the new abandon path.
+    setInferenceClientForTests({
+      requestMove: vi
+        .fn()
+        .mockRejectedValue(
+          new InferenceError("no legal action", 422, { consecutiveInvalid: 1, forfeit: false }),
+        ),
+    });
+    const gameId = await seedNimGame({ remaining: 10, nextPlayer: 1 });
+
+    const outcome = await maybeFireAiMove(gameId);
+
+    // Not a strikeout yet: the streak is recorded, no result, game still live.
+    expect(outcome).toBeNull();
+    const stored = await GameRepo.get(gameId);
+    expect(stored.done).toBe(false);
+    expect(stored.invalidMoveStreaks?.[1]).toBe(1);
   });
 });

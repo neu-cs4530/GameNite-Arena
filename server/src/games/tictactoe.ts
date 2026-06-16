@@ -53,8 +53,9 @@ function findWinningEntry({ board }: TicTacToeState): TicTacToeView["winningEntr
 }
 
 // full minimax: board is tiny (<=9 cells) so brute force is fine
-// returns 1/0/-1 = win/draw/loss for `mover`, assuming best play from here
-function minimaxOutcome(state: TicTacToeState, mover: number): 1 | 0 | -1 {
+// returns 1/0/-1 = win/draw/loss for `mover`, assuming best play from here.
+// Exported so the replay engine can rank a position's moves (perfect play).
+export function minimaxOutcome(state: TicTacToeState, mover: number): 1 | 0 | -1 {
   const win = findWinningEntry(state);
   if (win !== null) {
     const [r, c] = win[0];

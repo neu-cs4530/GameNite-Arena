@@ -148,7 +148,19 @@ function toInferenceError(path: string, raw: string, status: number): InferenceE
   return new InferenceError(`Inference ${path} failed: ${raw}`, status);
 }
 
-async function post<T>(path: string, body: unknown): Promise<T> {
+/**
+ * Decides whether `err` from {@link postOnce} is worth another attempt. A 503
+ * from an unreachable service (network failure) and the gateway/timeout 5xx
+ * family are transient; a 4xx invalid-move/bad-request is not.
+ */
+function isRetryable(err: InferenceError): boolean {
+  return err.status === 503 || retryableStatuses.has(err.status);
+}
+
+/** One POST attempt with a hard per-attempt deadline. Network failures and
+ * the abort timeout surface as a 503 (service unreachable); a non-OK response
+ * surfaces with its real status so 422 forfeit detail survives. */
+async function postOnce<T>(path: string, body: unknown, timeoutMs: number): Promise<T> {
   let res: Response;
   try {
     res = await fetch(
@@ -156,12 +168,47 @@ async function post<T>(path: string, body: unknown): Promise<T> {
       authedInit({ method: "POST", body: JSON.stringify(body) }),
     );
   } catch (err) {
-    throw new InferenceError(`Inference service unreachable: ${(err as Error).message}`, 503);
+    const e = err as Error;
+    const reason = e.name === "TimeoutError" || e.name === "AbortError" ? "timed out" : e.message;
+    throw new InferenceError(`Inference service unreachable: ${reason}`, 503);
   }
   if (!res.ok) {
     throw toInferenceError(path, await res.text(), res.status);
   }
   return (await res.json()) as T;
+}
+
+/**
+ * POSTs to the inference service, retrying transient unreachability (network
+ * failure, cold-start 503, gateway 5xx) with exponential backoff up to the
+ * configured attempt budget. Deterministic failures (4xx, including the 422
+ * invalid-move/forfeit signal) throw immediately so callers see them on the
+ * first try.
+ */
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const { maxAttempts, baseDelayMs, timeoutMs } = retryConfig;
+  let lastError: InferenceError | undefined;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await postOnce<T>(path, body, timeoutMs);
+    } catch (err) {
+      if (!(err instanceof InferenceError) || !isRetryable(err) || attempt === maxAttempts) {
+        throw err;
+      }
+      lastError = err;
+      // Exponential backoff with jitter so a fleet of stalled matches doesn't
+      // thundering-herd the service the instant it comes back.
+      const backoff = baseDelayMs * 2 ** (attempt - 1);
+      const jitter = backoff > 0 ? Math.random() * baseDelayMs : 0;
+      // eslint-disable-next-line no-console
+      console.warn(
+        `Inference ${path} attempt ${attempt}/${maxAttempts} failed (${err.message}); retrying in ~${Math.round(backoff + jitter)}ms`,
+      );
+      await sleep(backoff + jitter);
+    }
+  }
+  // Unreachable: the loop either returns or throws, but TS needs a terminus.
+  throw lastError ?? new InferenceError("Inference service unreachable", 503);
 }
 
 /** The callable surface of this module, swappable for tests. */
