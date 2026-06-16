@@ -17,7 +17,7 @@ import {
 } from "../repository.ts";
 import type { UserWithId } from "../types.ts";
 import { getUserByUsername } from "./auth.service.ts";
-import { gameServices } from "./game.service.ts";
+import { encodeStateForInference, gameServices } from "./game.service.ts";
 import { resolveAiSeatForQueue } from "./matchmaker.service.ts";
 import * as inferenceClient from "./inferenceClient.ts";
 import {
@@ -468,12 +468,19 @@ export async function submitAiAttempt(
   const puzzle = await getPuzzleForDate(gameKey, date);
   if (!puzzle) return null;
 
-  // The stored position is the watcher view — exactly the shape the inference
-  // encoder expects — so the puzzle position drives the model directly.
   await inferenceClient.loadModel({ deploymentId, game: gameKey, modelId: seat.modelId });
+  // Feed the model the SAME per-game encoding the live AI-move loop uses. The
+  // raw watcher view (e.g. a connect4 "R"/"Y"/"." board) is NOT what the
+  // inference encoder reads — sending it 400s board games. Checkers also needs
+  // its legal-move list (dynamic action space), which the watcher view carries.
+  const legalMoves =
+    gameKey === "checkers"
+      ? ((puzzle.position as { legalMoves?: unknown[] }).legalMoves ?? [])
+      : undefined;
   const response = (await inferenceClient.requestMove({
     deploymentId,
-    state: puzzle.position,
+    state: encodeStateForInference(gameKey, puzzle.position),
+    legalMoves,
   })) as { move?: unknown } | undefined;
   if (!response || response.move === undefined) {
     throw new Error(`Model for deployment ${deploymentId} did not return a move`);

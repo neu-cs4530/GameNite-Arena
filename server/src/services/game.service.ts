@@ -96,6 +96,42 @@ export interface GameUpdateOutcome {
 }
 
 /**
+ * Ask the deployed model for its move, loading it on demand. The inference box
+ * keeps an in-memory registry that resets on restart, and a model deployed
+ * while inference had no INFERENCE_SERVICE_URL was never loaded — both leave the
+ * box answering /move with 404 "no such deployment". On that 404 we pull-and-
+ * load the model once (storage -> box handoff) and retry, so the live AI path
+ * self-heals instead of assuming deploy-time loading survived in a separate
+ * process. Any other error propagates to the caller's handling.
+ */
+async function requestAiMoveWithLoad(
+  ai: AIParticipant,
+  gameType: GameKey,
+  rawState: unknown,
+  legalMoves: unknown[] | undefined,
+): Promise<unknown> {
+  const ask = (): Promise<unknown> =>
+    inferenceClient.requestMove({
+      deploymentId: ai.deploymentId,
+      state: encodeStateForInference(gameType, rawState),
+      legalMoves,
+    });
+  try {
+    return await ask();
+  } catch (err) {
+    if (err instanceof inferenceClient.InferenceError && err.status === 404) {
+      await inferenceClient.loadModel({
+        deploymentId: ai.deploymentId,
+        game: gameType,
+        modelId: ai.modelId,
+      });
+      return await ask();
+    }
+    throw err;
+  }
+}
+
+/**
  * If the next player to move is an AI deployment, fire its move automatically.
  * Returns the full update outcome of the AI's move (which itself chains into
  * the next AI move for model-vs-model games), or null if no AI move was made.
@@ -131,11 +167,12 @@ export async function maybeFireAiMove(gameId: string): Promise<GameUpdateOutcome
 
   let move: unknown;
   try {
-    const result = (await inferenceClient.requestMove({
-      deploymentId: aiDeploymentId,
-      state: encodeStateForInference(game.type, game.state),
-      legalMoves: legalMovesForInference,
-    })) as { move: unknown };
+    const result = (await requestAiMoveWithLoad(
+      aiParticipant,
+      game.type,
+      game.state,
+      legalMovesForInference,
+    )) as { move: unknown };
     move = result.move;
   } catch (err) {
     if (err instanceof inferenceClient.InferenceError) {
@@ -159,10 +196,15 @@ export async function maybeFireAiMove(gameId: string): Promise<GameUpdateOutcome
       // "abandoned" — no winner, no rating change — and surface a clear log.
       // (`consecutiveInvalid` is absent on a 503; the streak/forfeit branches
       // above never fire for it.)
-      if (err.status === 503) {
+      // Infra failures that aren't the model's fault and can't land the move:
+      // 503 service unreachable, 502 the model's artifact couldn't be pulled to
+      // the box, 404 the model couldn't be loaded even after the retry above.
+      // None is a forfeit; ending on the AI's turn would hang the match, so end
+      // it as a no-decision "abandoned".
+      if (err.status === 503 || err.status === 502 || err.status === 404) {
         // eslint-disable-next-line no-console
         console.error(
-          `AI move abandoned for deployment ${aiDeploymentId}: inference unreachable — ${err.message}`,
+          `AI move abandoned for deployment ${aiDeploymentId}: inference could not serve the move — ${err.message}`,
         );
         return abandonAiGame(gameId);
       }
