@@ -1,8 +1,8 @@
 [![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/vWAG9U_Y)
 
-# FourNite!
+# FourNight!
 
-**FourNite!** is a full competitive games platform. Players are matched into
+**FourNight!** is a full competitive games platform. Players are matched into
 ranked or casual games of Nim, Tic‑Tac‑Toe, Connect 4, Checkers, and Number
 Guesser; every finished match becomes a watchable, annotatable **replay**;
 games in progress can be **broadcast live** with a delayed feed and moderated
@@ -50,7 +50,7 @@ Run `npm install` in the root directory to install dependencies for the
 
 ### Working on the application (development mode)
 
-Development mode watches files and reloads on change. To run FourNite!
+Development mode watches files and reloads on change. To run FourNight!
 locally:
 
 1. Run `npm run dev` in the top‑level directory, **or**
@@ -87,7 +87,7 @@ From the repository root:
 
 ### Database migrations
 
-FourNite! stores its data as JSON documents in MongoDB via the `keyv` library.
+FourNight! stores its data as JSON documents in MongoDB via the `keyv` library.
 Because there is no enforced schema, every schema change ships as a small
 idempotent TypeScript migration under `server/src/migrations/`. The migration
 runner records applied migrations in `MigrationLogRepo` so every developer's
@@ -227,7 +227,7 @@ inference box.
 ```mermaid
 sequenceDiagram
     participant U as User's machine (training kit)
-    participant S as FourNite server
+    participant S as FourNight server
     participant R as Redis (BullMQ + pub/sub)
     participant B as Inference box (Python)
 
@@ -319,7 +319,7 @@ erDiagram
 
 ## Adding a new game
 
-FourNite!'s games share a common shape: state stored on the server, a view
+FourNight!'s games share a common shape: state stored on the server, a view
 sent to players, and a move sent back. To add a new game `example`:
 
 - In a new file `shared/src/games/example.types.ts`, define `ExampleState`
