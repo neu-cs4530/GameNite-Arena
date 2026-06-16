@@ -9,7 +9,6 @@ import { replayGameNames } from "../util/consts.ts";
 import RailDrawer from "../components/replay/RailDrawer.tsx";
 import LiveBoard from "../components/live/LiveBoard.tsx";
 import BroadcastChatPanel from "../components/live/BroadcastChatPanel.tsx";
-import HighlightsSection from "../components/live/HighlightsSection.tsx";
 import LiveDot from "../components/live/LiveDot.tsx";
 import Button from "../components/ui/Button.tsx";
 import ErrorState from "../components/ui/ErrorState.tsx";
@@ -105,13 +104,6 @@ export default function LiveViewer(): JSX.Element {
           <RailDrawer title="Chat" defaultOpen testId="rail-drawer-chat">
             {info ? (
               <BroadcastChatPanel chatChannel={info.chatChannel} broadcastId={info.broadcastId} />
-            ) : (
-              <div className="ga-live-viewer__chat-loading">Connecting…</div>
-            )}
-          </RailDrawer>
-          <RailDrawer title="Highlights" defaultOpen testId="rail-drawer-highlights">
-            {info ? (
-              <HighlightsSection broadcastId={info.broadcastId} />
             ) : (
               <div className="ga-live-viewer__chat-loading">Connecting…</div>
             )}

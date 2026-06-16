@@ -13,12 +13,26 @@
  * not REST — see useBroadcast / useSocketsForBroadcastChat.
  */
 
-import type { BroadcastInfo } from "@gamenite/shared";
+import type { BroadcastInfo, StartBroadcastPayload, UserAuth } from "@gamenite/shared";
 import { api } from "./api.ts";
 
 /** All currently-live broadcasts, newest first. */
 export async function listLiveBroadcasts(): Promise<BroadcastInfo[]> {
   const res = await api.get<BroadcastInfo[]>("/api/broadcast/list");
+  return res.data;
+}
+
+/**
+ * Start broadcasting an in-progress game with a `delaySec` (0–60) spectator
+ * delay (Story 3.7). Returns the new broadcast (use its id to open the viewer).
+ */
+export async function createBroadcast(
+  gameId: string,
+  delaySec: number,
+  auth: UserAuth,
+): Promise<BroadcastInfo> {
+  const payload: StartBroadcastPayload = { gameId, delaySec };
+  const res = await api.post<BroadcastInfo>("/api/broadcast/create", { auth, payload });
   return res.data;
 }
 
