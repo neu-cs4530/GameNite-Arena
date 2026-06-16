@@ -73,6 +73,25 @@ export async function submitPuzzleAttempt(
 }
 
 /**
+ * Have one of the caller's deployed models attempt today's puzzle. The model's
+ * move is graded + rated exactly like a human attempt, so the result (rating,
+ * streak, solution) counts toward the USER's puzzle Elo and shares the one
+ * daily rated slot.
+ */
+export async function submitAiPuzzleAttempt(
+  gameKey: GameKey,
+  auth: UserAuth,
+  deploymentId: string,
+  date: string,
+): Promise<PuzzleAttemptResult> {
+  const res = await api.post<PuzzleAttemptResult>(`/api/puzzle/${gameKey}/attempt/ai`, {
+    auth,
+    payload: { deploymentId, date },
+  });
+  return res.data;
+}
+
+/**
  * POST /api/puzzle/:gameKey/hint — reveal the solution move for the puzzle
  * pinned by `date`. The server records the grant: from this moment every
  * attempt on this puzzle is practice (the hint IS the answer), so callers

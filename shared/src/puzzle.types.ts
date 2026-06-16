@@ -59,6 +59,17 @@ export const zPuzzleAttemptPayload = z.object({
 });
 export type PuzzleAttemptPayload = z.infer<typeof zPuzzleAttemptPayload>;
 
+/** Body payload for `POST /api/puzzle/:gameKey/attempt/ai` (inside withAuth):
+ * let one of the caller's deployed models attempt the daily puzzle in their
+ * place. The model's move is graded and rated exactly like a human attempt —
+ * it counts toward the USER's puzzle Elo and spends their one daily rated slot
+ * (so it's "you OR your AI", not both). Returns a PuzzleAttemptResult. */
+export const zPuzzleAiAttemptPayload = z.object({
+  deploymentId: z.string().min(1),
+  date: zPuzzleDate,
+});
+export type PuzzleAiAttemptPayload = z.infer<typeof zPuzzleAiAttemptPayload>;
+
 /** Body payload for `POST /api/puzzle/:gameKey/hint` (inside withAuth). */
 export const zPuzzleHintPayload = z.object({ date: zPuzzleDate });
 export type PuzzleHintPayload = z.infer<typeof zPuzzleHintPayload>;
