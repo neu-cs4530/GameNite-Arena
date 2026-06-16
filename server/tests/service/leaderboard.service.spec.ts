@@ -286,4 +286,46 @@ describe("getLeaderboard daily period", () => {
     expect(humans.entries).toHaveLength(2);
     expect(ais.entries).toHaveLength(0);
   });
+
+  it("works without an explicit now (falls back to current time)", async () => {
+    const page = await getLeaderboard({ gameKey: "nim", period: "daily" });
+    expect(page.period).toBe("daily");
+    expect(Array.isArray(page.entries)).toBe(true);
+  });
+
+  it("falls back to default rating values when a participant has no prior rating record", async () => {
+    const now = new Date("2026-06-16T18:00:00.000Z");
+    await seedMatch(["fresh", "bob"], {
+      completedAt: "2026-06-16T10:00:00.000Z",
+      winnerId: "fresh",
+      ratingChanges: [{ entityId: "fresh", delta: 15 }],
+    });
+    const page = await getLeaderboard({ gameKey: "nim", period: "daily", now: now });
+    const entry = page.entries.find((e) => e.entityId === "fresh")!;
+    expect(entry.rating).toBe(1500);
+    expect(entry.rd).toBe(350);
+    expect(entry.gamesPlayedToday).toBe(1);
+  });
+
+  it("ignores matches that have no ratingChanges recorded", async () => {
+    const now = new Date("2026-06-16T18:00:00.000Z");
+    await seedRating("alice", { rating: 1600 });
+    await seedMatch(["alice", "bob"], {
+      completedAt: "2026-06-16T10:00:00.000Z",
+      winnerId: "alice",
+    });
+    const page = await getLeaderboard({ gameKey: "nim", period: "daily", now: now });
+    expect(page.entries).toHaveLength(0);
+  });
+
+  it("skips a ratingChange whose entityId is not in the match participants", async () => {
+    const now = new Date("2026-06-16T18:00:00.000Z");
+    await seedMatch(["alice", "bob"], {
+      completedAt: "2026-06-16T10:00:00.000Z",
+      winnerId: "alice",
+      ratingChanges: [{ entityId: "charlie", delta: 20 }],
+    });
+    const page = await getLeaderboard({ gameKey: "nim", period: "daily", now: now });
+    expect(page.entries.find((e) => e.entityId === "charlie")).toBeUndefined();
+  });
 });

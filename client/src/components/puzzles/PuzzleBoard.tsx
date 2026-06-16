@@ -134,30 +134,6 @@ function CheckersPuzzleBoard({
   );
 }
 
-// gameKey -> board, one entry per PuzzlePosition kind
-const boards: {
-  [key in PuzzlePosition["kind"]]: (
-    position: PuzzlePosition,
-    interactive: InteractiveBoardProps,
-  ) => JSX.Element | null;
-} = {
-  nim: (position) => (position.kind === "nim" ? <NimPuzzleBoard view={position.view} /> : null),
-  guess: (position) =>
-    position.kind === "guess" ? <GuessPuzzleBoard view={position.view} /> : null,
-  tictactoe: (position, interactive) =>
-    position.kind === "tictactoe" ? (
-      <TicTacToePuzzleBoard view={position.view} {...interactive} />
-    ) : null,
-  connect4: (position, interactive) =>
-    position.kind === "connect4" ? (
-      <Connect4PuzzleBoard view={position.view} {...interactive} />
-    ) : null,
-  checkers: (position, interactive) =>
-    position.kind === "checkers" ? (
-      <CheckersPuzzleBoard view={position.view} {...interactive} />
-    ) : null,
-};
-
 interface PuzzleBoardProps extends InteractiveBoardProps {
   position: PuzzlePosition;
 }
@@ -172,5 +148,17 @@ export default function PuzzleBoard({
   onSubmit,
   disabled,
 }: PuzzleBoardProps): JSX.Element {
-  return <>{boards[position.kind](position, { onSubmit, disabled })}</>;
+  const interactive = { onSubmit, disabled };
+  switch (position.kind) {
+    case "nim":
+      return <NimPuzzleBoard view={position.view} />;
+    case "guess":
+      return <GuessPuzzleBoard view={position.view} />;
+    case "tictactoe":
+      return <TicTacToePuzzleBoard view={position.view} {...interactive} />;
+    case "connect4":
+      return <Connect4PuzzleBoard view={position.view} {...interactive} />;
+    case "checkers":
+      return <CheckersPuzzleBoard view={position.view} {...interactive} />;
+  }
 }
