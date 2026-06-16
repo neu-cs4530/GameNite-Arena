@@ -151,6 +151,21 @@ export async function maybeFireAiMove(gameId: string): Promise<GameUpdateOutcome
       if (err.forfeit) {
         return forfeitAiSeat(gameId, nextPlayerIndex);
       }
+      // Service unreachable (503) after the client's own retries: this is an
+      // infrastructure outage, NOT the model playing an invalid move, so it is
+      // wrong to score it as a forfeit-loss against the AI's owner. But the
+      // move can't land, and leaving the game on the AI's turn would hang it
+      // forever (the human waits indefinitely). End it as a no-decision
+      // "abandoned" — no winner, no rating change — and surface a clear log.
+      // (`consecutiveInvalid` is absent on a 503; the streak/forfeit branches
+      // above never fire for it.)
+      if (err.status === 503) {
+        // eslint-disable-next-line no-console
+        console.error(
+          `AI move abandoned for deployment ${aiDeploymentId}: inference unreachable — ${err.message}`,
+        );
+        return abandonAiGame(gameId);
+      }
     }
     // eslint-disable-next-line no-console
     console.error(`AI move failed for deployment ${aiDeploymentId}:`, err);
@@ -202,6 +217,42 @@ async function forfeitAiSeat(gameId: string, forfeitingSeat: number): Promise<Ga
     }
   }
 
+  const service = gameServices[game.type];
+  return {
+    views: {
+      watchers: service.view(game.state, -1),
+      players: game.players.map((userId, index) => ({
+        userId,
+        view: service.view(game.state, index),
+      })),
+    },
+    gameResult,
+  };
+}
+
+/**
+ * Ends a game as a no-decision abandonment when the inference service is
+ * unreachable and an AI move cannot land (the prod 503 / "fetch failed"
+ * path). Unlike a forfeit this has NO winner and applies NO rating change —
+ * an outage is not the model's fault, so neither seat is penalized — but the
+ * game is marked done and the outcome surfaced so a live match never hangs on
+ * the AI's turn. The returned views show the last accepted position.
+ */
+async function abandonAiGame(gameId: string): Promise<GameUpdateOutcome> {
+  const game = await GameRepo.get(gameId);
+
+  game.done = true;
+  game.matchId = gameId;
+  await GameRepo.set(gameId, game);
+
+  try {
+    await matchRecorder.finalizeAsAbandoned(gameId);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`match capture failed for game ${gameId}:`, err);
+  }
+
+  const gameResult: MatchResult = { outcome: "abandoned" };
   const service = gameServices[game.type];
   return {
     views: {

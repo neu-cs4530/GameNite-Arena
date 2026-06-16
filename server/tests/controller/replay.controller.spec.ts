@@ -423,3 +423,58 @@ describe("production store stack over HTTP", () => {
 
 // The gameplay → replay pipeline (game.service → MatchRecorder → MatchRepo →
 // /api/replay/*) is covered end-to-end in tests/integration/gameToReplay.spec.ts.
+
+// ── handleReplayDisconnecting ────────────────────────────────────────────────
+
+import { handleReplayDisconnecting, replayRoom } from "../../src/controllers/replay.controller.ts";
+import type { GameServer } from "../../src/types.ts";
+
+function makePresenceIo(rooms: Map<string, Set<string>>) {
+  const emits: { room: string; event: string; payload: unknown }[] = [];
+  const io = {
+    to: (room: string) => ({
+      emit: (event: string, payload: unknown) => emits.push({ room, event, payload }),
+    }),
+    sockets: { adapter: { rooms } },
+  } as unknown as GameServer;
+  return { io, emits };
+}
+
+describe("handleReplayDisconnecting", () => {
+  it("broadcasts the post-departure count to every replay room the socket was in", () => {
+    const matchId = "dsc-match-1";
+    const room = replayRoom(matchId);
+    // Room has 2 members before the disconnecting socket leaves.
+    const roomMap = new Map([[room, new Set(["socket-a", "socket-b"])]]);
+    const { io, emits } = makePresenceIo(roomMap);
+
+    handleReplayDisconnecting({ rooms: new Set([room]) }, io);
+
+    expect(emits).toHaveLength(1);
+    expect(emits[0]).toMatchObject({
+      room,
+      event: "replayWatchers",
+      payload: { matchId, count: 1 }, // 2 - 1 (self)
+    });
+  });
+
+  it("ignores non-replay rooms", () => {
+    const roomMap = new Map([["game:abc", new Set(["socket-a"])]]);
+    const { io, emits } = makePresenceIo(roomMap);
+
+    handleReplayDisconnecting({ rooms: new Set(["game:abc"]) }, io);
+
+    expect(emits).toHaveLength(0);
+  });
+
+  it("clamps the count to 0 when the socket was the last watcher", () => {
+    const matchId = "last-watcher";
+    const room = replayRoom(matchId);
+    const roomMap = new Map([[room, new Set(["socket-only"])]]);
+    const { io, emits } = makePresenceIo(roomMap);
+
+    handleReplayDisconnecting({ rooms: new Set([room]) }, io);
+
+    expect(emits[0]).toMatchObject({ payload: { count: 0 } });
+  });
+});
