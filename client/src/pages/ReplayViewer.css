@@ -77,6 +77,31 @@
   max-width: 720px;
 }
 
+/* The selected AI model's suggested move, called out under the board so it is
+ * visible at a glance — the board itself also highlights the move in green. */
+.ga-viewer__ai-move {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: center;
+  max-width: 720px;
+  margin: var(--space-3) auto 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-success-soft);
+  border: 1px solid var(--color-success);
+  border-radius: var(--radius-md);
+  color: var(--color-fg);
+  font-size: var(--text-small);
+}
+
+.ga-viewer__ai-move-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-success);
+}
+
 /* Transport docked under the board, like a video player. */
 .ga-viewer__transport {
   border-top: 1px solid var(--color-border);

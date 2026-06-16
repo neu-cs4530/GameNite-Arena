@@ -1,4 +1,4 @@
-import type { TaggedGameView } from "@gamenite/shared";
+import { type TaggedGameView, zConnect4Move, zTicTacToeMove } from "@gamenite/shared";
 import NimReplayView from "../../games/replay/NimReplayView.tsx";
 import GuessReplayView from "../../games/replay/GuessReplayView.tsx";
 import CheckersReplayView from "../../games/replay/CheckersReplayView.tsx";
@@ -14,6 +14,9 @@ interface GameViewerProps {
   view: TaggedGameView | null;
   replay: ReplayDetail;
   readOnly?: boolean;
+  /** The selected AI model's move from the currently-displayed position, if
+   * analysis with a model has run — highlighted green on the board. */
+  aiMove?: unknown;
 }
 
 /**
@@ -21,7 +24,7 @@ interface GameViewerProps {
  * on the replay's `gameKey`. The `view` prop is the derived state at the
  * current move from `useDerivedGameView`.
  */
-export default function GameViewer({ view, replay }: GameViewerProps): JSX.Element {
+export default function GameViewer({ view, replay, aiMove }: GameViewerProps): JSX.Element {
   const participants = replay.participants;
   if (view?.type === "nim") {
     return (
@@ -36,10 +39,24 @@ export default function GameViewer({ view, replay }: GameViewerProps): JSX.Eleme
     return <GuessReplayView view={view.view} participants={participants} />;
   }
   if (view?.type === "tictactoe") {
-    return <TicTacToeReplayView view={view.view} participants={participants} />;
+    const ai = zTicTacToeMove.safeParse(aiMove);
+    return (
+      <TicTacToeReplayView
+        view={view.view}
+        participants={participants}
+        aiMove={ai.success ? ai.data : undefined}
+      />
+    );
   }
   if (view?.type === "connect4") {
-    return <Connect4ReplayView view={view.view} participants={participants} />;
+    const ai = zConnect4Move.safeParse(aiMove);
+    return (
+      <Connect4ReplayView
+        view={view.view}
+        participants={participants}
+        aiMove={ai.success ? ai.data : undefined}
+      />
+    );
   }
   if (view?.type === "checkers") {
     return <CheckersReplayView view={view.view} participants={participants} />;

@@ -30,6 +30,7 @@ import { createAnnotation, createShareLink } from "../services/annotationService
 import { listDeploymentViews } from "../services/trainerViewService.ts";
 import { analysisModelOptions } from "../util/analysisModels.ts";
 import { analysisCapabilities } from "../util/analysisCapabilities.ts";
+import { describePuzzleMove } from "../services/puzzleMapper.ts";
 import { replayGameNames } from "../util/consts.ts";
 import type { DeploymentView } from "@gamenite/shared";
 
@@ -120,6 +121,12 @@ export default function ReplayViewer(): JSX.Element {
         ? ""
         : (modelOptions[0]?.deploymentId ?? "");
   const aiErrorMessage = analysisHook.analysis?.aiError ?? "";
+  // The selected model's move from the position currently on the board — drives
+  // the green on-board highlight + the callout under it, so the AI's choice is
+  // visible at a glance instead of buried in the Compare panel.
+  const aiSuggestedMove = analysisHook.analysis?.perMove.find(
+    (p) => p.moveIndex === playback.currentMove,
+  )?.engineMove;
 
   // Unfold the analysis drawer the moment results first exist — running the
   // engine from the collapsed header should reveal what it produced. Derived
@@ -351,8 +358,17 @@ export default function ReplayViewer(): JSX.Element {
             <span className="ga-viewer__filmstrip-fill" style={{ width: `${progressPct}%` }} />
           </div>
           <div className="ga-viewer__boardwrap">
-            <GameViewer view={view} replay={replay} readOnly />
+            <GameViewer view={view} replay={replay} readOnly aiMove={aiSuggestedMove} />
           </div>
+          {aiSuggestedMove !== undefined && (
+            <div className="ga-viewer__ai-move" data-testid="ai-move-callout">
+              <span className="ga-viewer__ai-move-dot" aria-hidden="true" />
+              <span>
+                AI would play here:{" "}
+                <strong>{describePuzzleMove(replay.gameKey, aiSuggestedMove)}</strong>
+              </span>
+            </div>
+          )}
           <div className="ga-viewer__transport">
             <PlaybackControls
               currentMove={playback.currentMove}
