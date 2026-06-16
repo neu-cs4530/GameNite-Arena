@@ -3,6 +3,7 @@ import type { MatchRecord } from "../../src/models.ts";
 import { DeploymentRepo, MatchRepo } from "../../src/repository.ts";
 import { analyzeReplay } from "../../src/services/analysis.service.ts";
 import {
+  InferenceError,
   resetInferenceClientForTests,
   setInferenceClientForTests,
 } from "../../src/services/inferenceClient.ts";
@@ -91,6 +92,48 @@ function connect4Match(moves: number[]): MatchRecord {
   };
 }
 
+const ChRed = { id: "u-ch-red", type: "human" as const, displayName: "Red Player" };
+const ChBlack = { id: "u-ch-black", type: "human" as const, displayName: "Black Player" };
+
+/** An 8x8 checkers board, "." everywhere except the given squares. */
+function checkersBoard(pieces: Record<string, string>): string[][] {
+  const board = Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => "."));
+  for (const [key, entry] of Object.entries(pieces)) {
+    const [row, col] = key.split(",").map(Number);
+    board[row][col] = entry;
+  }
+  return board;
+}
+
+/** A one-move checkers match: red king at (6,1) shuffles to (5,0). */
+function checkersMatch(): MatchRecord {
+  return {
+    gameId: "game-ch-1",
+    gameKey: "checkers",
+    rated: true,
+    participants: [ChRed, ChBlack],
+    moves: [
+      {
+        actor: ChRed.id,
+        move: {
+          squares: [
+            [6, 1],
+            [5, 0],
+          ],
+        },
+        timestamp: "2026-06-09T05:00:00.000Z",
+      },
+    ],
+    result: { outcome: "win", winnerId: ChRed.id },
+    initialState: {
+      board: checkersBoard({ "1,2": "B", "4,5": "R", "6,1": "RK" }),
+      nextPlayer: 0,
+    },
+    createdAt: "2026-06-09T05:10:00.000Z",
+    completedAt: "2026-06-09T05:10:00.000Z",
+  };
+}
+
 describe("analyzeReplay", () => {
   it("returns null for an unknown match", async () => {
     expect(await analyzeReplay("nope")).toBeNull();
@@ -162,6 +205,48 @@ describe("analyzeReplay", () => {
     expect(result!.aiError).toBeUndefined();
   });
 
+  describe("state reconstruction fallbacks", () => {
+    it("falls back to the game's canonical start when the archive has no initialState", async () => {
+      // nim is engine-solvable, so states are reconstructed even with no
+      // deployment. Without initialState the engine starts from nim's canonical
+      // 21-object start; move 0 is the already-lost position (21 % 4 === 1).
+      const match = nimMatch([3]);
+      delete (match as { initialState?: unknown }).initialState;
+      await MatchRepo.set("m-nim-no-initial", match);
+
+      const result = await analyzeReplay("m-nim-no-initial");
+
+      expect(result!.perMove[0].flag).toBe("neutral");
+      expect(result!.perMove[0].confidence).toBe(1);
+    });
+
+    it("defaults nextPlayer to 0 when the reconstructed state omits it", async () => {
+      // initialState lacks nextPlayer, so reconstructStates falls back to 0.
+      // With seat 0 to move and remaining 21, move 0 is again the lost position.
+      const match = nimMatch([3]);
+      (match as { initialState?: unknown }).initialState = { remaining: 21 };
+      await MatchRepo.set("m-nim-no-nextplayer", match);
+
+      const result = await analyzeReplay("m-nim-no-nextplayer");
+
+      expect(result!.perMove).toHaveLength(1);
+      expect(result!.perMove[0].flag).toBe("neutral");
+    });
+
+    it("keeps the prior state when an archived move doesn't replay cleanly", async () => {
+      // Taking 99 from 21 is illegal, so update returns null and the state is
+      // carried forward unchanged — both moves analyze from remaining 21.
+      const match = nimMatch([99, 3]);
+      await MatchRepo.set("m-nim-illegal", match);
+
+      const result = await analyzeReplay("m-nim-illegal");
+
+      expect(result!.perMove).toHaveLength(2);
+      // 21 % 4 === 1 is lost, so both positions are neutral (already-lost).
+      expect(result!.perMove.map((p) => p.flag)).toStrictEqual(["neutral", "neutral"]);
+    });
+  });
+
   describe("with a deploymentId", () => {
     afterEach(() => {
       resetInferenceClientForTests();
@@ -217,6 +302,65 @@ describe("analyzeReplay", () => {
 
       expect(result!.aiError).toBeDefined();
       expect(result!.perMove[0].engineMove).toBeUndefined();
+    });
+
+    it("describes a 503 InferenceError as the service being unreachable", async () => {
+      setInferenceClientForTests({
+        requestMove: () => Promise.reject(new InferenceError("down", 503)),
+      });
+      await MatchRepo.set("m-nim-503", nimMatch([3]));
+
+      const result = await analyzeReplay("m-nim-503", "dep-1");
+
+      expect(result!.aiError).toBe("The inference service is unreachable right now.");
+    });
+
+    it("describes a 404 InferenceError as the model not being available", async () => {
+      setInferenceClientForTests({
+        requestMove: () => Promise.reject(new InferenceError("missing", 404)),
+      });
+      await MatchRepo.set("m-nim-404", nimMatch([3]));
+
+      const result = await analyzeReplay("m-nim-404", "dep-1");
+
+      expect(result!.aiError).toBe("That model isn't available for inference.");
+    });
+
+    it("surfaces the raw message for other InferenceError statuses", async () => {
+      setInferenceClientForTests({
+        requestMove: () => Promise.reject(new InferenceError("bad request payload", 422)),
+      });
+      await MatchRepo.set("m-nim-422", nimMatch([3]));
+
+      const result = await analyzeReplay("m-nim-422", "dep-1");
+
+      expect(result!.aiError).toBe("bad request payload");
+    });
+
+    it("checkers: feeds the model the position's legal-move list", async () => {
+      const requestMove = vi.fn().mockResolvedValue({
+        move: {
+          squares: [
+            [6, 1],
+            [5, 0],
+          ],
+        },
+      });
+      setInferenceClientForTests({ requestMove });
+      await MatchRepo.set("m-ch-engine", checkersMatch());
+
+      const result = await analyzeReplay("m-ch-engine", "dep-1");
+
+      // checkers isn't engine-solvable, so the flag is neutral, but the model
+      // ran with the dynamic legal-move list the watcher view carries.
+      expect(result!.perMove[0].flag).toBe("neutral");
+      expect(requestMove).toHaveBeenCalledWith(
+        expect.objectContaining({
+          deploymentId: "dep-1",
+          legalMoves: expect.any(Array),
+        }),
+      );
+      expect(requestMove.mock.calls[0][0].legalMoves.length).toBeGreaterThan(0);
     });
 
     it("loads the deployed model into inference before requesting moves", async () => {
