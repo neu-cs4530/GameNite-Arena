@@ -105,7 +105,9 @@ export default function GamePanel({
             <div className="ga-game-panel__player" key={player.username}>
               <span className="ga-game-panel__player-slot">P{index + 1}</span>
               <span className="ga-game-panel__player-name">
-                {player.username === user.username ? "you" : player.display}
+                {player.username === user.username
+                  ? `you are player #${index + 1}`
+                  : player.display}
               </span>
             </div>
           ))}
