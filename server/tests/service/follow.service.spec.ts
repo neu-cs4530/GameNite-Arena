@@ -146,7 +146,9 @@ describe("legacy records without a `following` field", () => {
   // stripping the field from a seeded record.
   async function stripFollowing(userId: string): Promise<void> {
     const record = await UserRepo.get(userId);
-    delete record.following;
+    // `following` is typed as required, but legacy records genuinely lack it;
+    // cast to an optional view so we can delete it to reproduce that state.
+    delete (record as { following?: string[] }).following;
     await UserRepo.set(userId, record);
   }
 
