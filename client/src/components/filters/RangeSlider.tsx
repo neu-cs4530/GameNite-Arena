@@ -53,8 +53,12 @@ export default function RangeSlider({
   // closure because the closure can lag the user's last gesture.
   function siblingValue(e: ChangeEvent<HTMLInputElement>, selector: string, fallback: number) {
     const el = e.currentTarget.closest(".ga-range")?.querySelector<HTMLInputElement>(selector);
+    // Defensive: the sibling handle is always rendered, so `el` is never null
+    // and its value is never NaN in practice.
+    /* v8 ignore start */
     const v = el ? Number(el.value) : NaN;
     return Number.isNaN(v) ? fallback : v;
+    /* v8 ignore stop */
   }
 
   function setLo(e: ChangeEvent<HTMLInputElement>) {

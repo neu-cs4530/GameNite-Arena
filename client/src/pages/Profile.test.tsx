@@ -5,6 +5,16 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { ProfileSummary, SafeUserInfo } from "@gamenite/shared";
 import Profile from "./Profile.tsx";
 import { LoginContext } from "../contexts/LoginContext.ts";
+import useReplaysForUser from "../hooks/useReplaysForUser.ts";
+import useLiveBroadcasts from "../hooks/useLiveBroadcasts.ts";
+import {
+  follow,
+  getFollowFeed,
+  listFollowers,
+  listFollowing,
+  unfollow,
+} from "../services/followService.ts";
+import { getReplay, listReplaysForUser } from "../services/replayService.ts";
 import { getProfileSummary, ProfileNotFoundError } from "../services/profileService.ts";
 import {
   profileSummaryFixture,
@@ -18,17 +28,33 @@ vi.mock("../services/profileService.ts", async (importOriginal) => {
 });
 
 // The replay list area is an EXISTING surface with its own service tests;
-// stub the hook so page tests stay offline-deterministic.
-vi.mock("../hooks/useReplaysForUser.ts", () => ({
-  default: () => ({
-    page: { replays: [], total: 0, page: 1, pageSize: 12 },
-    loading: false,
-    error: null,
-    refetch: () => {},
-  }),
+// stub the hook so page tests stay offline-deterministic. It's a vi.fn so
+// individual tests can feed it a populated page (e.g. for "Load more").
+vi.mock("../hooks/useReplaysForUser.ts", () => ({ default: vi.fn() }));
+
+// Live-broadcast lookup, follow graph, and the replay service are all stubbed
+// so the header's live indicator, the follow button, the watch-later tab, and
+// the load-more path can be driven deterministically.
+vi.mock("../hooks/useLiveBroadcasts.ts", () => ({ default: vi.fn() }));
+vi.mock("../services/followService.ts", () => ({
+  listFollowers: vi.fn(),
+  listFollowing: vi.fn(),
+  follow: vi.fn(),
+  unfollow: vi.fn(),
+  getFollowFeed: vi.fn(),
+}));
+vi.mock("../services/replayService.ts", () => ({
+  getReplay: vi.fn(),
+  listReplaysForUser: vi.fn(),
 }));
 
 const mockedFetch = vi.mocked(getProfileSummary);
+const mockedReplaysHook = vi.mocked(useReplaysForUser);
+const mockedLive = vi.mocked(useLiveBroadcasts);
+const mockedListReplays = vi.mocked(listReplaysForUser);
+const mockedGetReplay = vi.mocked(getReplay);
+
+const emptyPage = { page: { replays: [], total: 0, page: 1, pageSize: 12 }, loading: false };
 
 const viewerUser: SafeUserInfo = {
   username: "viewer9",
@@ -56,8 +82,17 @@ function cloneFixture(): ProfileSummary {
 }
 
 beforeEach(() => {
-  mockedFetch.mockReset();
+  vi.clearAllMocks();
   mockedFetch.mockResolvedValue(profileSummaryFixture);
+  mockedReplaysHook.mockReturnValue({ ...emptyPage, error: null, refetch: vi.fn() });
+  mockedLive.mockReturnValue({ data: [], loading: false, error: null, refetch: vi.fn() });
+  mockedListReplays.mockResolvedValue({ replays: [], total: 0, page: 1, pageSize: 12 });
+  mockedGetReplay.mockResolvedValue(null as never);
+  vi.mocked(listFollowers).mockResolvedValue([]);
+  vi.mocked(listFollowing).mockResolvedValue([]);
+  vi.mocked(follow).mockResolvedValue([]);
+  vi.mocked(unfollow).mockResolvedValue([]);
+  vi.mocked(getFollowFeed).mockResolvedValue({ following: [], replays: [] });
 });
 
 describe("Profile page — scope pills", () => {
@@ -242,5 +277,198 @@ describe("Profile page — fetch states", () => {
     renderProfile();
     expect(await screen.findByTestId("error-state")).toBeInTheDocument();
     expect(screen.queryByText("User not found")).not.toBeInTheDocument();
+  });
+});
+
+describe("Profile page — live indicator", () => {
+  it("links to the live broadcast when the user is currently playing one", async () => {
+    mockedLive.mockReturnValue({
+      data: [
+        {
+          broadcast: { broadcastId: "bc-1" },
+          gameKey: "nim",
+          players: [{ username: "user0", isAi: false }],
+          elo: null,
+          startedAt: "2026-06-01",
+        },
+      ],
+      loading: false,
+      error: null,
+      refetch: vi.fn(),
+    } as never);
+
+    renderProfile("/profile/user0");
+    const indicator = await screen.findByTestId("profile-live-indicator");
+    expect(indicator).toHaveAttribute("href", "/live/bc-1");
+  });
+});
+
+describe("Profile page — follow button (non-owner)", () => {
+  it("shows Follow and calls the follow service when clicked", async () => {
+    renderProfile("/profile/user0"); // viewer is viewer9, so not the owner
+    const button = await screen.findByRole("button", { name: "Follow" });
+
+    await userEvent.click(button);
+    expect(vi.mocked(follow)).toHaveBeenCalledWith(
+      "user0",
+      expect.objectContaining({ username: "viewer9" }),
+    );
+  });
+});
+
+describe("Profile page — settings tab", () => {
+  it("shows an owner-only notice on someone else's settings tab", async () => {
+    renderProfile("/profile/user0?tab=settings");
+    expect(await screen.findByText(/owner-only/i)).toBeInTheDocument();
+    expect(screen.queryByTestId("profile-settings")).not.toBeInTheDocument();
+  });
+});
+
+describe("Profile page — watch-later tab", () => {
+  it("renders an empty state when nothing is starred", async () => {
+    window.localStorage.removeItem("gnarena:watchLater");
+    renderProfile("/profile/viewer9?tab=watch-later");
+    expect(await screen.findByText(/watch later list is empty/i)).toBeInTheDocument();
+  });
+});
+
+describe("Profile page — recent matches list", () => {
+  it("shows Load more and fetches the next page when there are more matches", async () => {
+    const replay = profileSummaryFixture.general.mostViewed;
+    if (!replay) throw new Error("fixture is missing a most-viewed replay");
+    // One replay shown out of five total → the Load more button appears.
+    mockedReplaysHook.mockReturnValue({
+      page: { replays: [replay], total: 5, page: 1, pageSize: 12 },
+      loading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    mockedListReplays.mockResolvedValue({
+      replays: [{ ...replay, matchId: "m-extra" }],
+      total: 5,
+      page: 2,
+      pageSize: 12,
+    });
+
+    renderProfile("/profile/user0");
+    const loadMore = await screen.findByRole("button", { name: /load more/i });
+    await userEvent.click(loadMore);
+    expect(mockedListReplays).toHaveBeenCalled();
+  });
+});
+
+describe("Profile page — edge data states", () => {
+  it("errors when the route has no username", async () => {
+    render(
+      <LoginContext.Provider
+        value={{ user: viewerUser, pass: "pw", reset: () => {}, socket: {} as GameSocket }}
+      >
+        <MemoryRouter initialEntries={["/profile"]}>
+          <Routes>
+            <Route path="/profile" element={<Profile />} />
+          </Routes>
+        </MemoryRouter>
+      </LoginContext.Provider>,
+    );
+    // No username → the producer rejects and the generic error state shows.
+    expect(await screen.findByTestId("error-state")).toBeInTheDocument();
+  });
+
+  it("shows match skeletons while the first page of replays is loading", async () => {
+    mockedReplaysHook.mockReturnValue({
+      page: { replays: [], total: 0, page: 1, pageSize: 12 },
+      loading: true,
+      error: null,
+      refetch: vi.fn(),
+    });
+    renderProfile("/profile/user0");
+    expect(await screen.findByTestId("profile-recent-matches")).toBeInTheDocument();
+    expect(screen.getByTestId("match-grid")).toBeInTheDocument();
+  });
+
+  it("does not re-pin the game when the URL already carries one", async () => {
+    renderProfile("/profile/user0?scope=nim&game=nim");
+    expect(await screen.findByTestId("scope-pill-nim")).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("clears filters from the general scope (no scope param to preserve)", async () => {
+    renderProfile("/profile/user0"); // general scope, empty replays → empty-state Clear
+    const clear = await screen.findByRole("button", { name: "Clear filters" });
+    await userEvent.click(clear);
+    expect(screen.getByTestId("scope-pill-general")).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("shows an unrated puzzle chip when the puzzle rating is null", async () => {
+    const summary = cloneFixture();
+    summary.puzzles.overallRating = null; // still has per-game data → chip shows
+    mockedFetch.mockResolvedValue(summary);
+    renderProfile();
+    await screen.findByTestId("profile-header");
+    const chips = screen.getAllByTestId("elo-chip");
+    const puzzleChip = chips.find((c) => /Puzzles/.test(c.textContent ?? ""));
+    expect(puzzleChip).toHaveTextContent("Unrated");
+  });
+
+  it("lists starred replays on the watch-later tab", async () => {
+    const replay = profileSummaryFixture.general.mostViewed;
+    if (!replay) throw new Error("fixture missing most-viewed replay");
+    window.localStorage.setItem("gnarena:watchLater", JSON.stringify(["m-gen-1"]));
+    // The store snapshot was read at import; nudge it to re-read localStorage.
+    window.dispatchEvent(new Event("storage"));
+    mockedGetReplay.mockResolvedValue({
+      ...replay,
+      moves: [],
+      gameId: "g",
+      initialState: {},
+    });
+
+    renderProfile("/profile/viewer9?tab=watch-later");
+    expect(await screen.findByTestId("profile-watch-later")).toBeInTheDocument();
+    expect(await screen.findByTestId("match-grid")).toBeInTheDocument();
+    window.localStorage.removeItem("gnarena:watchLater");
+  });
+});
+
+describe("Profile page — scope and tab states", () => {
+  it("returns to the general scope when the General pill is clicked", async () => {
+    renderProfile("/profile/user0?scope=nim");
+    expect(await screen.findByTestId("profile-header")).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId("scope-pill-general"));
+    expect(screen.getByTestId("scope-pill-general")).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("renders the settings form on the owner's settings tab", async () => {
+    renderProfile("/profile/viewer9?tab=settings");
+    expect(await screen.findByTestId("profile-settings")).toBeInTheDocument();
+  });
+
+  it("marks the Watch later tab active when it is selected", async () => {
+    renderProfile("/profile/viewer9?tab=watch-later");
+    const tab = await screen.findByRole("tab", { name: "Watch later" });
+    expect(tab).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("marks the Edit profile tab active when settings is selected", async () => {
+    renderProfile("/profile/viewer9?tab=settings");
+    const tab = await screen.findByRole("tab", { name: "Edit profile" });
+    expect(tab).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
+describe("Profile page — already-following state", () => {
+  it("shows Following and unfollows when the viewer already follows the profile", async () => {
+    // The viewer (viewer9) already follows user0.
+    vi.mocked(listFollowing).mockResolvedValue([
+      { username: "user0", display: "User Zero", createdAt: new Date(0) },
+    ]);
+
+    renderProfile("/profile/user0");
+    const button = await screen.findByRole("button", { name: "Following" });
+
+    await userEvent.click(button);
+    expect(vi.mocked(unfollow)).toHaveBeenCalledWith(
+      "user0",
+      expect.objectContaining({ username: "viewer9" }),
+    );
   });
 });

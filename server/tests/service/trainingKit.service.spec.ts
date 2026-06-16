@@ -1,9 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as fs from "node:fs";
 import {
   buildInstallScript,
   getKitManifest,
   getKitFilePath,
 } from "../../src/services/trainingKit.service.ts";
+
+// ESM exports can't be spied directly, so wrap existsSync in a vi.fn that
+// delegates to the real implementation by default (keeping the manifest tests
+// honest) but can be overridden for a single call.
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return { ...actual, existsSync: vi.fn(actual.existsSync) };
+});
 
 /* ---------------------------------------------------------------------------
  * The training kit is the platform-distributed set of files a user needs to
@@ -42,6 +51,24 @@ describe("getKitManifest", () => {
     expect(names).not.toContain("example_local_training_nim.py");
     expect(getKitFilePath("demo_local_session.py")).toBeNull();
     expect(getKitFilePath("example_local_training_nim.py")).toBeNull();
+  });
+});
+
+describe("getKitFilePath", () => {
+  it("returns an absolute path for a whitelisted file that exists on disk", () => {
+    const filePath = getKitFilePath("train.py");
+    expect(filePath).not.toBeNull();
+    expect(filePath?.endsWith("train.py")).toBe(true);
+  });
+
+  it("returns null for a name that isn't on the whitelist", () => {
+    expect(getKitFilePath("../secrets.txt")).toBeNull();
+  });
+
+  it("returns null for a whitelisted file that is missing from disk", () => {
+    // Whitelisted name, but the file isn't actually present → null.
+    vi.mocked(fs.existsSync).mockReturnValueOnce(false);
+    expect(getKitFilePath("train.py")).toBeNull();
   });
 });
 

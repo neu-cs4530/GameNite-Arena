@@ -59,3 +59,31 @@ describe("GameService.parseMove() plumbing", () => {
     expect(service.parseMove({ anything: true })).toBeNull();
   });
 });
+
+describe("GameService.isWinningMove() plumbing", () => {
+  it("delegates to the logic's isWinningMove hook when present", () => {
+    // A logic that declares the optional hook → the ternary's truthy branch.
+    const withHook: GameLogic<CounterState, CounterState> = {
+      ...hooklessLogic,
+      isWinningMove: () => true,
+    };
+    const service = new GameService(withHook);
+    expect(service.isWinningMove({ count: 1 }, "tick")).toBe(true);
+  });
+
+  it("returns null when the logic has no isWinningMove hook", () => {
+    const service = new GameService(hooklessLogic);
+    expect(service.isWinningMove({ count: 1 }, "tick")).toBeNull();
+  });
+});
+
+describe("GameService.view()", () => {
+  it("returns the per-player view of a real state", () => {
+    const view = nimGameService.view({ remaining: 6, nextPlayer: 0 }, 0);
+    expect(view).toBeDefined();
+  });
+
+  it("throws when the state does not exist", () => {
+    expect(() => nimGameService.view(null, 0)).toThrow(/state does not exist/i);
+  });
+});
