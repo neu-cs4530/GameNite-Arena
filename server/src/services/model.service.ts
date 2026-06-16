@@ -9,7 +9,7 @@
 
 import type { GameKey } from "@gamenite/shared";
 import type { DeploymentRecord, RecordId } from "../models.ts";
-import { ModelRepo, DeploymentRepo } from "../repository.ts";
+import { ModelRepo, DeploymentRepo, TrainingJobRepo } from "../repository.ts";
 import { populateSafeUserInfo } from "./user.service.ts";
 import type { UserWithId } from "../types.ts";
 import { storeModelArtifact } from "./artifactStore.service.ts";
@@ -179,14 +179,38 @@ export async function forkModel(
   return populateModelInfo(modelId);
 }
 
+/**
+ * Model ids that belong to a training run which ended canceled or failed.
+ * A run creates its model record up front (trainingSession.service), so a
+ * canceled/failed run leaves a speculative orphan with no artifact — these
+ * shouldn't appear in the user's model lists.
+ */
+async function abandonedRunModelIds(userId: RecordId): Promise<Set<string>> {
+  const jobKeys = await TrainingJobRepo.getAllKeys();
+  if (jobKeys.length === 0) return new Set();
+  const jobs = await TrainingJobRepo.getMany(jobKeys);
+  const dead = new Set<string>();
+  for (const job of jobs) {
+    if (job.userId === userId && (job.status === "canceled" || job.status === "failed")) {
+      dead.add(job.modelId);
+    }
+  }
+  return dead;
+}
+
 export async function getModelsByUser(userId: RecordId): Promise<ModelInfo[]> {
+  const abandoned = await abandonedRunModelIds(userId);
   const allKeys = await ModelRepo.getAllKeys();
   const owned = (
     await Promise.all(
       allKeys.map(async (key) => {
         const record = await ModelRepo.find(key);
-        if (record?.userId === userId) return populateModelInfo(key);
-        return null;
+        if (record?.userId !== userId) return null;
+        // Hide orphans from canceled/failed runs (created at run start, never
+        // produced an artifact). An artifact-bearing model stays listed even
+        // if a later re-run was canceled — it's still a real, usable model.
+        if (!record.artifactRef && abandoned.has(key)) return null;
+        return populateModelInfo(key);
       }),
     )
   ).filter((m): m is ModelInfo => m !== null);
