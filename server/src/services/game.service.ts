@@ -479,6 +479,12 @@ export async function updateGame(
   if (!game.state) {
     throw new Error(`user ${user.username} made a move in game of that hadn't started`);
   }
+  // A finished game accepts no more moves: once it's over (a win, a forfeit,
+  // or an abandonment) the result is decided, so reject any straggler move
+  // rather than letting it reopen the game.
+  if (game.done) {
+    throw new Error(`user ${user.username} made a move in a game that was already over`);
+  }
   const playerIndex = game.players.findIndex((userId) => userId === user.userId);
   if (playerIndex < 0) {
     throw new Error(`user ${user.username} made a move in a game they weren't playing`);

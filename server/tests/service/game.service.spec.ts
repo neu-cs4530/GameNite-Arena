@@ -1098,4 +1098,21 @@ describe("forfeitGame (player resigns)", () => {
   it("rejects a forfeit on a missing game", async () => {
     await expect(forfeitGame("no-such-game", user0)).rejects.toThrow(/invalid game/);
   });
+
+  it("stops the game — no further moves land after a forfeit", async () => {
+    const user1 = (await getUserByUsername("user1"))!;
+    const gameId = await seedNimGame({
+      players: [user0.userId, user1.userId],
+      aiPlayers: [null, null],
+      state: { remaining: 12, nextPlayer: 0 },
+      rated: false,
+    });
+    await forfeitGame(gameId, user0);
+
+    // Neither seat can keep playing a game that is already decided.
+    await expect(updateGame(gameId, user0, 1)).rejects.toThrow(/already over/);
+    await expect(updateGame(gameId, user1, 1)).rejects.toThrow(/already over/);
+    // The position is untouched by the rejected moves.
+    expect((await GameRepo.get(gameId)).state).toEqual({ remaining: 12, nextPlayer: 0 });
+  });
 });
