@@ -73,11 +73,17 @@ export default function ConnectTrainerCard({ jobId }: ConnectTrainerCardProps): 
           <>
             <CopyField
               value={buildBootstrapCommand(origin, jobId, tokenState.token)}
+              masked
+              copyLabel="Copy command"
               testId="connect-trainer-command"
             />
-            <p className="ga-connect-trainer__hint" data-testid="connect-trainer-kit-line">
-              Already have the kit? <code>{buildKitRunCommand(jobId, tokenState.token)}</code>
-            </p>
+            <CopyField
+              label="Already have the kit?"
+              value={buildKitRunCommand(jobId, tokenState.token)}
+              masked
+              copyLabel="Copy attach command"
+              testId="connect-trainer-kit-line"
+            />
           </>
         )}
 
@@ -90,11 +96,15 @@ export default function ConnectTrainerCard({ jobId }: ConnectTrainerCardProps): 
             <CopyField
               label="1. Mint a token (replace YOUR_PASSWORD)"
               value={buildTokenMintCommand(origin, user.username)}
+              masked
+              copyLabel="Copy command"
               testId="connect-trainer-mint-fallback"
             />
             <CopyField
               label="2. Install + attach with it"
               value={buildBootstrapCommand(origin, jobId, "PASTE_TOKEN_HERE")}
+              masked
+              copyLabel="Copy command"
               testId="connect-trainer-command"
             />
           </div>

@@ -2,6 +2,7 @@ import { type GameInfo, withAuth, zGameKey, zGameMakeMovePayload } from "@gameni
 import { type RestAPI, type GameViewUpdates, type SocketAPI, type GameServer } from "../types.ts";
 import {
   createGame,
+  forfeitGame,
   gameServices,
   getGameById,
   getGames,
@@ -222,6 +223,26 @@ export const socketMakeMove: SocketAPI = (socket, io) => async (body) => {
     } else {
       // If a model is on turn now, its paced reply broadcasts separately.
       void runAiTurns(io, gameId);
+    }
+  } catch (err) {
+    logSocketError(socket, err);
+  }
+};
+
+/**
+ * A player resigns: end the game as a forfeit and broadcast the result to the
+ * room (both players + watchers) exactly like a finishing move. No AI turn is
+ * scheduled afterwards — the game is over. This works even when it is the AI's
+ * turn, so a human is never blocked from leaving a game an AI is driving.
+ */
+export const socketForfeit: SocketAPI = (socket, io) => async (body) => {
+  try {
+    const { auth, payload: gameId } = withAuth(z.string()).parse(body);
+    const user = await enforceAuth(auth);
+    const { views, gameResult } = await forfeitGame(gameId, user);
+    sendViewUpdates(io, gameId, views);
+    if (gameResult) {
+      io.to(gameId).emit("gameResult", { gameId, ...gameResult });
     }
   } catch (err) {
     logSocketError(socket, err);
