@@ -8,15 +8,29 @@ the Sprint 0 contract: /inference/health, /inference/load, /inference/unload,
 Run locally:
     uvicorn inference_service:app --port 8001
 
-Storage: artifacts are read from a local directory (MODEL_STORE_PATH env var,
-default "models/"). The Node server and inference service run as a COMBINED
-Render service sharing the same disk, so no object storage is needed.
-Zach's artifactStore.service.ts writes <modelId>.pth into this directory;
-/inference/load reads it by model ID.
+Storage (self-hosted box): artifacts live in a local directory
+(MODEL_STORE_PATH env var, default "models/"). Render stays the CANONICAL
+artifact store; this box keeps a LOCAL CACHE filled lazily on demand:
+
+  /inference/load builds MODEL_STORE/<model_id>.pth. If that file is missing
+  it is pulled once from the Node API
+  (NODE_API_URL/api/inference/artifact/<model_id>, authenticated with the
+  shared token) and written to disk, so subsequent loads hit the local copy
+  with no network call. If the file already exists, it is loaded straight from
+  disk.
+
+AUTH: the box and the Node backend share a single secret
+(INFERENCE_SHARED_TOKEN). /load, /move and /unload require
+`Authorization: Bearer <INFERENCE_SHARED_TOKEN>` (missing/wrong => 401).
+/health stays open but returns status only — it never leaks the loaded
+deployment list without the token.
 
 SECURITY NOTES:
   * We never import or execute the user's adapter here. State<->tensor
     conversion uses the trusted server-side encoders (encoders.py).
+  * model_id is sanitized before it touches the filesystem or a URL: any value
+    containing a path separator or ".." is rejected, so the cache path and the
+    pull URL can never be steered outside MODEL_STORE.
   * Every returned move is subject to the game rule engine on the caller's
     side; CoS 2.8 forfeit-after-3-invalid is tracked per deployment below.
 """
@@ -27,8 +41,9 @@ import os
 import threading
 from typing import Any
 
+import httpx
 import numpy as np
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 import encoders
@@ -37,10 +52,77 @@ ADAPTER_VERSION = "1.0.0"
 MAX_CONSECUTIVE_INVALID = 3        # CoS 2.8
 
 # Matches Zach's ARTIFACT_ROOT in artifactStore.service.ts (server/models/).
-# On the combined Render service both processes share this directory.
+# This box keeps its own lazily-filled cache here.
 MODEL_STORE = os.environ.get("MODEL_STORE_PATH", "models")
 
+# Shared secret for the Node<->box link, and the Render base URL we pull
+# canonical artifacts from. Read from the module so tests can monkeypatch them.
+INFERENCE_SHARED_TOKEN = os.environ.get("INFERENCE_SHARED_TOKEN", "")
+NODE_API_URL = os.environ.get("NODE_API_URL", "")
+
 app = FastAPI(title="GameNite Arena Inference Service")
+
+
+def require_shared_token(authorization: str | None = Header(default=None)) -> None:
+    """FastAPI dependency enforcing `Authorization: Bearer <shared token>`.
+
+    Fails closed: with no token configured every gated request is 503 (never
+    allow-all). A missing/malformed/wrong header is 401. The token is never
+    echoed back.
+    """
+    expected = INFERENCE_SHARED_TOKEN
+    if not expected:
+        raise HTTPException(503, "Inference shared token is not configured")
+    presented = None
+    if authorization is not None and authorization.startswith("Bearer "):
+        presented = authorization[len("Bearer "):]
+    if presented is None or presented != expected:
+        raise HTTPException(401, "Invalid inference token")
+
+
+def _safe_model_id(model_id: str) -> str:
+    """Reject any model_id that could escape MODEL_STORE; return it unchanged."""
+    if os.sep in model_id or (os.altsep and os.altsep in model_id) or ".." in model_id:
+        raise HTTPException(400, f"Invalid model_id: {model_id!r}")
+    return model_id
+
+
+def _ensure_artifact_cached(model_id: str) -> str:
+    """Return the local path for model_id, pulling+caching it from Node if absent.
+
+    Lazy pull-and-cache: when MODEL_STORE/<model_id>.pth is missing, fetch it
+    from NODE_API_URL/api/inference/artifact/<model_id> with the shared token,
+    write the bytes to disk, then return the path. When the file already exists
+    it is returned WITHOUT any network call. A non-200 pull is a 502.
+    """
+    _safe_model_id(model_id)
+    artifact_path = os.path.join(MODEL_STORE, f"{model_id}.pth")
+    if os.path.exists(artifact_path):
+        return artifact_path
+
+    if not NODE_API_URL:
+        raise HTTPException(502, "NODE_API_URL is not configured; cannot pull artifact")
+
+    url = f"{NODE_API_URL}/api/inference/artifact/{model_id}"
+    try:
+        resp = httpx.get(
+            url,
+            headers={"Authorization": f"Bearer {INFERENCE_SHARED_TOKEN}"},
+            timeout=60.0,
+        )
+    except Exception as e:  # network failure reaching Render
+        raise HTTPException(502, f"Failed to reach artifact store: {e}")
+
+    if resp.status_code != 200:
+        raise HTTPException(
+            502,
+            f"Artifact pull failed for {model_id} ({resp.status_code})",
+        )
+
+    os.makedirs(MODEL_STORE, exist_ok=True)
+    with open(artifact_path, "wb") as f:
+        f.write(resp.content)
+    return artifact_path
 
 
 # in-memory model registry
@@ -126,26 +208,27 @@ class MoveRequest(BaseModel):
 
 @app.get("/inference/health")
 def health():
-    """Liveness + how many slots are occupied."""
+    """Liveness only. Open (no token) but minimal — it must NOT leak the loaded
+    deployment list, which would expose what is running to an unauthenticated
+    caller. Only a coarse occupancy count is returned."""
     return {
         "status": "ok",
         "adapter_version": ADAPTER_VERSION,
-        "loaded": list(_REGISTRY.keys()),
+        "loaded": len(_REGISTRY),
     }
 
 
-@app.post("/inference/load")
+@app.post("/inference/load", dependencies=[Depends(require_shared_token)])
 def load(req: LoadRequest):
     """
-    Load a .pth from the local model store into a runtime slot.
+    Load a .pth into a runtime slot, pulling+caching it from Node on a miss.
     Idempotent: re-loading an existing id replaces it.
     """
     if req.game not in encoders.OBS_SIZES:
         raise HTTPException(422, f"Unknown game: {req.game}")
 
-    artifact_path = os.path.join(MODEL_STORE, f"{req.model_id}.pth")
-    if not os.path.exists(artifact_path):
-        raise HTTPException(404, f"Artifact not found: {req.model_id}.pth")
+    # Sanitize first, then lazy pull-and-cache (returns the local path).
+    artifact_path = _ensure_artifact_cached(req.model_id)
 
     try:
         model, obs_size = _load_policy(artifact_path)
@@ -167,7 +250,7 @@ def load(req: LoadRequest):
     return {"status": "loaded", "deployment_id": req.deployment_id, "game": req.game}
 
 
-@app.post("/inference/unload")
+@app.post("/inference/unload", dependencies=[Depends(require_shared_token)])
 def unload(req: UnloadRequest):
     """Free a runtime slot."""
     with _LOCK:
@@ -177,7 +260,7 @@ def unload(req: UnloadRequest):
     return {"status": "unloaded", "deployment_id": req.deployment_id}
 
 
-@app.post("/inference/move")
+@app.post("/inference/move", dependencies=[Depends(require_shared_token)])
 def move(req: MoveRequest):
     """Run one forward pass and return a move."""
     with _LOCK:

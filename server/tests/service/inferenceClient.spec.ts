@@ -1,13 +1,25 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   InferenceError,
   health,
+  inferenceTlsCaForTests,
   loadModel,
   requestMove,
   resetInferenceClientForTests,
   setInferenceClientForTests,
   unloadModel,
 } from "../../src/services/inferenceClient.ts";
+
+const SHARED_TOKEN = "box-shared-token-xyz";
+
+function authHeaderOf(init: RequestInit | undefined): string | undefined {
+  const headers = new Headers(init?.headers);
+  return headers.get("Authorization") ?? undefined;
+}
+
+beforeEach(() => {
+  process.env["INFERENCE_SHARED_TOKEN"] = SHARED_TOKEN;
+});
 
 /* ---------------------------------------------------------------------------
  * Unit tests for the inference HTTP client. The python service never runs in
@@ -34,6 +46,8 @@ function jsonResponse(body: unknown, status = 200): Response {
 afterEach(() => {
   vi.unstubAllGlobals();
   resetInferenceClientForTests();
+  delete process.env["INFERENCE_SHARED_TOKEN"];
+  delete process.env["INFERENCE_TLS_CA"];
 });
 
 describe("requestMove", () => {
@@ -192,10 +206,10 @@ describe("loadModel / unloadModel", () => {
 });
 
 describe("health", () => {
-  it("returns the parsed health payload", async () => {
-    stubFetch(jsonResponse({ status: "ok", loaded: ["dep-1"] }));
+  it("returns the parsed minimal health payload (occupancy count, not the list)", async () => {
+    stubFetch(jsonResponse({ status: "ok", loaded: 1 }));
 
-    await expect(health()).resolves.toEqual({ status: "ok", loaded: ["dep-1"] });
+    await expect(health()).resolves.toEqual({ status: "ok", loaded: 1 });
   });
 
   it("throws an InferenceError when the health check fails", async () => {
@@ -239,5 +253,83 @@ describe("test seam", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(scripted).not.toHaveBeenCalled();
+  });
+});
+
+describe("shared-token auth header", () => {
+  it("attaches the bearer token to loadModel POSTs", async () => {
+    const fetchMock = stubFetch(jsonResponse({ status: "loaded" }));
+
+    await loadModel({ deploymentId: "dep-1", game: "nim", modelId: "model-1" });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(authHeaderOf(init)).toBe(`Bearer ${SHARED_TOKEN}`);
+  });
+
+  it("attaches the bearer token to unloadModel POSTs", async () => {
+    const fetchMock = stubFetch(jsonResponse({ status: "unloaded" }));
+
+    await unloadModel("dep-1");
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(authHeaderOf(init)).toBe(`Bearer ${SHARED_TOKEN}`);
+  });
+
+  it("attaches the bearer token to requestMove POSTs", async () => {
+    const fetchMock = stubFetch(jsonResponse({ move: 1 }));
+
+    await requestMove({ deploymentId: "dep-1", state: {} });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(authHeaderOf(init)).toBe(`Bearer ${SHARED_TOKEN}`);
+  });
+
+  it("keeps the Content-Type header alongside the token", async () => {
+    const fetchMock = stubFetch(jsonResponse({ status: "loaded" }));
+
+    await loadModel({ deploymentId: "dep-1", game: "nim", modelId: "model-1" });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = new Headers(init.headers);
+    expect(headers.get("Content-Type")).toBe("application/json");
+    expect(headers.get("Authorization")).toBe(`Bearer ${SHARED_TOKEN}`);
+  });
+
+  it("omits the Authorization header when no token is configured", async () => {
+    delete process.env["INFERENCE_SHARED_TOKEN"];
+    const fetchMock = stubFetch(jsonResponse({ status: "loaded" }));
+
+    await loadModel({ deploymentId: "dep-1", game: "nim", modelId: "model-1" });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(authHeaderOf(init)).toBeUndefined();
+  });
+});
+
+describe("inferenceTlsCaForTests (self-signed box cert trust)", () => {
+  it("returns the PEM contents verbatim when INFERENCE_TLS_CA is inline PEM", () => {
+    const pem = "-----BEGIN CERTIFICATE-----\nMIIBy}fake\n-----END CERTIFICATE-----\n";
+    process.env["INFERENCE_TLS_CA"] = pem;
+    expect(inferenceTlsCaForTests()).toBe(pem);
+  });
+
+  it("reads the PEM from disk when INFERENCE_TLS_CA is a file path", async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const pem = "-----BEGIN CERTIFICATE-----\nONDISK\n-----END CERTIFICATE-----\n";
+    const file = path.join(os.tmpdir(), `inference-ca-${Date.now()}.pem`);
+    fs.writeFileSync(file, pem);
+    try {
+      process.env["INFERENCE_TLS_CA"] = file;
+      expect(inferenceTlsCaForTests()).toBe(pem);
+    } finally {
+      fs.unlinkSync(file);
+    }
+  });
+
+  it("returns undefined (verify with system CAs) when INFERENCE_TLS_CA is unset", () => {
+    delete process.env["INFERENCE_TLS_CA"];
+    expect(inferenceTlsCaForTests()).toBeUndefined();
   });
 });
