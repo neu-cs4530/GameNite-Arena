@@ -29,6 +29,8 @@ import { recordView, downloadReplay } from "../services/replayService.ts";
 import { createAnnotation, createShareLink } from "../services/annotationService.ts";
 import { listDeploymentViews } from "../services/trainerViewService.ts";
 import { analysisModelOptions } from "../util/analysisModels.ts";
+import { analysisCapabilities } from "../util/analysisCapabilities.ts";
+import { replayGameNames } from "../util/consts.ts";
 import type { DeploymentView } from "@gamenite/shared";
 
 const SHORTCUT_HINTS = [
@@ -102,6 +104,22 @@ export default function ReplayViewer(): JSX.Element {
     () => (replay ? analysisModelOptions(deployments, replay.gameKey) : []),
     [deployments, replay],
   );
+
+  // Which analysis the viewer can offer for this game: the built-in engine is
+  // only meaningful for closed-form games (nim, tic-tac-toe); AI-model insight
+  // needs an eligible deployed model. When neither holds we hide the controls.
+  const caps = replay
+    ? analysisCapabilities(replay.gameKey, modelOptions.length > 0)
+    : { engine: false, ai: false };
+  // Without the built-in engine an analysis run MUST use a model, so default
+  // the selection to the strongest one rather than the "built-in" placeholder.
+  const effectiveDeploymentId =
+    selectedDeploymentId !== ""
+      ? selectedDeploymentId
+      : caps.engine
+        ? ""
+        : (modelOptions[0]?.deploymentId ?? "");
+  const aiErrorMessage = analysisHook.analysis?.aiError ?? "";
 
   // Unfold the analysis drawer the moment results first exist — running the
   // engine from the collapsed header should reveal what it produced. Derived
@@ -428,71 +446,85 @@ export default function ReplayViewer(): JSX.Element {
             onToggle={setAnalysisOpen}
             testId="rail-drawer-engine"
             headerExtra={
-              <>
-                {modelOptions.length > 0 && (
-                  <label className="ga-viewer__engine-model">
-                    <span className="ga-viewer__sr-only">Analysis model</span>
-                    <select
-                      className="ga-viewer__engine-select"
-                      aria-label="Analysis model"
-                      data-testid="analysis-model-select"
-                      value={selectedDeploymentId}
-                      onChange={(e) => setSelectedDeploymentId(e.target.value)}
-                    >
-                      <option value="">Built-in heuristic</option>
-                      {modelOptions.map((o) => (
-                        <option key={o.deploymentId} value={o.deploymentId}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  loading={analysisHook.loading}
-                  onClick={() =>
-                    void analysisHook.run({
-                      auth,
-                      deploymentId: selectedDeploymentId || undefined,
-                    })
-                  }
-                >
-                  Analyze with engine
-                </Button>
-                {analysisHook.loading && (
-                  <span className="ga-viewer__sr-only" data-testid="analysis-loading">
-                    Running engine analysis…
-                  </span>
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    if (!analysisHook.analysis)
+              caps.engine || caps.ai ? (
+                <>
+                  {modelOptions.length > 0 && (
+                    <label className="ga-viewer__engine-model">
+                      <span className="ga-viewer__sr-only">Analysis model</span>
+                      <select
+                        className="ga-viewer__engine-select"
+                        aria-label="Analysis model"
+                        data-testid="analysis-model-select"
+                        value={effectiveDeploymentId}
+                        onChange={(e) => setSelectedDeploymentId(e.target.value)}
+                      >
+                        {caps.engine && <option value="">Built-in engine</option>}
+                        {modelOptions.map((o) => (
+                          <option key={o.deploymentId} value={o.deploymentId}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    loading={analysisHook.loading}
+                    onClick={() =>
                       void analysisHook.run({
                         auth,
-                        deploymentId: selectedDeploymentId || undefined,
-                      });
-                    setCompareOpen((o) => !o);
-                    setAnalysisOpen(true);
-                  }}
-                >
-                  Compare to AI
-                </Button>
-              </>
+                        deploymentId: effectiveDeploymentId || undefined,
+                      })
+                    }
+                  >
+                    {caps.engine ? "Analyze with engine" : "Get AI insight"}
+                  </Button>
+                  {analysisHook.loading && (
+                    <span className="ga-viewer__sr-only" data-testid="analysis-loading">
+                      Running engine analysis…
+                    </span>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      if (!analysisHook.analysis)
+                        void analysisHook.run({
+                          auth,
+                          deploymentId: effectiveDeploymentId || undefined,
+                        });
+                      setCompareOpen((o) => !o);
+                      setAnalysisOpen(true);
+                    }}
+                  >
+                    Compare to AI
+                  </Button>
+                </>
+              ) : null
             }
           >
             <div className="ga-viewer__engine">
               <p className="ga-viewer__engine-hint">
-                {hasAnalysis
-                  ? "Move quality markers are shown inline in the move list."
-                  : "Run the engine to flag best moves, blunders and inaccuracies — then compare the human's play against the AI's choices."}
+                {!caps.engine && !caps.ai
+                  ? `Engine analysis isn't available for ${replayGameNames[replay.gameKey]} — the built-in engine only solves Nim and Tic-Tac-Toe, and you have no deployed model for this game.`
+                  : hasAnalysis
+                    ? caps.engine
+                      ? "Move-quality markers are shown inline in the move list. Open Compare to AI for the best line and any model move."
+                      : "Open Compare to AI to see your deployed model's move at each position."
+                    : caps.engine
+                      ? "Run the engine to flag best moves, blunders and inaccuracies — then compare the play against the engine (and any deployed model)."
+                      : "Run AI insight to see what your deployed model would play at each position."}
               </p>
+              {aiErrorMessage !== "" && (
+                <p className="ga-viewer__engine-error" role="alert">
+                  Model insight unavailable: {aiErrorMessage}
+                </p>
+              )}
               {compareOpen && (
                 <CompareToAIPanel
                   replay={replay}
+                  gameKey={replay.gameKey}
                   analysis={
                     analysisHook.analysis ?? {
                       matchId: replay.matchId,

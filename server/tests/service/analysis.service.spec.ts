@@ -46,6 +46,51 @@ function guessMatch(moves: number[], secret?: number): MatchRecord {
   };
 }
 
+function tttMatch(moves: [number, number][]): MatchRecord {
+  return {
+    gameId: "game-ttt-1",
+    gameKey: "tictactoe",
+    rated: true,
+    participants: [P1, P2],
+    moves: moves.map((move, i) => ({
+      actor: i % 2 === 0 ? P1.id : P2.id,
+      move,
+      timestamp: `2026-06-09T02:0${i}:00.000Z`,
+    })),
+    result: { outcome: "win", winnerId: P1.id },
+    // tic-tac-toe: player 1 ("X") moves first.
+    initialState: {
+      board: [
+        [".", ".", "."],
+        [".", ".", "."],
+        [".", ".", "."],
+      ],
+      nextPlayer: 1,
+    },
+    createdAt: "2026-06-09T02:10:00.000Z",
+    completedAt: "2026-06-09T02:10:00.000Z",
+  };
+}
+
+function connect4Match(moves: number[]): MatchRecord {
+  const board = Array.from({ length: 6 }, () => [".", ".", ".", ".", ".", ".", "."]);
+  return {
+    gameId: "game-c4-1",
+    gameKey: "connect4",
+    rated: true,
+    participants: [P1, P2],
+    moves: moves.map((move, i) => ({
+      actor: i % 2 === 0 ? P1.id : P2.id,
+      move,
+      timestamp: `2026-06-09T03:0${i}:00.000Z`,
+    })),
+    result: { outcome: "win", winnerId: P1.id },
+    initialState: { board, nextPlayer: 0 },
+    createdAt: "2026-06-09T03:10:00.000Z",
+    completedAt: "2026-06-09T03:10:00.000Z",
+  };
+}
+
 describe("analyzeReplay", () => {
   it("returns null for an unknown match", async () => {
     expect(await analyzeReplay("nope")).toBeNull();
@@ -53,7 +98,7 @@ describe("analyzeReplay", () => {
 
   it("nim: flags an already-lost position, a blunder, and the best move", async () => {
     // 21 % 4 === 1, so move 0 is already a forced loss no matter what's taken.
-    // After taking 3 (remaining 18), the winning take is 1 - taking 3 again is
+    // After taking 3 (remaining 18), the winning take is 1 — taking 3 again is
     // a blunder. After that (remaining 15), the winning take is 2.
     await MatchRepo.set("m-nim", nimMatch([3, 3, 2]));
 
@@ -65,36 +110,47 @@ describe("analyzeReplay", () => {
     expect(result!.perMove[2]).toMatchObject({ flag: "best" });
   });
 
-  it("guess: ranks guesses by distance from the secret", async () => {
-    // secret is 50: 45 is close (neutral), 90 is the farthest (inaccuracy),
-    // 50 is exact (best).
+  it("tictactoe: produces real per-move engine verdicts, not empty neutral", async () => {
+    // A short real game: X center, O corner, X corner. The point is that the
+    // engine actually runs (confidence 1, valid flags) — previously every
+    // tic-tac-toe move fell through to the guess analyzer as neutral/0.
+    await MatchRepo.set(
+      "m-ttt",
+      tttMatch([
+        [1, 1],
+        [0, 0],
+        [2, 2],
+      ]),
+    );
+
+    const result = await analyzeReplay("m-ttt");
+
+    expect(result!.perMove).toHaveLength(3);
+    expect(result!.perMove.every((p) => p.confidence === 1)).toBe(true);
+    expect(
+      result!.perMove.every((p) => ["best", "blunder", "inaccuracy", "neutral"].includes(p.flag)),
+    ).toBe(true);
+  });
+
+  it("guess: returns neutral with no built-in analysis (engine stripped)", async () => {
     await MatchRepo.set("m-guess", guessMatch([45, 90, 50], 50));
 
     const result = await analyzeReplay("m-guess");
 
-    expect(result!.perMove[0].flag).toBe("neutral");
-    expect(result!.perMove[1]).toMatchObject({ flag: "inaccuracy", suggestedMove: 50 });
-    expect(result!.perMove[2].flag).toBe("best");
-    expect(result!.perMove[2].suggestedMove).toBeUndefined();
-  });
-
-  it("guess: every guess equally far from the secret is neutral", async () => {
-    await MatchRepo.set("m-guess-tied", guessMatch([40, 60], 50));
-
-    const result = await analyzeReplay("m-guess-tied");
-
-    expect(result!.perMove.map((m) => m.flag)).toStrictEqual(["neutral", "neutral"]);
-  });
-
-  it("guess: falls back to zero-confidence neutral when no secret was recorded", async () => {
-    await MatchRepo.set("m-guess-no-secret", guessMatch([10, 20], undefined));
-
-    const result = await analyzeReplay("m-guess-no-secret");
-
     expect(result!.perMove).toStrictEqual([
       { moveIndex: 0, flag: "neutral", confidence: 0 },
       { moveIndex: 1, flag: "neutral", confidence: 0 },
+      { moveIndex: 2, flag: "neutral", confidence: 0 },
     ]);
+  });
+
+  it("connect4: neutral flags (no built-in engine), regardless of the secret", async () => {
+    await MatchRepo.set("m-c4", connect4Match([3, 3]));
+
+    const result = await analyzeReplay("m-c4");
+
+    expect(result!.perMove.map((p) => p.flag)).toStrictEqual(["neutral", "neutral"]);
+    expect(result!.perMove[0].confidence).toBe(0);
   });
 
   it("omits engineMove when no deploymentId is given", async () => {
@@ -103,6 +159,7 @@ describe("analyzeReplay", () => {
     const result = await analyzeReplay("m-nim-no-deployment");
 
     expect(result!.perMove[0].engineMove).toBeUndefined();
+    expect(result!.aiError).toBeUndefined();
   });
 
   describe("with a deploymentId", () => {
@@ -117,18 +174,40 @@ describe("analyzeReplay", () => {
       const result = await analyzeReplay("m-nim-engine", "dep-1");
 
       expect(result!.perMove[0].engineMove).toBe(1);
+      expect(result!.aiError).toBeUndefined();
     });
 
-    it("guess: attaches the loaded model's move as engineMove", async () => {
-      setInferenceClientForTests({ requestMove: () => Promise.resolve({ move: 1 }) });
-      await MatchRepo.set("m-guess-engine", guessMatch([45], 50));
+    it("tictactoe: feeds the model the board state (not the guess placeholder)", async () => {
+      const requestMove = vi.fn().mockResolvedValue({ move: [0, 2] });
+      setInferenceClientForTests({ requestMove });
+      await MatchRepo.set("m-ttt-engine", tttMatch([[1, 1]]));
 
-      const result = await analyzeReplay("m-guess-engine", "dep-1");
+      const result = await analyzeReplay("m-ttt-engine", "dep-1");
 
-      expect(result!.perMove[0].engineMove).toBe(1);
+      expect(result!.perMove[0].engineMove).toStrictEqual([0, 2]);
+      expect(requestMove).toHaveBeenCalledWith(
+        expect.objectContaining({
+          deploymentId: "dep-1",
+          state: expect.objectContaining({ board: expect.any(Array) }),
+        }),
+      );
     });
 
-    it("falls back to no engineMove when the inference call fails", async () => {
+    it("connect4: AI-only — neutral engine flags but a real model move with the board", async () => {
+      const requestMove = vi.fn().mockResolvedValue({ move: 3 });
+      setInferenceClientForTests({ requestMove });
+      await MatchRepo.set("m-c4-engine", connect4Match([3, 3]));
+
+      const result = await analyzeReplay("m-c4-engine", "dep-1");
+
+      expect(result!.perMove.map((p) => p.flag)).toStrictEqual(["neutral", "neutral"]);
+      expect(result!.perMove[0].engineMove).toBe(3);
+      expect(requestMove).toHaveBeenCalledWith(
+        expect.objectContaining({ state: expect.objectContaining({ board: expect.any(Array) }) }),
+      );
+    });
+
+    it("reports aiError and omits engineMove when the inference call fails", async () => {
       setInferenceClientForTests({
         requestMove: () => Promise.reject(new Error("inference down")),
       });
@@ -136,6 +215,7 @@ describe("analyzeReplay", () => {
 
       const result = await analyzeReplay("m-nim-engine-down", "dep-1");
 
+      expect(result!.aiError).toBeDefined();
       expect(result!.perMove[0].engineMove).toBeUndefined();
     });
 

@@ -211,12 +211,16 @@ export interface AnalysisMoveResult {
   notes?: string;
   /** What the engine would have played instead, if different from actual. */
   suggestedMove?: unknown;
+  /** What a chosen inference model played here, if a deploymentId was supplied. */
+  engineMove?: unknown;
 }
 
 export interface AnalysisResult {
   matchId: string;
   generatedAt: string;
   perMove: AnalysisMoveResult[];
+  /** Set when a chosen model couldn't be run; shown instead of silent failure. */
+  aiError?: string;
 }
 
 /* --- Profile -------------------------------------------------------- */
