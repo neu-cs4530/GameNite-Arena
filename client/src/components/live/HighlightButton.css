@@ -1,0 +1,14 @@
+.ga-highlight-button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ga-highlight-button__name {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-size: var(--text-small);
+}

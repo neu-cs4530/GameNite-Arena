@@ -52,7 +52,12 @@ if (!initialized) {
 if (process.env.MODE === "production") {
   // In production mode, we want to serve the frontend code from Express
   app.use(express.static(path.join(import.meta.dirname, "../../client/dist")));
-  app.get(/(.*)/, (req, res) =>
+  // SPA fallback for client routes — but NOT for `/api/*`. An unmatched API
+  // route must return a real 404 so client services that fall back on 404
+  // (e.g. not-yet-built endpoints) work in production; otherwise this would
+  // answer `/api/...` with index.html (200, HTML), and callers expecting JSON
+  // arrays crash (e.g. `annotations.filter is not a function`).
+  app.get(/^(?!\/api(?:\/|$)).*/, (req, res) =>
     res.sendFile(path.join(import.meta.dirname, "../../client/dist/index.html")),
   );
 } else {

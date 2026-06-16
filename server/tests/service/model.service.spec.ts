@@ -14,7 +14,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as modelService from "../../src/services/model.service.ts";
 import * as artifactStore from "../../src/services/artifactStore.service.ts";
 import * as inferenceClient from "../../src/services/inferenceClient.ts";
-import { ModelRepo, DeploymentRepo } from "../../src/repository.ts";
+import { ModelRepo, DeploymentRepo, TrainingJobRepo } from "../../src/repository.ts";
 import { getUserByUsername } from "../../src/services/auth.service.ts";
 import type { UserWithId } from "../../src/types.ts";
 
@@ -377,5 +377,76 @@ describe("updateDeploymentStatus edges", () => {
     // The record keeps its previous status when the unload is rejected.
     const record = await DeploymentRepo.get(dep.deploymentId);
     expect(record.status).toBe("active");
+  });
+});
+
+describe("getModelsByUser — excludes canceled/failed run orphans", () => {
+  const now = new Date().toISOString();
+  const config = { episodes: 1000, learningRate: 0.0003 };
+  const progress = { episodes: 0, meanReward: 0, winRate: 0, updatedAt: now };
+
+  function model(displayName: string, over: Partial<Parameters<typeof ModelRepo.add>[0]> = {}) {
+    return ModelRepo.add({
+      userId: testUser.userId,
+      gameKey: "nim",
+      displayName,
+      sourceRef: "local-training",
+      visibility: "private",
+      createdAt: now,
+      updatedAt: now,
+      ...over,
+    });
+  }
+
+  it("hides artifact-less models from canceled/failed runs, keeps real models + untrained forks", async () => {
+    await TrainingJobRepo.clear();
+
+    const trained = await model("Trained Bot", { artifactRef: "trained.pth" });
+    const canceled = await model("Canceled Run");
+    await TrainingJobRepo.add({
+      modelId: canceled,
+      userId: testUser.userId,
+      gameKey: "nim",
+      config,
+      status: "canceled",
+      progress,
+      checkpoints: [],
+      createdAt: now,
+    });
+    const failed = await model("Failed Run");
+    await TrainingJobRepo.add({
+      modelId: failed,
+      userId: testUser.userId,
+      gameKey: "nim",
+      config,
+      status: "failed",
+      progress,
+      checkpoints: [],
+      createdAt: now,
+    });
+    const fork = await model("Untrained Fork", { sourceRef: "fork:src" });
+
+    const ids = (await modelService.getModelsByUser(testUser.userId)).map((m) => m.modelId);
+    expect(ids).toContain(trained);
+    expect(ids).toContain(fork);
+    expect(ids).not.toContain(canceled);
+    expect(ids).not.toContain(failed);
+  });
+
+  it("keeps an artifact-bearing model even if a later re-run was canceled", async () => {
+    await TrainingJobRepo.clear();
+    const m = await model("Retrained", { artifactRef: "x.pth" });
+    await TrainingJobRepo.add({
+      modelId: m,
+      userId: testUser.userId,
+      gameKey: "nim",
+      config,
+      status: "canceled",
+      progress,
+      checkpoints: [],
+      createdAt: now,
+    });
+    const ids = (await modelService.getModelsByUser(testUser.userId)).map((m2) => m2.modelId);
+    expect(ids).toContain(m);
   });
 });

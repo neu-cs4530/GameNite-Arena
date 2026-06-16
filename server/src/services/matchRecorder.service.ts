@@ -95,6 +95,15 @@ export class MatchRecorder {
     return this._inProgress.has(gameId);
   }
 
+  /**
+   * A snapshot of the moves buffered so far for a live game, in play order.
+   * Empty when the game isn't currently being recorded. Used by the highlight
+   * feature to clip the most recent moves of a live match (Story 3.12).
+   */
+  getRecordedMoves(gameId: string): MatchMove[] {
+    return (this._inProgress.get(gameId)?.moves ?? []).map((m) => ({ ...m }));
+  }
+
   /** Clears all recorder state. Test hook — never call in production code. */
   resetForTests(): void {
     this._inProgress.clear();

@@ -55,7 +55,9 @@ ACTION_SPACES = {
 }
 
 # Checkers board encoding: 32 dark squares, one-hot over 5 piece states.
-CHECKERS_PIECES = {"empty": 0, "R": 1, "B": 2, "RK": 3, "BK": 4}
+# "." is the in-game wire format for empty squares (CheckersEntry on the TS
+# side); "empty" is kept for backwards-compatible test fixtures.
+CHECKERS_PIECES = {"empty": 0, ".": 0, "R": 1, "B": 2, "RK": 3, "BK": 4}
 
 
 class EncodingError(ValueError):

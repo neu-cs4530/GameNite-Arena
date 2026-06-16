@@ -83,9 +83,9 @@ _NIM_SHAPING = {
     "potential-mod4": {"reward_shaping": True},
 }
 _NIM_TABLES = (
-    ("opponentStyle", _NIM_OPPONENTS, "misere-blunder-15"),
+    ("opponentStyle", _NIM_OPPONENTS, "misere-blunder-25"),
     ("startingPile", _NIM_STARTS, "random-8-21"),
-    ("rewardShaping", _NIM_SHAPING, "potential-mod4"),
+    ("rewardShaping", _NIM_SHAPING, "none"),
 )
 
 
@@ -442,32 +442,75 @@ def run_tictactoe(session: GameNiteSession, *, user_id: str, episodes: int,
     return 0
 
 
+def evaluate_checkers(model, n_episodes: int = EVAL_EPISODES) -> tuple[float, float]:
+    from example_checkers_adapter import CheckersEnv
+    env = CheckersEnv()
+    wins, total_reward = 0, 0.0
+    for ep in range(n_episodes):
+        obs, _ = env.reset(seed=ep if ep == 0 else None)
+        done, ep_reward = False, 0.0
+        while not done:
+            action, _ = model.predict(obs, deterministic=True)
+            obs, reward, done, _, _ = env.step(int(action))
+            ep_reward += float(reward)
+        total_reward += ep_reward
+        if ep_reward > 0:
+            wins += 1
+    return wins / n_episodes, total_reward / n_episodes
+
+
 def run_checkers(session: GameNiteSession, *, user_id: str, episodes: int,
                  learning_rate: float, heuristics: Any, chunk_steps: int,
                  display_name: str) -> int:
     """
-    Stub env always draws after 1 step — produces a valid artifact
-    but the model has no real game knowledge until CheckersEnv is fully implemented.
+    Chunked PPO with self-play and random opponent warmup.
+    Phase 1 (first 20% of chunks): random opponent.
+    Phase 2 (remaining): frozen-opponent self-play, rotated every SELF_PLAY_ROTATE_EVERY chunks.
     """
+    import copy
     from stable_baselines3 import PPO
     from example_checkers_adapter import CheckersAdapter
-    print("[train] checkers — stub env, artifact only")
+
+    print("[train] checkers — random opponent + self-play")
     adapter = CheckersAdapter(user_id=user_id)
-    env = adapter.build_env()
+    n_chunks = plan_chunks(episodes, chunk_steps)
+    warmup_chunks = max(1, n_chunks // 5)
+
+    env = adapter.build_env(opponent_policy=None)
     model = PPO("MlpPolicy", env, learning_rate=learning_rate, n_steps=PPO_N_STEPS, verbose=0)
     adapter._model = model
-    n_chunks = plan_chunks(episodes, chunk_steps)
+    frozen = None
+
+    win_rate, mean_reward = 0.0, 0.0
     for chunk in range(1, n_chunks + 1):
+        if chunk == warmup_chunks + 1:
+            frozen = copy.deepcopy(model)
+            env.close()
+            env = adapter.build_env(opponent_policy=frozen)
+            model.set_env(env)
+            print(f"[train] switching to self-play at chunk {chunk}")
+        elif chunk > warmup_chunks and (chunk - warmup_chunks) % SELF_PLAY_ROTATE_EVERY == 0:
+            frozen = copy.deepcopy(model)
+            env.close()
+            env = adapter.build_env(opponent_policy=frozen)
+            model.set_env(env)
+            print(f"[train] rotating frozen opponent at chunk {chunk}")
+
         model.learn(total_timesteps=chunk_steps, reset_num_timesteps=False)
+        win_rate, mean_reward = evaluate_checkers(model)
         keep_going = session.report(
             model.num_timesteps,
-            metrics={"winRate": 0.0, "meanReward": 0.0},
-            message=f"chunk {chunk}/{n_chunks}",
+            metrics={"winRate": round(win_rate, 4), "meanReward": round(mean_reward, 4)},
+            message=f"chunk {chunk}/{n_chunks} - winRate {win_rate:.2f}",
         )
-        print(f"[train] {model.num_timesteps} steps")
+        print(f"[train] {model.num_timesteps} steps  winRate={win_rate:.2f}  meanReward={mean_reward:+.2f}")
         if not keep_going:
+            print("[train] canceled from the web UI - stopping")
+            env.close()
             return 0
-    session.complete(final_metrics={"winRate": 0.0, "meanReward": 0.0})
+
+    env.close()
+    session.complete(final_metrics={"winRate": round(win_rate, 4), "meanReward": round(mean_reward, 4)})
     with tempfile.TemporaryDirectory() as tmp:
         pth = Path(tmp) / f"{display_name}.pth"
         adapter.save(str(pth))
@@ -475,11 +518,6 @@ def run_checkers(session: GameNiteSession, *, user_id: str, episodes: int,
     print(f"[train] artifact uploaded (hasArtifact={info.get('hasArtifact')}) - done")
     return 0
 
-# Games with a real local trainer. checkers is intentionally absent: its
-# action space is dynamic (index into per-position legal_moves) and the kit's
-# CheckersEnv is a one-step stub with no rules engine, so PPO has nothing real
-# to learn. Training it requires a full self-play rules engine — left out
-# rather than shipping a model that looks trained but plays at random.
 TRAINERS = {
     "nim": run_nim,
     "connect4": run_connect4,
