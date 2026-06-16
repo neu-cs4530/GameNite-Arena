@@ -794,6 +794,91 @@ describe("AI loop edge cases", () => {
     expect(outcome).not.toBeNull();
     expect(outcome!.views.watchers.type).toBe("guess");
   });
+
+  it("encodes the tictactoe board player-relative for inference", async () => {
+    // AI is seat 1 (X, nextPlayer=1); empty board → all zeros
+    const requestMove = vi.fn().mockResolvedValue({ move: [0, 0] });
+    setInferenceClientForTests({ requestMove });
+    const gameId = randomUUID().toString();
+    await GameRepo.set(gameId, {
+      type: "tictactoe",
+      state: { board: [[".", ".", "."], [".", ".", "."], [".", ".", "."]], nextPlayer: 1 },
+      done: false,
+      chat: "chat-ttt",
+      players: [user0.userId, botSeat.deploymentId],
+      aiPlayers: [null, botSeat],
+      rated: false,
+      createdAt: new Date().toISOString(),
+      createdBy: user0.userId,
+    });
+
+    await maybeFireAiMove(gameId);
+
+    expect(requestMove).toHaveBeenCalledExactlyOnceWith({
+      deploymentId: botSeat.deploymentId,
+      state: { board: [0, 0, 0, 0, 0, 0, 0, 0, 0] },
+    });
+  });
+
+  it("encodes the connect4 board player-relative for inference", async () => {
+    // AI is seat 1 (Y, nextPlayer=1); empty board → all-zero rows
+    const emptyRow = [".", ".", ".", ".", ".", ".", "."];
+    const requestMove = vi.fn().mockResolvedValue({ move: 0 });
+    setInferenceClientForTests({ requestMove });
+    const gameId = randomUUID().toString();
+    await GameRepo.set(gameId, {
+      type: "connect4",
+      state: {
+        board: Array.from({ length: 6 }, () => [...emptyRow]),
+        nextPlayer: 1,
+      },
+      done: false,
+      chat: "chat-c4",
+      players: [user0.userId, botSeat.deploymentId],
+      aiPlayers: [null, botSeat],
+      rated: false,
+      createdAt: new Date().toISOString(),
+      createdBy: user0.userId,
+    });
+
+    await maybeFireAiMove(gameId);
+
+    const call = requestMove.mock.calls[0][0] as { state: { board: number[][] } };
+    expect(call.state.board).toHaveLength(6);
+    expect(call.state.board[0]).toHaveLength(7);
+    expect(call.state.board[0].every((v: number) => v === 0)).toBe(true);
+  });
+
+  it("encodes checkers as 32 dark-square entries and passes legalMoves", async () => {
+    // AI is seat 1 (B, nextPlayer=1); B piece at [2,1], can step to [3,2]
+    const emptyRow = [".", ".", ".", ".", ".", ".", ".", "."];
+    const board = Array.from({ length: 8 }, () => [...emptyRow]);
+    board[2][1] = "B";
+    const requestMove = vi.fn().mockResolvedValue({ move: { squares: [[2, 1], [3, 2]] } });
+    setInferenceClientForTests({ requestMove });
+    const gameId = randomUUID().toString();
+    await GameRepo.set(gameId, {
+      type: "checkers",
+      state: { board, nextPlayer: 1 },
+      done: false,
+      chat: "chat-chk",
+      players: [user0.userId, botSeat.deploymentId],
+      aiPlayers: [null, botSeat],
+      rated: false,
+      createdAt: new Date().toISOString(),
+      createdBy: user0.userId,
+    });
+
+    await maybeFireAiMove(gameId);
+
+    const call = requestMove.mock.calls[0][0] as {
+      state: { squares: string[] };
+      legalMoves: unknown[];
+    };
+    expect(call.state.squares).toHaveLength(32);
+    expect(call.legalMoves).toBeDefined();
+    expect(call.legalMoves!.length).toBeGreaterThan(0);
+  });
 });
 
 describe("failure tolerance around archival", () => {
@@ -842,5 +927,24 @@ describe("failure tolerance around archival", () => {
       expect.stringContaining("match capture failed"),
       expect.any(Error),
     );
+  });
+});
+
+describe("maybeFireAiMove — unknown game type", () => {
+  it("calls encodeStateForInference and rejects when game type is not recognised", async () => {
+    const gameId = randomUUID();
+    await GameRepo.set(gameId, {
+      type: "unknown_game",
+      state: { nextPlayer: 0 },
+      done: false,
+      chat: "c1",
+      players: [botSeat.deploymentId],
+      aiPlayers: [botSeat, null],
+      rated: false,
+      createdAt: new Date().toISOString(),
+      createdBy: "u1",
+    } as unknown as GameRecord);
+    scriptAiMoves(1);
+    await expect(maybeFireAiMove(gameId)).rejects.toThrow();
   });
 });

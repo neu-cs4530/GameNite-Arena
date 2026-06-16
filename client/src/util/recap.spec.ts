@@ -160,6 +160,42 @@ describe("isViewDone", () => {
       isViewDone({ type: "guess", view: { finished: true, secret: 4, guesses: [3, 7] } }),
     ).toBe(true);
   });
+
+  it("reads tictactoe as done when there is a winning entry", () => {
+    const winningEntry = [[0, 0], [0, 1], [0, 2]] as [[number, number], [number, number], [number, number]];
+    expect(
+      isViewDone({ type: "tictactoe", view: { board: [["X", "X", "X"], [".", ".", "."], [".", ".", "."]], nextPlayer: 1, winningEntry } }),
+    ).toBe(true);
+  });
+
+  it("reads tictactoe as done when the board is full (draw)", () => {
+    const full = [["X", "O", "X"], ["O", "X", "O"], ["O", "X", "O"]] as never;
+    expect(
+      isViewDone({ type: "tictactoe", view: { board: full, nextPlayer: 0, winningEntry: null } }),
+    ).toBe(true);
+  });
+
+  it("reads connect4 as done when there is a winning entry", () => {
+    const board = Array.from({ length: 6 }, () => Array(7).fill(".")) as never;
+    const winningEntry = [[5, 0], [5, 1], [5, 2], [5, 3]] as [[number, number], [number, number], [number, number], [number, number]];
+    expect(
+      isViewDone({ type: "connect4", view: { board, nextPlayer: 1, winningEntry } }),
+    ).toBe(true);
+  });
+
+  it("reads checkers as done when winner is set", () => {
+    const board = Array.from({ length: 8 }, () => Array(8).fill("."));
+    expect(
+      isViewDone({ type: "checkers", view: { board, nextPlayer: 0, winner: 1, legalMoves: [] } }),
+    ).toBe(true);
+  });
+
+  it("reads checkers as not done when there is no winner", () => {
+    const board = Array.from({ length: 8 }, () => Array(8).fill("."));
+    expect(
+      isViewDone({ type: "checkers", view: { board, nextPlayer: 0, winner: null, legalMoves: [] } }),
+    ).toBe(false);
+  });
 });
 
 describe("recapMode", () => {

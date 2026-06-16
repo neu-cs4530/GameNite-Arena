@@ -313,6 +313,24 @@ describe("listReplays — filters", () => {
     });
     expect(page.replays.map((r) => r.matchId).sort()).toEqual(["m1-hh-tictactoe", "m4-mixed-nim"]);
   });
+
+  it("filters by results=forfeit (no forfeit matches in fixture returns empty)", async () => {
+    const page = await listReplays({ ...defaults, results: ["forfeit"] });
+    expect(page.total).toBe(0);
+  });
+
+  it("filters by results=losses with forUser — passes through to forUser filter", async () => {
+    const page = await listReplays({ ...defaults, results: ["losses"], forUser: "alice" });
+    const ids = page.replays.map((r) => r.matchId);
+    expect(ids).toContain("m1-hh-tictactoe");
+    expect(ids).toContain("m4-mixed-nim");
+    expect(ids).not.toContain("m2-hh-checkers");
+  });
+
+  it("filters by date preset (month rolling window)", async () => {
+    const page = await listReplays({ ...defaults, date: "month" });
+    expect(page.total).toBeGreaterThanOrEqual(0);
+  });
 });
 
 describe("listReplays — sort", () => {

@@ -78,24 +78,12 @@ function GuessMoveInput({
   );
 }
 
-/**
- * gameKey → attempt-input dispatch, keyed by the same discriminant as the
- * boards: a new game gets exactly one board entry + one input entry.
- */
-const inputs: {
-  [key in PuzzlePosition["kind"]]: (props: MoveInputProps) => JSX.Element | null;
-} = {
-  nim: ({ position, ...rest }) =>
-    position.kind === "nim" ? <NimMoveInput view={position.view} {...rest} /> : null,
-  guess: ({ position, ...rest }) =>
-    position.kind === "guess" ? <GuessMoveInput view={position.view} {...rest} /> : null,
-  // these games are played by clicking the board itself (see PuzzleBoard)
-  tictactoe: () => null,
-  connect4: () => null,
-  checkers: () => null,
-};
-
 /** Renders the per-game attempt controls for a daily puzzle. */
-export default function PuzzleMoveInput(props: MoveInputProps): JSX.Element {
-  return <>{inputs[props.position.kind](props)}</>;
+export default function PuzzleMoveInput({ position, disabled, onSubmit }: MoveInputProps): JSX.Element {
+  switch (position.kind) {
+    case "nim": return <NimMoveInput view={position.view} disabled={disabled} onSubmit={onSubmit} />;
+    case "guess": return <GuessMoveInput view={position.view} disabled={disabled} onSubmit={onSubmit} />;
+    // these games are played by clicking the board itself (see PuzzleBoard)
+    default: return <></>;
+  }
 }

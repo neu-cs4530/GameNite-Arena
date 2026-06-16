@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { MigrationLogRepo } from "../repository.ts";
 import {
   type Migration,
@@ -110,5 +113,35 @@ describe("MigrationRunner", () => {
     const ids = migrations.map((m) => m.id);
     expect(ids).toContain("000_sprint1_arena_baseline");
     expect(ids).toEqual([...ids].sort());
+  });
+
+  const MIGRATIONS_DIR = fileURLToPath(new URL(".", import.meta.url));
+  const tempFiles: string[] = [];
+
+  afterEach(() => {
+    for (const f of tempFiles.splice(0)) {
+      try {
+        fs.unlinkSync(f);
+      } catch {
+        // already gone
+      }
+    }
+  });
+
+  it("throws when a migration file exports a non-migration value", async () => {
+    const tmpPath = path.join(MIGRATIONS_DIR, "998_test_null_export.ts");
+    fs.writeFileSync(tmpPath, "export const migration = null;\n");
+    tempFiles.push(tmpPath);
+    await expect(loadAllMigrations()).rejects.toThrow(/must export a 'migration'/);
+  });
+
+  it("throws when a migration id does not match its filename", async () => {
+    const tmpPath = path.join(MIGRATIONS_DIR, "999_test_bad_id.ts");
+    fs.writeFileSync(
+      tmpPath,
+      'export const migration = { id: "wrong_name", description: "d", up: async () => {} };\n',
+    );
+    tempFiles.push(tmpPath);
+    await expect(loadAllMigrations()).rejects.toThrow(/does not match its filename/);
   });
 });

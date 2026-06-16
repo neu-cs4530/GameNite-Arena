@@ -106,3 +106,58 @@ describe("TrainingPackFeed: load more", () => {
     expect(mockedFetch).toHaveBeenLastCalledWith("nim", { limit: 5, exclude: ["match-1"] });
   });
 });
+
+describe("TrainingPackFeed: card result variants", () => {
+  it("shows the fail badge when the attempt is incorrect", async () => {
+    mockedFetch.mockResolvedValueOnce([entry("match-1")]);
+    mockedSubmit.mockResolvedValueOnce({ success: false, solutionMove: 2 });
+    renderFeed();
+
+    await screen.findByTestId("training-card");
+    await userEvent.click(screen.getByTestId("puzzle-take-3"));
+
+    const result = await screen.findByTestId("training-result");
+    expect(result).toHaveTextContent(/Not quite/);
+  });
+
+  it("shows a retry button when the submit call fails", async () => {
+    mockedFetch.mockResolvedValueOnce([entry("match-1")]);
+    mockedSubmit.mockRejectedValueOnce(new Error("network error"));
+    renderFeed();
+
+    await screen.findByTestId("training-card");
+    await userEvent.click(screen.getByTestId("puzzle-take-3"));
+
+    expect(await screen.findByTestId("training-retry")).toBeInTheDocument();
+  });
+
+  it("submits via board click for a connect4 puzzle", async () => {
+    const c4Board = Array.from({ length: 6 }, () => Array(7).fill("."));
+    const c4Entry: TrainingPackEntry = {
+      gameKey: "connect4",
+      position: { board: c4Board, nextPlayer: 0, winningEntry: null },
+      sourceMatchId: "match-c4",
+      createdAt: "2026-06-09T00:30:00.000Z",
+    };
+    mockedFetch.mockResolvedValueOnce([c4Entry]);
+    mockedSubmit.mockResolvedValueOnce({ success: true, solutionMove: 3 });
+
+    render(
+      <LoginContext.Provider
+        value={{ user: viewer, pass: "pw", reset: () => {}, socket: {} as GameSocket }}
+      >
+        <TrainingPackFeed gameKey="connect4" />
+      </LoginContext.Provider>,
+    );
+
+    await screen.findByTestId("training-card");
+    await userEvent.click(screen.getByTestId("c4-col-3"));
+
+    expect(await screen.findByTestId("training-result")).toHaveTextContent(/Solved/);
+    expect(mockedSubmit).toHaveBeenCalledWith(
+      "connect4",
+      { username: "ada", password: "pw" },
+      { sourceMatchId: "match-c4", move: 3 },
+    );
+  });
+});

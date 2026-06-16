@@ -446,3 +446,91 @@ describe("updateRatingsForGame guess edge", () => {
     expect(result!.winnerId).toBe("bob");
   });
 });
+
+describe("updateRatingsForGame — board games (getWinnerId branches)", () => {
+  it("determines the winner of a tictactoe game", async () => {
+    // alice is player 0 (O), bob is player 1 (X); top row of X's wins for bob
+    const game: GameRecord = {
+      ...baseGame,
+      type: "tictactoe",
+      state: {
+        board: [
+          ["X", "X", "X"],
+          ["O", "O", "."],
+          [".", ".", "."],
+        ],
+        nextPlayer: 0,
+      },
+    };
+
+    const result = await updateRatingsForGame(game, "game-ttt-1");
+
+    expect(result!.winnerId).toBe("bob");
+    expect(result!.outcome).toBe("win");
+    const bobRating = await getRating("bob", "tictactoe");
+    expect(bobRating.rating).toBeGreaterThan(DEFAULT_RATING);
+  });
+
+  it("records a tictactoe draw when no one has won", async () => {
+    // full board, no winner
+    const game: GameRecord = {
+      ...baseGame,
+      type: "tictactoe",
+      state: {
+        board: [
+          ["X", "O", "X"],
+          ["O", "X", "O"],
+          ["O", "X", "O"],
+        ],
+        nextPlayer: 0,
+      },
+    };
+
+    const result = await updateRatingsForGame(game, "game-ttt-draw");
+
+    expect(result!.winnerId).toBeUndefined();
+    expect(result!.outcome).toBe("draw");
+  });
+
+  it("determines the winner of a connect4 game", async () => {
+    const emptyRow = [".", ".", ".", ".", ".", ".", "."];
+    // alice (player 0, R) has four in bottom row
+    const game: GameRecord = {
+      ...baseGame,
+      type: "connect4",
+      state: {
+        board: [
+          [...emptyRow],
+          [...emptyRow],
+          [...emptyRow],
+          [...emptyRow],
+          [...emptyRow],
+          ["R", "R", "R", "R", ".", ".", "."],
+        ],
+        nextPlayer: 1,
+      },
+    };
+
+    const result = await updateRatingsForGame(game, "game-c4-1");
+
+    expect(result!.winnerId).toBe("alice");
+    expect(result!.outcome).toBe("win");
+  });
+
+  it("determines the winner of a checkers game", async () => {
+    // Blue has no pieces — Red wins (player to move is blue with nothing left)
+    const emptyRow = [".", ".", ".", ".", ".", ".", ".", "."];
+    const board = Array.from({ length: 8 }, () => [...emptyRow]);
+    board[0][1] = "R";
+    const game: GameRecord = {
+      ...baseGame,
+      type: "checkers",
+      state: { board, nextPlayer: 1 }, // blue (bob) to move, has nothing
+    };
+
+    const result = await updateRatingsForGame(game, "game-chk-1");
+
+    // winnerIndex returns 0 (Red wins), which maps to players[0] = alice
+    expect(result!.winnerId).toBe("alice");
+  });
+});

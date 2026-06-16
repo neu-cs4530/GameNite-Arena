@@ -450,3 +450,103 @@ describe("hardening (review findings)", () => {
     expect(page.total).toBe(1);
   });
 });
+
+describe("resolveCheckpointJobId", () => {
+  it("throws when the checkpoint model is not found", async () => {
+    await expect(
+      startTrainingSession(user0, { ...nimStart, checkpointModelId: "no-such-model" }),
+    ).rejects.toThrow(/not found/);
+  });
+
+  it("throws when the checkpoint model is owned by someone else", async () => {
+    const theirs = await startTrainingSession(user1, nimStart);
+    await expect(
+      startTrainingSession(user0, { ...nimStart, checkpointModelId: theirs.modelId }),
+    ).rejects.toThrow(/not own/);
+  });
+
+  it("throws when the checkpoint model has no trained artifact yet", async () => {
+    const first = await startTrainingSession(user0, nimStart);
+    await expect(
+      startTrainingSession(user0, { ...nimStart, checkpointModelId: first.modelId }),
+    ).rejects.toThrow(/no trained artifact/);
+  });
+
+  it("throws when there are no completed sessions for the checkpoint model", async () => {
+    const first = await startTrainingSession(user0, nimStart);
+    const model = await ModelRepo.get(first.modelId);
+    model.artifactRef = "ckpt.pth";
+    await ModelRepo.set(first.modelId, model);
+    await expect(
+      startTrainingSession(user0, { ...nimStart, checkpointModelId: first.modelId }),
+    ).rejects.toThrow(/No completed training session/);
+  });
+
+  it("resolves to the most recent completed session for the checkpoint model", async () => {
+    const checkpoint = await startTrainingSession(user0, nimStart);
+    const model = await ModelRepo.get(checkpoint.modelId);
+    model.artifactRef = "ckpt.pth";
+    await ModelRepo.set(checkpoint.modelId, model);
+    await completeTrainingSession(user0, checkpoint.jobId, {});
+
+    const next = await startTrainingSession(user0, {
+      ...nimStart,
+      checkpointModelId: checkpoint.modelId,
+    });
+    expect(next.checkpointJobId).toBe(checkpoint.jobId);
+  });
+});
+
+describe("refreshForWrite race conditions", () => {
+  it("completeTrainingSession throws when the session becomes terminal mid-flight", async () => {
+    const start = await startTrainingSession(user0, nimStart);
+    const queued = await TrainingJobRepo.get(start.jobId);
+    const findSpy = vi
+      .spyOn(TrainingJobRepo, "find")
+      .mockResolvedValueOnce({ ...queued })
+      .mockResolvedValueOnce({ ...queued, status: "canceled" as const, completedAt: new Date().toISOString() });
+
+    await expect(completeTrainingSession(user0, start.jobId, {})).rejects.toThrow(/already/);
+    findSpy.mockRestore();
+  });
+
+  it("failTrainingSession throws when the session becomes terminal mid-flight", async () => {
+    const start = await startTrainingSession(user0, nimStart);
+    const queued = await TrainingJobRepo.get(start.jobId);
+    const findSpy = vi
+      .spyOn(TrainingJobRepo, "find")
+      .mockResolvedValueOnce({ ...queued })
+      .mockResolvedValueOnce({ ...queued, status: "completed" as const, completedAt: new Date().toISOString() });
+
+    await expect(failTrainingSession(user0, start.jobId, { error: "x" })).rejects.toThrow(/already/);
+    findSpy.mockRestore();
+  });
+
+  it("cancelTrainingSession throws when the session becomes terminal mid-flight", async () => {
+    const start = await startTrainingSession(user0, nimStart);
+    const queued = await TrainingJobRepo.get(start.jobId);
+    const findSpy = vi
+      .spyOn(TrainingJobRepo, "find")
+      .mockResolvedValueOnce({ ...queued })
+      .mockResolvedValueOnce({ ...queued, status: "completed" as const, completedAt: new Date().toISOString() });
+
+    await expect(cancelTrainingSession(user0, start.jobId)).rejects.toThrow(/already/);
+    findSpy.mockRestore();
+  });
+});
+
+describe("miscellaneous edge cases", () => {
+  it("getSessionArtifactPath returns null for an unknown jobId", async () => {
+    expect(await getSessionArtifactPath("ghost-job-id")).toBeNull();
+  });
+
+  it("reportTrainingProgress sets fraction to 0 when configured episodes is 0", async () => {
+    const start = await startTrainingSession(user0, nimStart);
+    const record = await TrainingJobRepo.get(start.jobId);
+    record.config.episodes = 0;
+    await TrainingJobRepo.set(start.jobId, record);
+
+    await reportTrainingProgress(user0, start.jobId, { episodes: 5 });
+    expect(fake.published.at(-1)!.event.progress).toBe(0);
+  });
+});
