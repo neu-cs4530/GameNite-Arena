@@ -1,10 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "./api.ts";
-import {
-  countActiveForGame,
-  listDeploymentViews,
-  listOwnModels,
-} from "./trainerViewService.ts";
+import { countActiveForGame, listDeploymentViews, listOwnModels } from "./trainerViewService.ts";
 import type { DeploymentView } from "@gamenite/shared";
 
 vi.mock("./api.ts", () => ({
@@ -22,7 +18,9 @@ describe("listDeploymentViews", () => {
     const deployments = [{ deploymentId: "d1" }];
     mockedGet.mockResolvedValueOnce({ data: { deployments } });
     await expect(listDeploymentViews("user0")).resolves.toBe(deployments);
-    expect(mockedGet).toHaveBeenCalledWith("/api/deployment/list", { params: { username: "user0" } });
+    expect(mockedGet).toHaveBeenCalledWith("/api/deployment/list", {
+      params: { username: "user0" },
+    });
   });
 });
 
@@ -84,8 +82,24 @@ describe("listOwnModels", () => {
   it("sorts newest-updated first", async () => {
     mockedGet.mockResolvedValueOnce({
       data: [
-        { modelId: "old", displayName: "Old", gameKey: "nim", visibility: "private", updatedAt: "2024-01-01T00:00:00Z", owner: { username: "u", display: "U" }, createdAt: "2024-01-01T00:00:00Z" },
-        { modelId: "new", displayName: "New", gameKey: "nim", visibility: "private", updatedAt: "2024-06-01T00:00:00Z", owner: { username: "u", display: "U" }, createdAt: "2024-01-01T00:00:00Z" },
+        {
+          modelId: "old",
+          displayName: "Old",
+          gameKey: "nim",
+          visibility: "private",
+          updatedAt: "2024-01-01T00:00:00Z",
+          owner: { username: "u", display: "U" },
+          createdAt: "2024-01-01T00:00:00Z",
+        },
+        {
+          modelId: "new",
+          displayName: "New",
+          gameKey: "nim",
+          visibility: "private",
+          updatedAt: "2024-06-01T00:00:00Z",
+          owner: { username: "u", display: "U" },
+          createdAt: "2024-01-01T00:00:00Z",
+        },
       ],
     });
     const result = await listOwnModels("user0");

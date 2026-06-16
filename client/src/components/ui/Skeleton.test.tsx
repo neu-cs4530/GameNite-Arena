@@ -38,14 +38,14 @@ describe("SkeletonText", () => {
     render(<SkeletonText lines={4} />);
     // getAllByTestId because the wrapper and each child row share testid="skeleton"
     const all = screen.getAllByTestId("skeleton");
-    const rows = all.filter(el => el.className.includes("ga-skeleton--text"));
+    const rows = all.filter((el) => el.className.includes("ga-skeleton--text"));
     expect(rows).toHaveLength(4);
   });
 
   it("defaults to 3 lines", () => {
     render(<SkeletonText />);
     const all = screen.getAllByTestId("skeleton");
-    const rows = all.filter(el => el.className.includes("ga-skeleton--text"));
+    const rows = all.filter((el) => el.className.includes("ga-skeleton--text"));
     expect(rows).toHaveLength(3);
   });
 });
