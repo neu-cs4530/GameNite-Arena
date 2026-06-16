@@ -44,4 +44,21 @@ describe("PuzzleStatsPanel", () => {
     expect(screen.getByText(/no puzzles attempted yet/i)).toBeInTheDocument();
     expect(screen.queryByTestId("puzzle-attempts")).not.toBeInTheDocument();
   });
+
+  it("shows a provisional, unrated game and an honest empty attempts state", () => {
+    // A player with a per-game row but no logged attempts yet: the game is
+    // provisional with no rating, and the attempts table is replaced by its
+    // own empty state.
+    const stats = structuredClone(profileSummaryFixture.puzzles);
+    stats.perGame[0].provisional = true;
+    stats.perGame[0].rating = null;
+    stats.recentAttempts = [];
+
+    render(<PuzzleStatsPanel stats={stats} />);
+    const key = stats.perGame[0].gameKey;
+    const eloTile = screen.getByTestId(`puzzle-stat-${key}-elo`);
+    expect(eloTile).toHaveTextContent("Unrated");
+    expect(eloTile).toHaveTextContent(/provisional/i);
+    expect(screen.getByTestId("puzzle-attempts-empty")).toBeInTheDocument();
+  });
 });

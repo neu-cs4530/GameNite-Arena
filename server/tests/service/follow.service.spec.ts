@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ReplayDetail } from "@gamenite/shared";
 import type { GameRecord } from "../../src/models.ts";
-import { GameRepo } from "../../src/repository.ts";
+import { GameRepo, UserRepo } from "../../src/repository.ts";
 import { getUserByUsername } from "../../src/services/auth.service.ts";
 import {
   InMemoryReplayStore,
@@ -131,6 +131,38 @@ describe("listFollowers / listFollowing", () => {
   it("throws for an unknown username", async () => {
     await expect(listFollowers("ghost")).rejects.toThrow();
     await expect(listFollowing("ghost")).rejects.toThrow();
+  });
+});
+
+describe("unfollowUser edge cases", () => {
+  it("throws when unfollowing an unknown user", async () => {
+    await expect(unfollowUser(user0, "ghost")).rejects.toThrow();
+  });
+});
+
+describe("legacy records without a `following` field", () => {
+  // Accounts created before Story 3.9 have no `following` property. The
+  // service guards every read with `?? []`; these tests exercise that path by
+  // stripping the field from a seeded record.
+  async function stripFollowing(userId: string): Promise<void> {
+    const record = await UserRepo.get(userId);
+    // `following` is typed as required, but legacy records genuinely lack it;
+    // cast to an optional view so we can delete it to reproduce that state.
+    delete (record as { following?: string[] }).following;
+    await UserRepo.set(userId, record);
+  }
+
+  it("can follow from a record that has no following list yet", async () => {
+    await stripFollowing(user0.userId);
+    const following = await followUser(user0, "user1");
+    expect(following.map((u) => u.username)).toContain("user1");
+  });
+
+  it("listFollowers tolerates other records missing the field", async () => {
+    await followUser(user0, "user1"); // user0 follows user1
+    await stripFollowing(user1.userId); // user1's record has no following list
+    const followers = await listFollowers("user1");
+    expect(followers.map((u) => u.username)).toContain("user0");
   });
 });
 

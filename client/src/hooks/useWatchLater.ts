@@ -2,6 +2,7 @@ import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { lsKeys } from "../util/consts.ts";
 
 function readSet(): Set<string> {
+  /* v8 ignore next -- SSR guard: window is always defined under the jsdom test env */
   if (typeof window === "undefined") return new Set();
   try {
     const raw = window.localStorage.getItem(lsKeys.watchLater);
@@ -16,6 +17,7 @@ function readSet(): Set<string> {
 }
 
 function writeSet(set: Set<string>) {
+  /* v8 ignore next -- SSR guard: window is always defined under the jsdom test env */
   if (typeof window === "undefined") return;
   window.localStorage.setItem(lsKeys.watchLater, JSON.stringify([...set]));
 }
@@ -47,11 +49,13 @@ function setStore(next: Set<string>) {
   storeSnapshot = next;
   writeSet(next);
   notify();
+  /* v8 ignore next -- SSR guard: window is always defined under the jsdom test env */
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event(WATCH_LATER_EVENT));
   }
 }
 
+/* v8 ignore next -- SSR guard: window is always defined under the jsdom test env */
 if (typeof window !== "undefined") {
   // Cross-tab and cross-window sync (other tabs / page reloads).
   window.addEventListener("storage", () => {

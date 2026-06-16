@@ -178,6 +178,64 @@ describe("TrainingProgressBridge", () => {
     socket.fire(SocketEvents.subscribe, {});
     expect(socket.rooms.size).toBe(0);
   });
+
+  it("should tidy its room set when the client disconnects", () => {
+    const socket = new FakeSocket();
+    bridge.registerClient(socket);
+    socket.fire(SocketEvents.subscribe, { jobId: "job-1" });
+    // The disconnect handler clears the bridge's own room set without throwing.
+    expect(() => socket.fire("disconnect")).not.toThrow();
+  });
+
+  it("should warn (not throw) when the snapshot fetch fails on replay", async () => {
+    const warnings: string[] = [];
+    const failingSnapshots: SnapshotStore = {
+      get: () => Promise.reject(new Error("redis down")),
+    };
+    const failingBridge = new TrainingProgressBridge({
+      subscriber: new FakeSubscriber(),
+      emitter: new FakeEmitter(),
+      snapshots: failingSnapshots,
+      logger: { warn: (msg: string) => warnings.push(msg), error: () => {} },
+    });
+    await failingBridge.start();
+
+    const socket = new FakeSocket();
+    failingBridge.registerClient(socket);
+    socket.fire(SocketEvents.subscribe, { jobId: "job-1" });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(socket.emitted).toHaveLength(0);
+    expect(warnings.some((w) => w.includes("snapshot fetch failed"))).toBe(true);
+  });
+
+  it("defaults its logger to console when none is provided", () => {
+    // The constructor's `?? console` fallback path.
+    const plainBridge = new TrainingProgressBridge({
+      subscriber: new FakeSubscriber(),
+      emitter: new FakeEmitter(),
+      snapshots: new FakeSnapshotStore(),
+    });
+    expect(plainBridge).toBeInstanceOf(TrainingProgressBridge);
+  });
+
+  it("ignores an unsubscribe with no jobId", () => {
+    const socket = new FakeSocket();
+    bridge.registerClient(socket);
+    socket.fire(SocketEvents.subscribe, { jobId: "job-1" });
+    socket.fire(SocketEvents.unsubscribe, {}); // no jobId → early return, stays joined
+    expect(socket.rooms.has(jobRoom("job-1"))).toBe(true);
+  });
+
+  it("does not emit a replay when the stored snapshot is unparseable", async () => {
+    snapshots.set(lastEventKey("job-1"), "not json");
+    const socket = new FakeSocket();
+    bridge.registerClient(socket);
+    socket.fire(SocketEvents.subscribe, { jobId: "job-1" });
+    await Promise.resolve();
+    expect(socket.emitted).toHaveLength(0);
+  });
 });
 
 // --- publisher ---

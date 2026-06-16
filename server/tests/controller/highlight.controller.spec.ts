@@ -139,6 +139,18 @@ describe("POST /api/highlight/list", () => {
     expect(notes).toEqual(["second", "first"]);
   });
 
+  it("returns 400 for a malformed request (no auth)", async () => {
+    const res = await supertest(makeApp()).post("/api/highlight/list").send({});
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 403 for invalid credentials", async () => {
+    const res = await supertest(makeApp())
+      .post("/api/highlight/list")
+      .send({ auth: { username: "user0", password: "wrong" } });
+    expect(res.status).toBe(403);
+  });
+
   it("only returns the caller's own highlights", async () => {
     await recordMoves(1);
     const app = makeApp();
