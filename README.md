@@ -237,7 +237,7 @@ sequenceDiagram
     R-->>S: bridge → Socket.IO
     S-->>U: live progress on the Trainer dashboard
     U->>S: upload trained artifact (.pth)
-    Note over S: model stored; user deploys it
+    Note over S: model stored, user deploys it
     S->>B: load model (deployment)
     B->>S: pull artifact (/api/inference/artifact/:modelId)
     Note over S,B: during a live game, the AI's turn:
