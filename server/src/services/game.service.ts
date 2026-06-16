@@ -114,11 +114,24 @@ export async function maybeFireAiMove(gameId: string): Promise<GameUpdateOutcome
   if (!aiParticipant) return null;
   const aiDeploymentId = aiParticipant.deploymentId;
 
+  // Checkers uses a dynamic action space: the model outputs an index into the
+  // legal-moves list, so we must supply that list at inference time (CoS 2.6).
+  let legalMovesForInference: unknown[] | undefined;
+  if (game.type === "checkers") {
+    // view(-1) returns the watcher view which includes legalMoves for the
+    // current player — the same list the inference service needs to decode
+    // the model's action index into a concrete squares sequence (CoS 2.6).
+    const tagged = checkersGameService.view(game.state, -1);
+    const inner = (tagged as { view?: { legalMoves?: unknown[] } }).view;
+    legalMovesForInference = inner?.legalMoves ?? [];
+  }
+
   let move: unknown;
   try {
     const result = (await inferenceClient.requestMove({
       deploymentId: aiDeploymentId,
       state: encodeStateForInference(game.type, game.state),
+      legalMoves: legalMovesForInference,
     })) as { move: unknown };
     move = result.move;
   } catch (err) {
