@@ -57,6 +57,43 @@ async function seedConnect4Puzzle(): Promise<void> {
   });
 }
 
+async function seedCheckersPuzzle(withLegalMoves: boolean): Promise<void> {
+  const board = Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => "."));
+  board[3][4] = "B";
+  board[4][5] = "R";
+  board[6][1] = "RK";
+  const position: Record<string, unknown> = { board, nextPlayer: 0, winner: null };
+  // When the watcher view carries a legal-move list the AI path forwards it;
+  // omitting it exercises the `?? []` fallback.
+  if (withLegalMoves) {
+    position["legalMoves"] = [
+      {
+        squares: [
+          [4, 5],
+          [2, 3],
+        ],
+      },
+    ];
+  }
+  await PuzzleRepo.set(`checkers:${DATE}`, {
+    gameKey: "checkers",
+    date: DATE,
+    position,
+    solution: {
+      moves: [
+        {
+          squares: [
+            [4, 5],
+            [2, 3],
+          ],
+        },
+      ],
+      explanation: "seeded by test",
+    },
+    createdAt: NOW.toISOString(),
+  });
+}
+
 beforeEach(async () => {
   await DeploymentRepo.clear();
   await PuzzleRepo.clear();
@@ -138,5 +175,74 @@ describe("submitAiAttempt", () => {
     await seedNimPuzzle();
     const c4 = await seedNimDeployment(user, "connect4");
     await expect(submitAiAttempt(user, "nim", c4, DATE, NOW)).rejects.toThrow();
+  });
+
+  it("checkers: forwards the position's legal-move list to inference", async () => {
+    await seedCheckersPuzzle(true);
+    const deploymentId = await seedNimDeployment(user, "checkers");
+    mockedRequestMove.mockResolvedValue({
+      move: {
+        squares: [
+          [4, 5],
+          [2, 3],
+        ],
+      },
+    });
+
+    const result = await submitAiAttempt(user, "checkers", deploymentId, DATE, NOW);
+
+    expect(result).not.toBeNull();
+    expect(mockedRequestMove).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deploymentId,
+        legalMoves: [
+          {
+            squares: [
+              [4, 5],
+              [2, 3],
+            ],
+          },
+        ],
+      }),
+    );
+  });
+
+  it("checkers: defaults legalMoves to [] when the position carries none", async () => {
+    await seedCheckersPuzzle(false);
+    const deploymentId = await seedNimDeployment(user, "checkers");
+    mockedRequestMove.mockResolvedValue({
+      move: {
+        squares: [
+          [4, 5],
+          [2, 3],
+        ],
+      },
+    });
+
+    await submitAiAttempt(user, "checkers", deploymentId, DATE, NOW);
+
+    expect(mockedRequestMove).toHaveBeenCalledWith(
+      expect.objectContaining({ deploymentId, legalMoves: [] }),
+    );
+  });
+
+  it("throws when the model returns no move", async () => {
+    await seedNimPuzzle();
+    const deploymentId = await seedNimDeployment(user);
+    mockedRequestMove.mockResolvedValue({ move: undefined });
+
+    await expect(submitAiAttempt(user, "nim", deploymentId, DATE, NOW)).rejects.toThrow(
+      /did not return a move/,
+    );
+  });
+
+  it("throws when inference returns an empty response", async () => {
+    await seedNimPuzzle();
+    const deploymentId = await seedNimDeployment(user);
+    mockedRequestMove.mockResolvedValue(undefined);
+
+    await expect(submitAiAttempt(user, "nim", deploymentId, DATE, NOW)).rejects.toThrow(
+      /did not return a move/,
+    );
   });
 });

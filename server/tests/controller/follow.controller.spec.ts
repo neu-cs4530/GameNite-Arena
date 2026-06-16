@@ -86,6 +86,14 @@ describe("POST /api/follow/:username/unfollow — bad body", () => {
     const res = await supertest(makeApp()).post("/api/follow/user1/unfollow").send({});
     expect(res.status).toBe(400);
   });
+
+  it("returns 403 for invalid credentials", async () => {
+    const res = await supertest(makeApp())
+      .post("/api/follow/user1/unfollow")
+      .send({ auth: { username: "user0", password: "wrong" } });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: expect.any(String) });
+  });
 });
 
 describe("GET /api/follow/:username/following — unknown user", () => {
@@ -112,5 +120,13 @@ describe("POST /api/follow/feed", () => {
   it("returns 403 without valid auth", async () => {
     const res = await supertest(makeApp()).post("/api/follow/feed").send({});
     expect(res.status).toBe(400);
+  });
+
+  it("returns 403 for invalid credentials", async () => {
+    const res = await supertest(makeApp())
+      .post("/api/follow/feed")
+      .send({ auth: { username: "user0", password: "wrong" } });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: expect.any(String) });
   });
 });

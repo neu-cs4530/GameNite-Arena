@@ -15,9 +15,11 @@ import {
   DEFAULT_VOLATILITY,
 } from "../../src/services/glicko2.service.ts";
 import {
+  generateAllDailyPuzzles,
   generatePuzzleForGame,
   getOrGenerateTodaysPuzzle,
   getTrainingPack,
+  getViewerAttempt,
   grantHint,
   submitAttempt,
   submitTrainingAttempt,
@@ -1273,5 +1275,167 @@ describe("getTrainingPack / submitTrainingAttempt (checkers)", () => {
       ],
     });
     expect(loss!.success).toBe(false);
+  });
+});
+
+/* ---------------------------------------------------------------------------
+ * Remaining branch coverage: hookless grading fallback, the generic
+ * explanation, sort tie-breaks, the no-arg cron entry, first-time streak
+ * defaults, the hint date guard, and the viewer-attempt rated fallback.
+ * ------------------------------------------------------------------------- */
+
+describe("submitTrainingAttempt: hookless game falls back to archived-line equality", () => {
+  it("grades a guess match by JSON equality and uses the generic explanation", async () => {
+    // guess has no isWinningMove hook, so the verdict is null and grading
+    // falls back to exact equality with the archived solution move. The
+    // explanation also takes the generic (non per-game) branch.
+    await MatchRepo.set("match-guess-grade", guessWin());
+
+    // guess splits the last 2 moves as the solution, so solution.moves[0] is
+    // the third guess (80); matching it exactly scores via the fallback.
+    const win = await submitTrainingAttempt("guess", "match-guess-grade", 80);
+    expect(win!.success).toBe(true);
+    expect(win!.solutionMove).toBe(80);
+    expect(win!.explanation).toContain("Number Guesser");
+
+    const loss = await submitTrainingAttempt("guess", "match-guess-grade", 99);
+    expect(loss!.success).toBe(false);
+  });
+
+  it("returns null when the archived match doesn't replay cleanly", async () => {
+    // First move is by the wrong player, so the fold is rejected (hydrateSplit
+    // returns null) and the attempt can't be graded.
+    const corrupt = soundNimWin({
+      moves: soundNimWin().moves.map((m, i) => (i === 0 ? { ...m, actor: P2.id } : m)),
+    });
+    await MatchRepo.set("match-corrupt-train", corrupt);
+
+    expect(await submitTrainingAttempt("nim", "match-corrupt-train", 1)).toBeNull();
+  });
+});
+
+describe("findSoundCandidates ordering: sorts most-recent-first either way", () => {
+  it("returns both candidates when two sound matches share a completedAt", async () => {
+    // Equal completedAt exercises the sort comparator's non-greater-than
+    // branch; both sound matches still make it into the training feed.
+    await MatchRepo.set("match-tie-a", soundNimWin({ completedAt: "2026-06-09T08:00:00.000Z" }));
+    await MatchRepo.set("match-tie-b", soundNimWin({ completedAt: "2026-06-09T08:00:00.000Z" }));
+
+    const pack = await getTrainingPack("nim", { limit: 5 });
+
+    expect(pack.map((entry) => entry.sourceMatchId).sort()).toStrictEqual([
+      "match-tie-a",
+      "match-tie-b",
+    ]);
+  });
+
+  it("reorders when the archive's insertion order is oldest-last (forces a swap)", async () => {
+    // Inserted newest-first, so the descending sort must actually reorder —
+    // exercising the comparator's greater-than (positive) branch.
+    await MatchRepo.set("match-ord-new", soundNimWin({ completedAt: "2026-06-09T00:00:00.000Z" }));
+    await MatchRepo.set("match-ord-mid", soundNimWin({ completedAt: "2026-06-08T00:00:00.000Z" }));
+    await MatchRepo.set("match-ord-old", soundNimWin({ completedAt: "2026-06-07T00:00:00.000Z" }));
+
+    const pack = await getTrainingPack("nim", { limit: 5 });
+
+    expect(pack.map((entry) => entry.sourceMatchId)).toStrictEqual([
+      "match-ord-new",
+      "match-ord-mid",
+      "match-ord-old",
+    ]);
+  });
+});
+
+describe("generateAllDailyPuzzles", () => {
+  it("defaults to today and generates a puzzle for every supported game", async () => {
+    await MatchRepo.set("match-nim-all", soundNimWin());
+    await MatchRepo.set("match-ttt-all", soundTicTacToeWin());
+
+    // No date argument — exercises the `new Date()` default.
+    await generateAllDailyPuzzles();
+
+    expect(await PuzzleRepo.find(dailyPuzzleKey({ gameKey: "nim", date: today }))).not.toBeNull();
+    expect(
+      await PuzzleRepo.find(dailyPuzzleKey({ gameKey: "tictactoe", date: today })),
+    ).not.toBeNull();
+  });
+});
+
+describe("submitAttempt: a user with no stored streak starts a fresh chain", () => {
+  it("treats an absent puzzleStreak as { current: 0, best: 0 }", async () => {
+    await seedNimPuzzle(D1, { remaining: 6, nextPlayer: 1 }, [1]);
+    const userId = await user1Id();
+    const userRecord = await UserRepo.get(userId);
+    // Drop the streak entirely (an older record predating the streak feature).
+    const { puzzleStreak, ...withoutStreak } = userRecord;
+    void puzzleStreak;
+    await UserRepo.set(userId, withoutStreak as typeof userRecord);
+
+    const outcome = await submit(userId, "nim", { move: 1, timeMs: 500, date: D1 });
+
+    expect(outcome!.success).toBe(true);
+    expect(outcome!.streak).toStrictEqual({ current: 1, best: 1, lastSolvedAt: D1 });
+  });
+});
+
+describe("grantHint: date-window guard", () => {
+  it("refuses to reveal a hint for a date outside the attempt window", async () => {
+    // The puzzle exists for D1, but the clock is D4 (three days later), so the
+    // hint is refused before it can leak the answer or dock the rating.
+    await seedNimPuzzle(D1, { remaining: 6, nextPlayer: 1 }, [1]);
+    const userId = await user1Id();
+
+    const result = await grantHint(userId, "nim", D1, asNow(D4));
+
+    expect(result).toBeNull();
+    expect(await PuzzleHintRepo.getAllKeys()).toHaveLength(0);
+  });
+});
+
+describe("getViewerAttempt", () => {
+  it("returns null for an unknown username", async () => {
+    expect(await getViewerAttempt("no-such-user", `nim:${D1}`)).toBeNull();
+  });
+
+  it("reports attempted/solved/rated from the viewer's attempt log", async () => {
+    await seedNimPuzzle(D1, { remaining: 6, nextPlayer: 1 }, [1]);
+    await submit(await user1Id(), "nim", { move: 1, timeMs: 500, date: D1 });
+
+    const viewer = await getViewerAttempt("user1", `nim:${D1}`);
+
+    expect(viewer).toStrictEqual({ attempted: true, solved: true, rated: true });
+  });
+
+  it("falls back to a nonzero eloDelta for records written before the rated flag", async () => {
+    // A legacy attempt record with no `rated` field but a nonzero eloDelta
+    // counts as rated via the fallback; the other legacy record (eloDelta 0)
+    // does not.
+    const userId = await user1Id();
+    await PuzzleAttemptRepo.add({
+      puzzleId: `nim:${D1}`,
+      attemptedBy: { id: userId, type: "human" },
+      success: true,
+      timeMs: 100,
+      hintsUsed: 0,
+      eloDelta: 12,
+      createdAt: new Date().toISOString(),
+    });
+
+    const ratedViewer = await getViewerAttempt("user1", `nim:${D1}`);
+    expect(ratedViewer).toStrictEqual({ attempted: true, solved: true, rated: true });
+
+    await PuzzleAttemptRepo.clear();
+    await PuzzleAttemptRepo.add({
+      puzzleId: `nim:${D2}`,
+      attemptedBy: { id: userId, type: "human" },
+      success: false,
+      timeMs: 100,
+      hintsUsed: 0,
+      eloDelta: 0,
+      createdAt: new Date().toISOString(),
+    });
+
+    const unratedViewer = await getViewerAttempt("user1", `nim:${D2}`);
+    expect(unratedViewer).toStrictEqual({ attempted: true, solved: false, rated: false });
   });
 });

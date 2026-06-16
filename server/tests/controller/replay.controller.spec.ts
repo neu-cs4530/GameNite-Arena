@@ -135,6 +135,23 @@ describe("GET /api/replay/list", () => {
     expect(res.body.total).toBe(2);
   });
 
+  it("filters by games passed as repeated params (array shape)", async () => {
+    // `games=a&games=b` arrives as a string[] — exercises the Array.isArray
+    // branch of normalizeListParam, distinct from the single-string/CSV shape.
+    const res = await supertest(makeApp()).get("/api/replay/list?games=tictactoe&games=connect4");
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(2);
+  });
+
+  it("returns 400 for an empty games param", async () => {
+    // `games=` arrives as a zero-length string; normalizeListParam takes the
+    // length-0 (false) branch and passes "" through, which fails array
+    // validation rather than being treated as a CSV list.
+    const res = await supertest(makeApp()).get("/api/replay/list?games=");
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: expect.any(String) });
+  });
+
   it("respects pagination params", async () => {
     const res = await supertest(makeApp()).get("/api/replay/list?page=1&pageSize=1");
     expect(res.status).toBe(200);
@@ -228,6 +245,35 @@ describe("GET /api/replay/:matchId/download", () => {
     const res = await supertest(makeApp()).get("/api/replay/no-such-match/download");
     expect(res.status).toBe(404);
     expect(res.body).toMatchObject({ error: expect.any(String) });
+  });
+
+  it("falls back to a generic filename when the matchId strips to nothing", async () => {
+    // A real replay whose id is entirely filename-unsafe chars: the strip
+    // leaves an empty string, so the `|| "replay"` fallback names the file.
+    replaceStoreForTests(
+      new InMemoryReplayStore([
+        {
+          matchId: "...",
+          gameId: "g-dots",
+          gameKey: "tictactoe",
+          rated: false,
+          completedAt: "2026-05-30T00:00:00.000Z",
+          moveCount: 0,
+          watchCount: 0,
+          participants: [
+            { id: "u-x", type: "human", displayName: "X", username: "x", ratingAtMatchTime: 1500 },
+            { id: "u-y", type: "human", displayName: "Y", username: "y", ratingAtMatchTime: 1500 },
+          ],
+          result: { outcome: "draw" },
+          moves: [],
+        },
+      ]),
+    );
+
+    const res = await supertest(makeApp()).get("/api/replay/.../download");
+    expect(res.status).toBe(200);
+    expect(res.headers["content-disposition"]).toBe('attachment; filename="replay-replay.json"');
+    expect(res.body).toMatchObject({ matchId: "...", gameId: "g-dots" });
   });
 });
 
@@ -476,5 +522,22 @@ describe("handleReplayDisconnecting", () => {
     handleReplayDisconnecting({ rooms: new Set([room]) }, io);
 
     expect(emits[0]).toMatchObject({ payload: { count: 0 } });
+  });
+
+  it("treats a room absent from the adapter map as size 0", () => {
+    // The adapter map has no entry for this room, so roomSize hits its `?? 0`
+    // nullish fallback; the post-departure count clamps to 0.
+    const matchId = "ghost-room";
+    const room = replayRoom(matchId);
+    const { io, emits } = makePresenceIo(new Map());
+
+    handleReplayDisconnecting({ rooms: new Set([room]) }, io);
+
+    expect(emits).toHaveLength(1);
+    expect(emits[0]).toMatchObject({
+      room,
+      event: "replayWatchers",
+      payload: { matchId, count: 0 },
+    });
   });
 });

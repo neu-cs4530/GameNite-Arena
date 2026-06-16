@@ -139,4 +139,34 @@ describe("analyzeReplay request contract", () => {
     expect(result.perMove).toHaveLength(2);
     expect(["blunder", "best", "inaccuracy", "neutral"]).toContain(result.perMove[0].flag);
   }, 5000);
+
+  it("synthesizes the 'inaccuracy' and 'neutral' flags for the higher move indices", async () => {
+    // The synthesis seed is r = (i * 31 + 7) % 100, so move index 2 → 69
+    // (inaccuracy, 60 ≤ r < 75) and index 6 → 93 (neutral, r ≥ 75). A replay
+    // long enough to reach those indices exercises both of those flag branches.
+    const mockedGet = vi.mocked(api.get);
+    const moves = Array.from({ length: 7 }, (_, i) => ({
+      index: i,
+      actor: i % 2 === 0 ? "u-a" : "u-b",
+      actorDisplayName: i % 2 === 0 ? "A" : "B",
+      move: i,
+      notation: `take ${i}`,
+      timestamp: new Date().toISOString(),
+    }));
+    mockedGet.mockResolvedValueOnce({
+      data: {
+        matchId: "synth-match-long",
+        generatedAt: new Date().toISOString(),
+        perMove: [],
+        moves,
+      },
+    });
+
+    const result = await analyzeReplay("synth-match-long");
+
+    expect(result.perMove).toHaveLength(7);
+    const flags = result.perMove.map((m) => m.flag);
+    expect(flags[2]).toBe("inaccuracy");
+    expect(flags[6]).toBe("neutral");
+  }, 5000);
 });
