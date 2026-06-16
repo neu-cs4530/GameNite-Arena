@@ -1,6 +1,7 @@
 import {
   withAuth,
   zGameKey,
+  zPuzzleAiAttemptPayload,
   zPuzzleAttemptPayload,
   zPuzzleHintPayload,
   zPuzzleLeaderboardScope,
@@ -19,6 +20,7 @@ import {
   getTrainingPack,
   getViewerAttempt,
   grantHint,
+  submitAiAttempt,
   submitAttempt,
   submitTrainingAttempt,
 } from "../services/puzzle.service.ts";
@@ -27,6 +29,7 @@ import { type RestAPI } from "../types.ts";
 
 // the shared payloads are the single source of truth for attempt/hint bodies
 const zAttemptBody = withAuth(zPuzzleAttemptPayload);
+const zAiAttemptBody = withAuth(zPuzzleAiAttemptPayload);
 const zHintBody = withAuth(zPuzzleHintPayload);
 const zTrainingBody = withAuth(zTrainingAttemptPayload);
 
@@ -129,6 +132,48 @@ export const postAttempt: RestAPI<PuzzleAttemptResult, { gameKey: string }> = as
   }
 
   res.send(result);
+};
+
+/**
+ * POST /api/puzzle/:gameKey/attempt/ai — let one of the caller's deployed
+ * models attempt the daily puzzle. The model's move is graded + rated exactly
+ * like a human attempt (counts toward the user's Elo, shares the daily slot).
+ */
+export const postAiAttempt: RestAPI<PuzzleAttemptResult, { gameKey: string }> = async (
+  req,
+  res,
+) => {
+  const gameKeyParsed = zGameKey.safeParse(req.params.gameKey);
+  if (!gameKeyParsed.success) {
+    res.status(404).send({ error: "Unknown game" });
+    return;
+  }
+
+  const body = zAiAttemptBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).send({ error: "Poorly-formed request" });
+    return;
+  }
+
+  const user = await checkAuth(body.data.auth);
+  if (!user) {
+    res.status(403).send({ error: "Invalid credentials" });
+    return;
+  }
+
+  const { deploymentId, date } = body.data.payload;
+  try {
+    const result = await submitAiAttempt(user, gameKeyParsed.data, deploymentId, date);
+    if (result === null) {
+      res.status(404).send({ error: "No puzzle available for that date" });
+      return;
+    }
+    res.send(result);
+  } catch (err) {
+    // Deployment validation (not owned / inactive / wrong game) or an inference
+    // failure — surface the reason rather than a generic 500.
+    res.status(400).send({ error: err instanceof Error ? err.message : "AI attempt failed" });
+  }
 };
 
 /**
