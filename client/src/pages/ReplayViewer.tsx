@@ -135,7 +135,7 @@ export default function ReplayViewer(): JSX.Element {
     analysisHook.analysis,
     caps.engine,
     playback.currentMove,
-    replay.moves,
+    replay?.moves ?? [],
   );
   const engineQuality =
     engineInsight !== null
