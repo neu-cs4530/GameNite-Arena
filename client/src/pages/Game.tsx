@@ -36,7 +36,7 @@ export default function Game() {
 
   return (
     game && (
-      <>
+      <div className="gameWrapper">
         {isPlayer && game.status === "active" && (
           <div className="gameToolbar">
             <GoLiveButton gameId={game.gameId} />
@@ -47,7 +47,7 @@ export default function Game() {
           <GamePanel {...game} />
           <ChatPanel chatId={game.chat} />
         </div>
-      </>
+      </div>
     )
   );
 }

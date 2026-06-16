@@ -30,6 +30,7 @@ import MatchGrid from "../components/replay/MatchGrid.tsx";
 import TierBadge from "../components/replay/TierBadge.tsx";
 import ActivityHeatmap from "../components/replay/ActivityHeatmap.tsx";
 import BestAiCard from "../components/profile/BestAiCard.tsx";
+import FollowingFeedPanel from "../components/profile/FollowingFeedPanel.tsx";
 import PuzzleStatsPanel from "../components/profile/PuzzleStatsPanel.tsx";
 import ReplayHero from "../components/profile/ReplayHero.tsx";
 import ScopePills from "../components/profile/ScopePills.tsx";
@@ -49,7 +50,7 @@ import type { ReplaySummary } from "../util/types.ts";
 
 const PROFILE_MATCHES_PER_PAGE = 12;
 
-type ProfileTab = "matches" | "settings" | "watch-later" | "followers";
+type ProfileTab = "matches" | "settings" | "watch-later" | "followers" | "following";
 
 export default function Profile() {
   const { username } = useParams<{ username: string }>();
@@ -58,7 +59,10 @@ export default function Profile() {
   const isOwner = viewer.username === username;
   const tabParam = searchParams.get("tab");
   const tab: ProfileTab =
-    tabParam === "settings" || tabParam === "watch-later" || tabParam === "followers"
+    tabParam === "settings" ||
+    tabParam === "watch-later" ||
+    tabParam === "followers" ||
+    tabParam === "following"
       ? tabParam
       : "matches";
   const scope = parseProfileScope(searchParams.get(SCOPE_PARAM));
@@ -108,7 +112,11 @@ export default function Profile() {
     ]);
     return { followers, following };
   }, [username]);
-  const { data: follows, loading: followsLoading } = useAsync(followsProducer, [username], {
+  const {
+    data: follows,
+    loading: followsLoading,
+    refetch: refetchFollows,
+  } = useAsync(followsProducer, [username], {
     followers: [],
     following: [],
   });
@@ -238,8 +246,10 @@ export default function Profile() {
         followBusy={!!username && followCtl.busy === username}
         onToggleFollow={() => {
           if (!username) return;
-          if (followCtl.isFollowing(username)) void followCtl.unfollow(username);
-          else void followCtl.follow(username);
+          const action = followCtl.isFollowing(username)
+            ? followCtl.unfollow(username)
+            : followCtl.follow(username);
+          void action.then(() => refetchFollows());
         }}
       />
 
@@ -319,6 +329,8 @@ export default function Profile() {
       {tab === "watch-later" && (
         <WatchLaterTab username={username} watchLaterIds={watchLater.ids} />
       )}
+
+      {tab === "following" && isOwner && <FollowingFeedPanel viewerUsername={viewer.username} />}
 
       {tab === "followers" && (
         <FollowersTab
@@ -518,22 +530,16 @@ function ProfileHeader({
         </div>
       </div>
       <div className="ga-profile-header__actions" role="tablist" aria-label="Profile tabs">
-        <Button
-          variant={activeTab === "matches" ? "primary" : "ghost"}
-          onClick={() => onTabChange("matches")}
-          aria-pressed={activeTab === "matches"}
-          role="tab"
-        >
-          Overview
-        </Button>
-        <Button
-          variant={activeTab === "followers" ? "primary" : "ghost"}
-          onClick={() => onTabChange("followers")}
-          aria-pressed={activeTab === "followers"}
-          role="tab"
-        >
-          Followers
-        </Button>
+        {isOwner && (
+          <Button
+            variant={activeTab === "following" ? "primary" : "ghost"}
+            onClick={() => onTabChange("following")}
+            aria-pressed={activeTab === "following"}
+            role="tab"
+          >
+            Following
+          </Button>
+        )}
         {isOwner && (
           <Button
             variant={activeTab === "watch-later" ? "primary" : "ghost"}

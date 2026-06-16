@@ -1,22 +1,36 @@
-.threadSummary {
+.ga-thread-row {
   display: flex;
-  flex-direction: row;
-  border-top: 1px dashed black;
-  color: var(--gray-foreground);
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  transition: border-color 0.15s;
 }
 
-.threadSummary div {
-  white-space: nowrap;
+.ga-thread-row:hover {
+  border-color: var(--color-border-strong);
 }
 
-.threadSummary .postStats {
-  text-align: center;
-  width: 5rem;
+.ga-thread-row__title {
+  font-size: var(--text-body);
+  font-weight: var(--weight-bold);
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.ga-thread-row__title:hover {
+  text-decoration: underline;
+}
+
+.ga-thread-row__meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}
+
+.ga-thread-row__replies {
   flex-shrink: 0;
-  flex-grow: 0;
-}
-
-.threadSummary .mid {
-  flex-grow: 1;
-  color: cornflowerblue;
 }

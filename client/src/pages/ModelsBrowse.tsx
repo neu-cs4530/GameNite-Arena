@@ -30,7 +30,7 @@ export default function ModelsBrowse(): JSX.Element {
       <header className="ga-models-browse__hero">
         <div>
           <h1>Models</h1>
-          <p>Every model you have trained or forked on GameNite Arena.</p>
+          <p>Every model you have trained or forked on FourNight Arena.</p>
         </div>
         <Button
           variant="primary"

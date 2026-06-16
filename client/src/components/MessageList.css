@@ -34,11 +34,11 @@ div.chatScroller .chatContent {
   padding-block: 0.5rem;
   padding-inline: 0.75rem;
   border-radius: 0.5rem;
-  background-color: oklch(0.9 0 0);
+  background-color: var(--color-surface-2);
 }
 
 div.chatScroller .chatMe .chatContent {
   margin-right: 0;
   margin-left: auto;
-  background-color: oklch(0.9 0.05 260);
+  background-color: var(--color-primary-soft);
 }

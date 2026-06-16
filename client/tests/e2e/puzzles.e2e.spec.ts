@@ -3,7 +3,7 @@
  *
  *   two real users play a full nim game over sockets -> the recorder archives
  *   the match -> the puzzle GET lazily mines today's nim puzzle from that
- *   archive -> a fresh throwaway user solves it on /puzzles.
+ *   archive -> a fresh throwaway user solves it on /puzzles/daily.
  *
  * The suite plays its own source games first, so the lazy generator always
  * has a match to mine even on a cold database — no seeded or mocked
@@ -117,7 +117,7 @@ test.describe("Daily puzzles tab", () => {
     page,
   }) => {
     await logInTrainer(page, solver);
-    await page.goto("/puzzles");
+    await page.goto("/puzzles/daily");
     await expect(page.getByTestId("puzzles-page")).toBeVisible();
 
     // Progressive disclosure: tiles only, no puzzle card at rest.
@@ -153,7 +153,7 @@ test.describe("Daily puzzles tab", () => {
     page,
   }) => {
     await logInTrainer(page, solver);
-    await page.goto("/puzzles?game=nim");
+    await page.goto("/puzzles/daily?game=nim");
 
     // Linkable: the nim puzzle loads without any tile click.
     await expect(page.getByTestId("puzzle-board-nim")).toBeVisible();
@@ -173,7 +173,7 @@ test.describe("Daily puzzles tab", () => {
     page,
   }) => {
     await logInTrainer(page, solver);
-    await page.goto("/puzzles");
+    await page.goto("/puzzles/daily");
 
     await page.getByTestId("puzzle-game-tile-connect4").click();
     await expect(page.getByTestId("puzzle-board-connect4")).toBeVisible();
@@ -194,7 +194,7 @@ test.describe("Daily puzzles tab", () => {
     page,
   }) => {
     await logInTrainer(page, solver);
-    await page.goto("/puzzles");
+    await page.goto("/puzzles/daily");
 
     await page.getByTestId("puzzle-game-tile-tictactoe").click();
     await expect(page.getByTestId("puzzle-board-tictactoe")).toBeVisible();
@@ -217,9 +217,9 @@ test.describe("Practice tab", () => {
     page,
   }) => {
     await logInTrainer(page, solver);
-    await page.goto("/puzzles");
+    await page.goto("/puzzles/daily");
 
-    // the Puzzles dropdown is already open on /puzzles routes
+    // the Home > Puzzles dropdown is already open on /puzzles routes
     await page.getByRole("link", { name: "Practice" }).click();
     await page.waitForURL("/puzzles/practice");
 
