@@ -67,6 +67,25 @@ describe("001_canonical_artifact_refs", () => {
     expect(migrated.artifactRef).toBeUndefined();
   });
 
+  it("rewrites an absolute ref already at the canonical location without renaming", async () => {
+    // Absolute path that already points exactly at <ARTIFACT_ROOT>/<id>.pth:
+    // the migration should rewrite the ref to relative but skip the rename.
+    const modelId = await ModelRepo.add(modelRecord(undefined));
+    const canonical = path.join(ARTIFACT_ROOT, `${modelId}.pth`);
+    fs.mkdirSync(ARTIFACT_ROOT, { recursive: true });
+    fs.writeFileSync(canonical, "weights");
+    CLEANUP_PATHS.push(canonical);
+
+    const rec = await ModelRepo.get(modelId);
+    await ModelRepo.set(modelId, { ...rec, artifactRef: canonical }); // absolute, == target
+
+    await migration.up();
+
+    const migrated = await ModelRepo.get(modelId);
+    expect(migrated.artifactRef).toBe(`${modelId}.pth`); // rewritten to relative
+    expect(fs.existsSync(canonical)).toBe(true); // file left in place (no rename)
+  });
+
   it("is idempotent and leaves canonical refs and artifact-less models alone", async () => {
     const canonicalId = await ModelRepo.add(modelRecord("already-canonical.pth"));
     const bareId = await ModelRepo.add(modelRecord(undefined));

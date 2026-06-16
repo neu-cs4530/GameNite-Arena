@@ -435,3 +435,44 @@ describe("inferenceTlsCaForTests (self-signed box cert trust)", () => {
     expect(inferenceTlsCaForTests()).toBeUndefined();
   });
 });
+
+describe("TLS dispatcher + retry-config env parsing", () => {
+  it("builds a CA-pinned dispatcher and attaches it when INFERENCE_TLS_CA is set", async () => {
+    // The dispatcher is resolved once per module load, so re-import a fresh
+    // module with the CA configured to exercise the new-Agent + attach path.
+    vi.resetModules();
+    process.env["INFERENCE_TLS_CA"] =
+      "-----BEGIN CERTIFICATE-----\nFAKECA\n-----END CERTIFICATE-----\n";
+    process.env["INFERENCE_SHARED_TOKEN"] = SHARED_TOKEN;
+    const fresh = await import("../../src/services/inferenceClient.ts");
+    const mock = vi.fn().mockResolvedValue(jsonResponse({ status: "loaded" }));
+    vi.stubGlobal("fetch", mock);
+
+    await fresh.loadModel({ deploymentId: "dep-1", game: "nim", modelId: "m1" });
+
+    const [, init] = mock.mock.calls[0] as [string, RequestInit & { dispatcher?: unknown }];
+    expect(init.dispatcher).toBeDefined(); // CA-pinned undici Agent was attached
+    vi.resetModules();
+  });
+
+  it("reads retry config from numeric env and falls back on invalid values", () => {
+    // Valid number → parsed branch; non-numeric → the fallback branch.
+    process.env["INFERENCE_MAX_ATTEMPTS"] = "5";
+    expect(() => resetInferenceRetryConfigForTests()).not.toThrow();
+    process.env["INFERENCE_MAX_ATTEMPTS"] = "not-a-number";
+    expect(() => resetInferenceRetryConfigForTests()).not.toThrow();
+    delete process.env["INFERENCE_MAX_ATTEMPTS"];
+  });
+
+  it("applies jittered backoff (baseDelayMs > 0) between retries", async () => {
+    setInferenceRetryConfigForTests({ maxAttempts: 2, baseDelayMs: 1 });
+    const mock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("fetch failed"))
+      .mockResolvedValueOnce(jsonResponse({ move: 1 }));
+    vi.stubGlobal("fetch", mock);
+
+    await expect(requestMove({ deploymentId: "dep-1", state: {} })).resolves.toEqual({ move: 1 });
+    expect(mock).toHaveBeenCalledTimes(2);
+  });
+});

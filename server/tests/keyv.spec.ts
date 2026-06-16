@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createRepo, setDbInitializer } from "../src/keyv.ts";
 
 // Each test gets a fresh module because setDbInitializer has global state —
@@ -77,6 +77,27 @@ describe("createRepo — clear", () => {
     // _store starts as null; clear() should not throw.
     const repo = createRepo<string>("kv-test-clear-noop");
     await expect(repo.clear()).resolves.toBeUndefined();
+  });
+});
+
+describe("createRepo — custom initializer + store-write failures", () => {
+  it("uses a freshly-set initializer and surfaces store.set() failures", async () => {
+    // Reset the module so globalDbInitializer is null again, then set a custom
+    // initializer (exercises setDbInitializer's first-set branch) backed by a
+    // store whose set() always reports failure (exercises the add/set throws).
+    vi.resetModules();
+    const fresh = await import("../src/keyv.ts");
+    const failingStore = {
+      set: () => Promise.resolve(false),
+      get: () => Promise.resolve(undefined),
+    };
+    fresh.setDbInitializer(() => failingStore as never);
+
+    const repo = fresh.createRepo<string>("kv-failing-store");
+    await expect(repo.add("x")).rejects.toThrow(/Failed to set new key/);
+    await expect(repo.set("k", "v")).rejects.toThrow(/Failed to set key/);
+
+    vi.resetModules();
   });
 });
 
