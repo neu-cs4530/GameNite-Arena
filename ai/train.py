@@ -518,11 +518,52 @@ def run_checkers(session: GameNiteSession, *, user_id: str, episodes: int,
     print(f"[train] artifact uploaded (hasArtifact={info.get('hasArtifact')}) - done")
     return 0
 
+
+def run_guess(session: GameNiteSession, *, user_id: str, episodes: int,
+              learning_rate: float, heuristics: Any, chunk_steps: int,
+              display_name: str) -> int:
+    """Chunked PPO on NumberGuesserEnv — no self-play (random opponent each step)."""
+    from stable_baselines3 import PPO
+    from example_numguesser_adapter import NumberGuesserAdapter, NumberGuesserEnv
+
+    adapter = NumberGuesserAdapter(user_id=user_id)
+    env = adapter.build_env()
+    model = PPO("MlpPolicy", env, learning_rate=learning_rate,
+                n_steps=PPO_N_STEPS, verbose=0)
+    adapter._model = model
+
+    n_chunks = plan_chunks(episodes, chunk_steps)
+    win_rate, mean_reward = 0.0, 0.0
+    for chunk in range(1, n_chunks + 1):
+        model.learn(total_timesteps=chunk_steps, reset_num_timesteps=False)
+        win_rate, mean_reward = evaluate_board(model, NumberGuesserEnv)
+        keep_going = session.report(
+            model.num_timesteps,
+            metrics={"winRate": round(win_rate, 4), "meanReward": round(mean_reward, 4)},
+            message=f"chunk {chunk}/{n_chunks} - winRate {win_rate:.2f}",
+        )
+        print(f"[train] {model.num_timesteps} steps  "
+              f"winRate={win_rate:.2f}  meanReward={mean_reward:+.2f}")
+        if not keep_going:
+            print("[train] canceled from the web UI - stopping")
+            return 0
+
+    session.complete(final_metrics={"winRate": round(win_rate, 4),
+                                    "meanReward": round(mean_reward, 4)})
+    with tempfile.TemporaryDirectory() as tmp:
+        pth = Path(tmp) / f"{display_name}.pth"
+        adapter.save(str(pth))
+        info = session.upload_artifact(str(pth))
+    print(f"[train] artifact uploaded (hasArtifact={info.get('hasArtifact')}) - done")
+    return 0
+
+
 TRAINERS = {
     "nim": run_nim,
     "connect4": run_connect4,
     "tictactoe": run_tictactoe,
     "checkers": run_checkers,
+    "guess": run_guess,
 }
 
 
