@@ -1,11 +1,13 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   InferenceError,
   health,
   loadModel,
   requestMove,
   resetInferenceClientForTests,
+  resetInferenceRetryConfigForTests,
   setInferenceClientForTests,
+  setInferenceRetryConfigForTests,
   unloadModel,
 } from "../../src/services/inferenceClient.ts";
 
@@ -31,9 +33,17 @@ function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status });
 }
 
+// The existing cases below assert the single-request contract (one fetch per
+// call, the error surfaced verbatim), so retries are disabled for them. The
+// "retry / timeout" block opts back in to exercise the backoff path.
+beforeEach(() => {
+  setInferenceRetryConfigForTests({ maxAttempts: 1 });
+});
+
 afterEach(() => {
   vi.unstubAllGlobals();
   resetInferenceClientForTests();
+  resetInferenceRetryConfigForTests();
 });
 
 describe("requestMove", () => {
@@ -161,6 +171,98 @@ describe("requestMove", () => {
     expect(err).toBeInstanceOf(InferenceError);
     expect(err.status).toBe(503);
     expect(err.message).toContain("ECONNREFUSED");
+  });
+});
+
+describe("retry / timeout", () => {
+  it("retries a network failure and succeeds on a later attempt", async () => {
+    setInferenceRetryConfigForTests({ maxAttempts: 3, baseDelayMs: 0 });
+    const mock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("fetch failed"))
+      .mockRejectedValueOnce(new Error("fetch failed"))
+      .mockResolvedValueOnce(jsonResponse({ move: 4 }));
+    vi.stubGlobal("fetch", mock);
+
+    const result = await requestMove({ deploymentId: "dep-1", state: {} });
+
+    expect(result).toEqual({ move: 4 });
+    expect(mock).toHaveBeenCalledTimes(3);
+  });
+
+  it("retries a 503 from a cold-starting service and succeeds", async () => {
+    setInferenceRetryConfigForTests({ maxAttempts: 3, baseDelayMs: 0 });
+    const mock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("Service Unavailable", { status: 503 }))
+      .mockResolvedValueOnce(jsonResponse({ move: 1 }));
+    vi.stubGlobal("fetch", mock);
+
+    const result = await requestMove({ deploymentId: "dep-1", state: {} });
+
+    expect(result).toEqual({ move: 1 });
+    expect(mock).toHaveBeenCalledTimes(2);
+  });
+
+  it("gives up with a 503 InferenceError after exhausting retries on a network failure", async () => {
+    setInferenceRetryConfigForTests({ maxAttempts: 3, baseDelayMs: 0 });
+    const mock = vi.fn().mockRejectedValue(new Error("fetch failed"));
+    vi.stubGlobal("fetch", mock);
+
+    const err = (await requestMove({ deploymentId: "dep-1", state: {} }).catch(
+      (e: unknown) => e,
+    )) as InferenceError;
+
+    expect(err).toBeInstanceOf(InferenceError);
+    expect(err.status).toBe(503);
+    expect(err.message).toContain("fetch failed");
+    expect(mock).toHaveBeenCalledTimes(3);
+  });
+
+  it("does NOT retry a 4xx (deterministic) rejection", async () => {
+    setInferenceRetryConfigForTests({ maxAttempts: 3, baseDelayMs: 0 });
+    const mock = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse(
+          { detail: { error: "no legal action", consecutive_invalid: 3, forfeit: true } },
+          422,
+        ),
+      );
+    vi.stubGlobal("fetch", mock);
+
+    const err = (await requestMove({ deploymentId: "dep-1", state: {} }).catch(
+      (e: unknown) => e,
+    )) as InferenceError;
+
+    expect(err.status).toBe(422);
+    expect(err.forfeit).toBe(true);
+    expect(mock).toHaveBeenCalledTimes(1);
+  });
+
+  it("aborts a hung request after the per-attempt timeout and retries", async () => {
+    setInferenceRetryConfigForTests({ maxAttempts: 2, baseDelayMs: 0, timeoutMs: 20 });
+    const mock = vi.fn().mockImplementation((_url: string, init: RequestInit) => {
+      // First attempt: hang until the injected AbortSignal fires, then reject
+      // like fetch does on abort. Second attempt: resolve immediately.
+      if (mock.mock.calls.length === 1) {
+        return new Promise((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () =>
+            reject(Object.assign(new Error("The operation was aborted"), { name: "AbortError" })),
+          );
+        });
+      }
+      return Promise.resolve(jsonResponse({ move: 9 }));
+    });
+    vi.stubGlobal("fetch", mock);
+
+    const result = await requestMove({ deploymentId: "dep-1", state: {} });
+
+    expect(result).toEqual({ move: 9 });
+    expect(mock).toHaveBeenCalledTimes(2);
+    // The per-attempt timeout must have been wired through as an AbortSignal.
+    const [, init] = mock.mock.calls[0] as [string, RequestInit];
+    expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 });
 

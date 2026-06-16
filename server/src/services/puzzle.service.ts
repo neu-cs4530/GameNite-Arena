@@ -15,8 +15,11 @@ import {
   PuzzleRepo,
   UserRepo,
 } from "../repository.ts";
+import type { UserWithId } from "../types.ts";
 import { getUserByUsername } from "./auth.service.ts";
 import { gameServices } from "./game.service.ts";
+import { resolveAiSeatForQueue } from "./matchmaker.service.ts";
+import * as inferenceClient from "./inferenceClient.ts";
 import {
   updateRating,
   DEFAULT_RATING,
@@ -362,7 +365,7 @@ export async function submitAttempt(
   const hinted = (await PuzzleHintRepo.find(puzzleHintKey(userId, puzzleId))) !== null;
   const rated = !hinted && userRecord.puzzleLastRatedAt?.[gameKey] !== date;
 
-  const currentRating = userRecord.puzzleRatings[gameKey] ?? {
+  const currentRating = userRecord.puzzleRatings?.[gameKey] ?? {
     rating: DEFAULT_RATING,
     rd: DEFAULT_RD,
     vol: DEFAULT_VOLATILITY,
@@ -387,7 +390,7 @@ export async function submitAttempt(
   // Streak: first unhinted successful solve of this puzzle-date, rated or
   // not. The `<` guard keeps a late solve of an OLDER date's puzzle from
   // regressing lastSolvedAt and nuking a live chain.
-  const storedStreak = userRecord.puzzleStreak;
+  const storedStreak = userRecord.puzzleStreak ?? { current: 0, best: 0 };
   const advancesStreak =
     success &&
     !hinted &&
@@ -441,6 +444,46 @@ export async function submitAttempt(
 }
 
 /**
+ * Let one of `user`'s deployed models attempt the daily puzzle in their place.
+ * The deployed model picks a move for the puzzle's position via the inference
+ * service, and that move is graded + rated through the SAME {@link submitAttempt}
+ * path a human uses — so it counts toward the USER's puzzle Elo and spends
+ * their one daily rated slot ("you OR your AI", never both).
+ *
+ * @throws if the deployment isn't owned by the user / isn't active / isn't for
+ *   this game (validated by {@link resolveAiSeatForQueue}), or the model can't
+ *   produce a move (inference unavailable).
+ * @returns the graded result, or null when no puzzle exists for `date`.
+ */
+export async function submitAiAttempt(
+  user: UserWithId,
+  gameKey: GameKey,
+  deploymentId: string,
+  date: string,
+  now: Date = new Date(),
+): Promise<PuzzleAttemptResult | null> {
+  // Reuse matchmaking's deployment validation: ownership + active + game match.
+  const seat = await resolveAiSeatForQueue(user, deploymentId, gameKey);
+
+  const puzzle = await getPuzzleForDate(gameKey, date);
+  if (!puzzle) return null;
+
+  // The stored position is the watcher view — exactly the shape the inference
+  // encoder expects — so the puzzle position drives the model directly.
+  await inferenceClient.loadModel({ deploymentId, game: gameKey, modelId: seat.modelId });
+  const response = (await inferenceClient.requestMove({
+    deploymentId,
+    state: puzzle.position,
+  })) as { move?: unknown } | undefined;
+  if (!response || response.move === undefined) {
+    throw new Error(`Model for deployment ${deploymentId} did not return a move`);
+  }
+
+  // Grade + rate via the human attempt path; the model is instant (timeMs 0).
+  return submitAttempt(user.userId, gameKey, { move: response.move, timeMs: 0, date }, now);
+}
+
+/**
  * Reveals the archived solution move for the puzzle pinned by `date` and
  * records the grant in PuzzleHintRepo under `<userId>|<puzzleId>`. From this
  * point every attempt by this user on this puzzle is hinted: never rated,
@@ -467,7 +510,7 @@ export async function grantHint(
   const existing = await PuzzleHintRepo.find(key);
 
   const userRecord = await UserRepo.get(userId);
-  const currentRating = userRecord.puzzleRatings[gameKey] ?? {
+  const currentRating = userRecord.puzzleRatings?.[gameKey] ?? {
     rating: DEFAULT_RATING,
     rd: DEFAULT_RD,
     vol: DEFAULT_VOLATILITY,

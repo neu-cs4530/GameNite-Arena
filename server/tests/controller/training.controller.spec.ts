@@ -367,6 +367,100 @@ describe("token auth channel", () => {
   });
 });
 
+describe("bad credentials in terminal endpoints", () => {
+  it("403 from POST /:jobId/progress with bad credentials", async () => {
+    const info = await submitSession();
+    const res = await supertest(app)
+      .post(`/api/training/${info.jobId}/progress`)
+      .send({ auth: badAuth, payload: { episodes: 10 } });
+    expect(res.status).toBe(403);
+  });
+
+  it("403 from POST /:jobId/complete with bad credentials", async () => {
+    const info = await submitSession();
+    const res = await supertest(app)
+      .post(`/api/training/${info.jobId}/complete`)
+      .send({ auth: badAuth, payload: {} });
+    expect(res.status).toBe(403);
+  });
+
+  it("403 from POST /:jobId/fail with bad credentials", async () => {
+    const info = await submitSession();
+    const res = await supertest(app)
+      .post(`/api/training/${info.jobId}/fail`)
+      .send({ auth: badAuth, payload: { error: "x" } });
+    expect(res.status).toBe(403);
+  });
+
+  it("403 from POST /:jobId/cancel with bad credentials", async () => {
+    const info = await submitSession();
+    const res = await supertest(app)
+      .post(`/api/training/${info.jobId}/cancel`)
+      .send({ auth: badAuth, payload: {} });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("parsePositiveInt — explicit pagination", () => {
+  it("respects explicit page and pageSize query params", async () => {
+    await submitSession();
+    await submitSession(AUTH1);
+    const res = await supertest(app).get("/api/training/list?page=1&pageSize=1");
+    expect(res.status).toBe(200);
+    expect(res.body.jobs).toHaveLength(1);
+    expect(res.body.total).toBe(2);
+  });
+
+  it("ignores non-numeric page/pageSize params", async () => {
+    await submitSession();
+    const res = await supertest(app).get("/api/training/list?page=abc&pageSize=xyz");
+    expect(res.status).toBe(200);
+    expect(res.body.page).toBe(1);
+  });
+});
+
+describe("artifact and token edge cases", () => {
+  it("400s on artifact upload with no file attached", async () => {
+    const info = await submitSession();
+    const res = await supertest(app)
+      .post(`/api/training/${info.jobId}/artifact`)
+      .field("auth", JSON.stringify(AUTH0));
+    expect(res.status).toBe(400);
+  });
+
+  it("400s on malformed POST /api/training/token body", async () => {
+    const res = await supertest(app).post("/api/training/token").send({ notAuth: "garbage" });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("malformed body on terminal endpoints", () => {
+  it("400 from POST /:jobId/complete with a bad payload", async () => {
+    const info = await submitSession();
+    const res = await supertest(app)
+      .post(`/api/training/${info.jobId}/complete`)
+      .send({ auth: AUTH0, payload: { finalMetrics: "not-an-object" } });
+    expect(res.status).toBe(400);
+  });
+
+  it("400 from POST /:jobId/fail with a missing error field", async () => {
+    const info = await submitSession();
+    const res = await supertest(app)
+      .post(`/api/training/${info.jobId}/fail`)
+      .send({ auth: AUTH0, payload: 42 });
+    expect(res.status).toBe(400);
+  });
+
+  it("400 from POST /:jobId/cancel with a completely missing body", async () => {
+    const info = await submitSession();
+    const res = await supertest(app)
+      .post(`/api/training/${info.jobId}/cancel`)
+      .send("not json")
+      .set("Content-Type", "text/plain");
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("training kit distribution", () => {
   it("serves a manifest of the kit files", async () => {
     const res = await supertest(app).get("/api/training/kit");
@@ -403,5 +497,24 @@ describe("training kit distribution", () => {
     expect(res.headers["content-type"]).toContain("text/x-shellscript");
     expect(res.text).toContain("session_reporter.py");
     expect(res.text).toContain("curl");
+  });
+
+  it("bakes an https base URL behind a TLS-terminating proxy (X-Forwarded-Proto)", async () => {
+    // Render terminates TLS and forwards http, so req.protocol is "http". If
+    // the kit bakes an http BASE, the reporter's progress POST gets a 307
+    // http->https redirect that stdlib urllib won't re-POST across. Trust the
+    // forwarded proto so the baked BASE is https and the POST lands directly.
+    const res = await supertest(app)
+      .get("/api/training/kit/install.sh")
+      .set("X-Forwarded-Proto", "https");
+    expect(res.status).toBe(200);
+    expect(res.text).toMatch(/BASE="\$\{GAMENITE_URL:-https:\/\//);
+    expect(res.text).not.toMatch(/BASE="\$\{GAMENITE_URL:-http:\/\//);
+  });
+
+  it("falls back to the request protocol with no forwarded header (local dev)", async () => {
+    const res = await supertest(app).get("/api/training/kit/install.sh");
+    expect(res.status).toBe(200);
+    expect(res.text).toMatch(/BASE="\$\{GAMENITE_URL:-http:\/\//);
   });
 });

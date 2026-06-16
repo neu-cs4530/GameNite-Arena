@@ -74,6 +74,27 @@ describe("GET /api/follow/:username/followers and /following", () => {
   });
 });
 
+describe("POST /api/follow/:username — bad body", () => {
+  it("returns 400 when body is empty", async () => {
+    const res = await supertest(makeApp()).post("/api/follow/user1").send({});
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("POST /api/follow/:username/unfollow — bad body", () => {
+  it("returns 400 when body is empty", async () => {
+    const res = await supertest(makeApp()).post("/api/follow/user1/unfollow").send({});
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("GET /api/follow/:username/following — unknown user", () => {
+  it("returns 404 for an unknown username", async () => {
+    const res = await supertest(makeApp()).get("/api/follow/ghost/following");
+    expect(res.status).toBe(404);
+  });
+});
+
 describe("POST /api/follow/feed", () => {
   it("returns the feed envelope for the authed user (200)", async () => {
     await supertest(makeApp()).post("/api/follow/user1").send({ auth: caster });

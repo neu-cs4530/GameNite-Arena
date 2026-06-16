@@ -1,21 +1,28 @@
 import "./CompareToAIPanel.css";
 import type { JSX } from "react";
+import type { GameKey } from "@gamenite/shared";
 import type { AnalysisResult, ReplayDetail } from "../../util/types.ts";
+import { describePuzzleMove } from "../../services/puzzleMapper.ts";
 import Badge from "../ui/Badge.tsx";
 
 interface CompareToAIPanelProps {
   replay: ReplayDetail;
+  /** The replay's game — used to render moves in human notation. */
+  gameKey: GameKey;
   analysis: AnalysisResult;
   currentMove: number;
   onClose: () => void;
 }
 
 /**
- * Side-by-side comparison: what the human played vs what the engine would
- * have preferred. Reads from the mock analysis result.
+ * Side-by-side comparison for the move the user is on: what the human played
+ * vs what the built-in engine would have preferred (its best line) and — when
+ * a model was selected — what that deployed model would play. Reads the real
+ * analysis result; an empty `perMove` shows the "run the engine" prompt.
  */
 export default function CompareToAIPanel({
   replay,
+  gameKey,
   analysis,
   currentMove,
   onClose,
@@ -65,7 +72,8 @@ export default function CompareToAIPanel({
             </>
           ) : (
             <div className="ga-compare__sub">
-              Engine's view of the next move for {humanParticipant?.displayName ?? "the player"}.
+              Engine&apos;s view of the next move for{" "}
+              {humanParticipant?.displayName ?? "the player"}.
             </div>
           )}
         </div>
@@ -81,29 +89,54 @@ export default function CompareToAIPanel({
           )}
           {analysisItem ? (
             <>
-              <div className="ga-compare__value">
-                {analysisItem.flag === "best" ? "Same — best move" : "An alternative"}
-              </div>
-              <div className="ga-compare__sub">
-                Confidence: {Math.round(analysisItem.confidence * 100)}%
-              </div>
-              <Badge
-                variant={
-                  analysisItem.flag === "best"
-                    ? "success"
-                    : analysisItem.flag === "blunder"
-                      ? "danger"
-                      : "warning"
-                }
-              >
-                {analysisItem.flag}
-              </Badge>
-              {analysisItem.notes && <p className="ga-compare__notes">{analysisItem.notes}</p>}
+              {analysisItem.flag !== "neutral" && (
+                <>
+                  <div className="ga-compare__value">
+                    {analysisItem.flag === "best" ? "Same — best move" : "A stronger move existed"}
+                  </div>
+                  <Badge
+                    variant={
+                      analysisItem.flag === "best"
+                        ? "success"
+                        : analysisItem.flag === "blunder"
+                          ? "danger"
+                          : "warning"
+                    }
+                  >
+                    {analysisItem.flag}
+                  </Badge>
+                </>
+              )}
+              {analysisItem.suggestedMove !== undefined && (
+                <div className="ga-compare__sub" data-testid="ai-comparison-best-move">
+                  Engine&apos;s best line:{" "}
+                  <strong>{describePuzzleMove(gameKey, analysisItem.suggestedMove)}</strong>
+                </div>
+              )}
+              {analysisItem.engineMove !== undefined && (
+                <div className="ga-compare__sub" data-testid="ai-comparison-model-move">
+                  Selected model plays:{" "}
+                  <strong>{describePuzzleMove(gameKey, analysisItem.engineMove)}</strong>
+                </div>
+              )}
+              {analysisItem.flag === "neutral" &&
+                analysisItem.suggestedMove === undefined &&
+                analysisItem.engineMove === undefined && (
+                  <div className="ga-compare__sub">No engine verdict for this move.</div>
+                )}
+              {analysisItem.notes !== undefined && analysisItem.notes !== "" && (
+                <p className="ga-compare__notes">{analysisItem.notes}</p>
+              )}
             </>
           ) : (
             <div className="ga-compare__sub">
-              Engine analysis pending. Click "Analyze with engine" to populate.
+              Engine analysis pending. Click &quot;Analyze with engine&quot; to populate.
             </div>
+          )}
+          {analysis.aiError !== undefined && analysis.aiError !== "" && (
+            <p className="ga-compare__notes" role="alert">
+              Model insight unavailable: {analysis.aiError}
+            </p>
           )}
         </div>
       </div>

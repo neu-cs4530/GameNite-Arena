@@ -6,6 +6,7 @@ import {
   resetAiMoveDelayForTests,
 } from "../../src/controllers/game.controller.ts";
 import {
+  InferenceError,
   setInferenceClientForTests,
   resetInferenceClientForTests,
 } from "../../src/services/inferenceClient.ts";
@@ -85,6 +86,30 @@ describe("runAiTurns", () => {
     const updates = emits.filter((e) => e.event === "gameStateUpdated" && e.room === game.gameId);
     expect(updates).toHaveLength(1);
     expect(updates[0].payload["forPlayer"]).toBe(false);
+  });
+
+  it("ends the match instead of hanging when inference is unreachable", async () => {
+    // Prod regression: a 503 "fetch failed" used to silently stop the loop
+    // with no broadcast, leaving the human waiting on the AI's turn forever.
+    // It must now finalize the game and emit a gameResult so play resolves.
+    const user0 = (await getUserByUsername("user0"))!;
+    const aiSeat = await seedAiSeat("OutageBot v1");
+    const game = await createGameWithAi(aiSeat, "nim", new Date(), false);
+    await joinGame(game.gameId, user0);
+    await startGame(game.gameId, { userId: aiSeat.deploymentId, username: "OutageBot v1" });
+
+    setInferenceClientForTests({
+      requestMove: () =>
+        Promise.reject(new InferenceError("Inference service unreachable: fetch failed", 503)),
+    });
+    const { io, emits } = makeIoRecorder();
+    await runAiTurns(io, game.gameId);
+
+    const results = emits.filter((e) => e.event === "gameResult");
+    expect(results).toHaveLength(1);
+    expect(results[0].payload["outcome"]).toBe("abandoned");
+    expect(results[0].payload["winnerId"]).toBeUndefined();
+    expect((await GameRepo.get(game.gameId)).done).toBe(true);
   });
 
   it("waits the configured delay before the move lands", async () => {
