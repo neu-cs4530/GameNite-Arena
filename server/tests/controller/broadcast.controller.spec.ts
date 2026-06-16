@@ -111,6 +111,15 @@ describe("GET /api/broadcast/list and /:id", () => {
   });
 });
 
+describe("POST /api/broadcast/create — bad body", () => {
+  it("returns 400 when the body is missing auth entirely", async () => {
+    const res = await supertest(makeApp())
+      .post("/api/broadcast/create")
+      .send({ payload: { gameId: "game-1", delaySec: 10 } });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("POST /api/broadcast/:id/end", () => {
   it("lets the broadcaster end their broadcast (200)", async () => {
     const created = await startOne();
