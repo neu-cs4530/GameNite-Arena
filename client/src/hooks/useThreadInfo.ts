@@ -14,11 +14,13 @@ export default function useThreadInfo(threadId: string) {
   const [thread, setThread] = useState<ThreadInfo | ErrorMsg | null>(null);
 
   useEffect(() => {
-    threadInfo(threadId)
-      .then(setThread)
-      .catch((err) => {
-        setThread({ error: `${err}` });
-      });
+    const fetch = () =>
+      threadInfo(threadId)
+        .then(setThread)
+        .catch((err) => setThread({ error: `${err}` }));
+    void fetch();
+    const id = window.setInterval(() => void fetch(), 30_000);
+    return () => window.clearInterval(id);
   }, [threadId]);
 
   if (!thread) return { threadInfo: { message: "Loading..." }, setThread };

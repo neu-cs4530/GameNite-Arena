@@ -1,4 +1,95 @@
-span.opBlue {
-  color: oklch(0.55 0.2 260);
-  font-weight: 800;
+.ga-thread-page {
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.ga-thread-page__error {
+  color: var(--color-fg-muted);
+}
+
+.ga-thread-page__post {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  background: linear-gradient(135deg, var(--color-primary-soft) 0%, var(--color-accent-soft) 100%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.ga-thread-page__title {
+  margin: 0;
+  font-size: var(--text-h2);
+  font-weight: var(--weight-bold);
+  color: var(--color-fg);
+}
+
+.ga-thread-page__body {
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--color-fg);
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+
+.ga-thread-page__byline {
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+}
+
+.ga-thread-page__comments {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ga-thread-page__comment {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.ga-thread-page__comment-text {
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--color-fg);
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+
+.ga-thread-page__comment-meta {
+  font-size: var(--text-small);
+  color: var(--color-fg-muted);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ga-thread-page__op-badge {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.03em;
+}
+
+@media (max-width: 768px) {
+  .ga-thread-page {
+    padding: var(--space-4);
+    gap: var(--space-4);
+  }
+  .ga-thread-page__post {
+    padding: var(--space-4);
+  }
 }

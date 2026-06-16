@@ -112,7 +112,11 @@ export default function Profile() {
     ]);
     return { followers, following };
   }, [username]);
-  const { data: follows, loading: followsLoading } = useAsync(followsProducer, [username], {
+  const {
+    data: follows,
+    loading: followsLoading,
+    refetch: refetchFollows,
+  } = useAsync(followsProducer, [username], {
     followers: [],
     following: [],
   });
@@ -242,8 +246,10 @@ export default function Profile() {
         followBusy={!!username && followCtl.busy === username}
         onToggleFollow={() => {
           if (!username) return;
-          if (followCtl.isFollowing(username)) void followCtl.unfollow(username);
-          else void followCtl.follow(username);
+          const action = followCtl.isFollowing(username)
+            ? followCtl.unfollow(username)
+            : followCtl.follow(username);
+          void action.then(() => refetchFollows());
         }}
       />
 

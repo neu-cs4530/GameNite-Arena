@@ -13,10 +13,14 @@ export default function useThreadList(
   const [threads, setThreads] = useState<ThreadSummary[] | ErrorMsg | null>(null);
 
   useEffect(() => {
-    threadList()
-      .then(setThreads)
-      .catch((err) => setThreads({ error: `${err}` }));
-  }, [setThreads]);
+    const fetch = () =>
+      threadList()
+        .then(setThreads)
+        .catch((err) => setThreads({ error: `${err}` }));
+    void fetch();
+    const id = window.setInterval(() => void fetch(), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   if (!threads) return { message: "Loading..." };
   if ("error" in threads) return { message: `Error: ${threads.error}` };
