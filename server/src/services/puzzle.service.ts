@@ -362,7 +362,7 @@ export async function submitAttempt(
   const hinted = (await PuzzleHintRepo.find(puzzleHintKey(userId, puzzleId))) !== null;
   const rated = !hinted && userRecord.puzzleLastRatedAt?.[gameKey] !== date;
 
-  const currentRating = userRecord.puzzleRatings[gameKey] ?? {
+  const currentRating = userRecord.puzzleRatings?.[gameKey] ?? {
     rating: DEFAULT_RATING,
     rd: DEFAULT_RD,
     vol: DEFAULT_VOLATILITY,
@@ -387,7 +387,7 @@ export async function submitAttempt(
   // Streak: first unhinted successful solve of this puzzle-date, rated or
   // not. The `<` guard keeps a late solve of an OLDER date's puzzle from
   // regressing lastSolvedAt and nuking a live chain.
-  const storedStreak = userRecord.puzzleStreak;
+  const storedStreak = userRecord.puzzleStreak ?? { current: 0, best: 0 };
   const advancesStreak =
     success &&
     !hinted &&
@@ -467,7 +467,7 @@ export async function grantHint(
   const existing = await PuzzleHintRepo.find(key);
 
   const userRecord = await UserRepo.get(userId);
-  const currentRating = userRecord.puzzleRatings[gameKey] ?? {
+  const currentRating = userRecord.puzzleRatings?.[gameKey] ?? {
     rating: DEFAULT_RATING,
     rd: DEFAULT_RD,
     vol: DEFAULT_VOLATILITY,
