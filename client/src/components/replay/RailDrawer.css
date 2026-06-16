@@ -16,6 +16,7 @@
 
 .ga-rail-drawer__row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
   padding-right: var(--space-2);
@@ -80,9 +81,12 @@
 }
 
 .ga-rail-drawer__extra {
-  flex-shrink: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
 }
 
 .ga-rail-drawer__body {

@@ -170,3 +170,17 @@
 .c4-disc--yellow {
   background: var(--color-tier-gold, #b58105);
 }
+
+/* The selected AI model's suggested drop from the current position. */
+.ga-c4-replay .c4-cell--ai {
+  background: var(--color-success-soft);
+  box-shadow:
+    inset 0 1px 2px rgba(14, 23, 38, 0.12),
+    0 0 0 clamp(2px, 0.6cqw, 4px) var(--color-success);
+}
+
+.ga-c4-replay .c4-board .c4-disc--ai {
+  background: var(--color-success);
+  opacity: 0.55;
+  box-shadow: none;
+}
