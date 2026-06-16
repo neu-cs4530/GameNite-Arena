@@ -1,9 +1,16 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import express from "express";
 import supertest from "supertest";
 import * as broadcast from "../../src/controllers/broadcast.controller.ts";
 import { BroadcastRepo, GameRepo } from "../../src/repository.ts";
 import type { GameRecord } from "../../src/models.ts";
+import type { GameServer, GameServerSocket } from "../../src/types.ts";
+
+/** A minimal socket exposing only join/leave (the bits the handlers use). */
+function mockSocket(): GameServerSocket {
+  return { id: "spec-socket", join: vi.fn(), leave: vi.fn() } as unknown as GameServerSocket;
+}
+const mockIo = {} as GameServer;
 
 /* ---------------------------------------------------------------------------
  * We mount only the broadcast router (not the full `app`, which transitively
@@ -148,5 +155,46 @@ describe("POST /api/broadcast/:id/end", () => {
       .post("/api/broadcast/does-not-exist/end")
       .send({ auth: caster });
     expect(res.status).toBe(404);
+  });
+
+  it("returns 400 when the end request has no auth envelope", async () => {
+    const { broadcastId } = (await startOne()).body as { broadcastId: string };
+    const res = await supertest(makeApp()).post(`/api/broadcast/${broadcastId}/end`).send({});
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 403 for invalid credentials", async () => {
+    const { broadcastId } = (await startOne()).body as { broadcastId: string };
+    const res = await supertest(makeApp())
+      .post(`/api/broadcast/${broadcastId}/end`)
+      .send({ auth: { username: "user0", password: "wrong" } });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("socketBroadcastWatch / socketBroadcastLeave", () => {
+  it("joins the broadcast room for a live broadcast", async () => {
+    const { broadcastId } = (await startOne()).body as { broadcastId: string };
+    const socket = mockSocket();
+
+    await broadcast.socketBroadcastWatch(socket, mockIo)({ auth: caster, payload: broadcastId });
+
+    expect(socket.join).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not join when the broadcast is missing or not live", async () => {
+    const socket = mockSocket();
+
+    await broadcast.socketBroadcastWatch(socket, mockIo)({ auth: caster, payload: "no-such-id" });
+
+    expect(socket.join).not.toHaveBeenCalled();
+  });
+
+  it("leaves the broadcast room", async () => {
+    const socket = mockSocket();
+
+    await broadcast.socketBroadcastLeave(socket, mockIo)({ auth: caster, payload: "any-id" });
+
+    expect(socket.leave).toHaveBeenCalledTimes(1);
   });
 });
