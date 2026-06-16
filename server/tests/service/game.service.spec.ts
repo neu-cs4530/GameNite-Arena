@@ -802,7 +802,14 @@ describe("AI loop edge cases", () => {
     const gameId = randomUUID().toString();
     await GameRepo.set(gameId, {
       type: "tictactoe",
-      state: { board: [[".", ".", "."], [".", ".", "."], [".", ".", "."]], nextPlayer: 1 },
+      state: {
+        board: [
+          [".", ".", "."],
+          [".", ".", "."],
+          [".", ".", "."],
+        ],
+        nextPlayer: 1,
+      },
       done: false,
       chat: "chat-ttt",
       players: [user0.userId, botSeat.deploymentId],
@@ -854,7 +861,14 @@ describe("AI loop edge cases", () => {
     const emptyRow = [".", ".", ".", ".", ".", ".", ".", "."];
     const board = Array.from({ length: 8 }, () => [...emptyRow]);
     board[2][1] = "B";
-    const requestMove = vi.fn().mockResolvedValue({ move: { squares: [[2, 1], [3, 2]] } });
+    const requestMove = vi.fn().mockResolvedValue({
+      move: {
+        squares: [
+          [2, 1],
+          [3, 2],
+        ],
+      },
+    });
     setInferenceClientForTests({ requestMove });
     const gameId = randomUUID().toString();
     await GameRepo.set(gameId, {
@@ -877,7 +891,7 @@ describe("AI loop edge cases", () => {
     };
     expect(call.state.squares).toHaveLength(32);
     expect(call.legalMoves).toBeDefined();
-    expect(call.legalMoves!.length).toBeGreaterThan(0);
+    expect(call.legalMoves.length).toBeGreaterThan(0);
   });
 });
 

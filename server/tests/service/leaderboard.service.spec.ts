@@ -294,13 +294,13 @@ describe("getLeaderboard daily period", () => {
   });
 
   it("falls back to default rating values when a participant has no prior rating record", async () => {
-    const NOW = new Date("2026-06-16T18:00:00.000Z");
+    const now = new Date("2026-06-16T18:00:00.000Z");
     await seedMatch(["fresh", "bob"], {
       completedAt: "2026-06-16T10:00:00.000Z",
       winnerId: "fresh",
       ratingChanges: [{ entityId: "fresh", delta: 15 }],
     });
-    const page = await getLeaderboard({ gameKey: "nim", period: "daily", now: NOW });
+    const page = await getLeaderboard({ gameKey: "nim", period: "daily", now: now });
     const entry = page.entries.find((e) => e.entityId === "fresh")!;
     expect(entry.rating).toBe(1500);
     expect(entry.rd).toBe(350);
@@ -308,24 +308,24 @@ describe("getLeaderboard daily period", () => {
   });
 
   it("ignores matches that have no ratingChanges recorded", async () => {
-    const NOW = new Date("2026-06-16T18:00:00.000Z");
+    const now = new Date("2026-06-16T18:00:00.000Z");
     await seedRating("alice", { rating: 1600 });
     await seedMatch(["alice", "bob"], {
       completedAt: "2026-06-16T10:00:00.000Z",
       winnerId: "alice",
     });
-    const page = await getLeaderboard({ gameKey: "nim", period: "daily", now: NOW });
+    const page = await getLeaderboard({ gameKey: "nim", period: "daily", now: now });
     expect(page.entries).toHaveLength(0);
   });
 
   it("skips a ratingChange whose entityId is not in the match participants", async () => {
-    const NOW = new Date("2026-06-16T18:00:00.000Z");
+    const now = new Date("2026-06-16T18:00:00.000Z");
     await seedMatch(["alice", "bob"], {
       completedAt: "2026-06-16T10:00:00.000Z",
       winnerId: "alice",
       ratingChanges: [{ entityId: "charlie", delta: 20 }],
     });
-    const page = await getLeaderboard({ gameKey: "nim", period: "daily", now: NOW });
+    const page = await getLeaderboard({ gameKey: "nim", period: "daily", now: now });
     expect(page.entries.find((e) => e.entityId === "charlie")).toBeUndefined();
   });
 });

@@ -115,7 +115,7 @@ describe("MigrationRunner", () => {
     expect(ids).toEqual([...ids].sort());
   });
 
-  const MIGRATIONS_DIR = fileURLToPath(new URL(".", import.meta.url));
+  const migrationsDir = fileURLToPath(new URL(".", import.meta.url));
   const tempFiles: string[] = [];
 
   afterEach(() => {
@@ -129,14 +129,14 @@ describe("MigrationRunner", () => {
   });
 
   it("throws when a migration file exports a non-migration value", async () => {
-    const tmpPath = path.join(MIGRATIONS_DIR, "998_test_null_export.ts");
+    const tmpPath = path.join(migrationsDir, "998_test_null_export.ts");
     fs.writeFileSync(tmpPath, "export const migration = null;\n");
     tempFiles.push(tmpPath);
     await expect(loadAllMigrations()).rejects.toThrow(/must export a 'migration'/);
   });
 
   it("throws when a migration id does not match its filename", async () => {
-    const tmpPath = path.join(MIGRATIONS_DIR, "999_test_bad_id.ts");
+    const tmpPath = path.join(migrationsDir, "999_test_bad_id.ts");
     fs.writeFileSync(
       tmpPath,
       'export const migration = { id: "wrong_name", description: "d", up: async () => {} };\n',

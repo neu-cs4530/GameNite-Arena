@@ -19,7 +19,11 @@ beforeEach(async () => {
 
 afterEach(() => {
   for (const p of CLEANUP.splice(0)) {
-    try { fs.unlinkSync(p); } catch {}
+    try {
+      fs.unlinkSync(p);
+    } catch {
+      //nothing
+    }
   }
 });
 

@@ -429,9 +429,7 @@ describe("artifact and token edge cases", () => {
   });
 
   it("400s on malformed POST /api/training/token body", async () => {
-    const res = await supertest(app)
-      .post("/api/training/token")
-      .send({ notAuth: "garbage" });
+    const res = await supertest(app).post("/api/training/token").send({ notAuth: "garbage" });
     expect(res.status).toBe(400);
   });
 });

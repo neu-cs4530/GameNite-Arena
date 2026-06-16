@@ -504,7 +504,11 @@ describe("refreshForWrite race conditions", () => {
     const findSpy = vi
       .spyOn(TrainingJobRepo, "find")
       .mockResolvedValueOnce({ ...queued })
-      .mockResolvedValueOnce({ ...queued, status: "canceled" as const, completedAt: new Date().toISOString() });
+      .mockResolvedValueOnce({
+        ...queued,
+        status: "canceled" as const,
+        completedAt: new Date().toISOString(),
+      });
 
     await expect(completeTrainingSession(user0, start.jobId, {})).rejects.toThrow(/already/);
     findSpy.mockRestore();
@@ -516,9 +520,15 @@ describe("refreshForWrite race conditions", () => {
     const findSpy = vi
       .spyOn(TrainingJobRepo, "find")
       .mockResolvedValueOnce({ ...queued })
-      .mockResolvedValueOnce({ ...queued, status: "completed" as const, completedAt: new Date().toISOString() });
+      .mockResolvedValueOnce({
+        ...queued,
+        status: "completed" as const,
+        completedAt: new Date().toISOString(),
+      });
 
-    await expect(failTrainingSession(user0, start.jobId, { error: "x" })).rejects.toThrow(/already/);
+    await expect(failTrainingSession(user0, start.jobId, { error: "x" })).rejects.toThrow(
+      /already/,
+    );
     findSpy.mockRestore();
   });
 
@@ -528,7 +538,11 @@ describe("refreshForWrite race conditions", () => {
     const findSpy = vi
       .spyOn(TrainingJobRepo, "find")
       .mockResolvedValueOnce({ ...queued })
-      .mockResolvedValueOnce({ ...queued, status: "completed" as const, completedAt: new Date().toISOString() });
+      .mockResolvedValueOnce({
+        ...queued,
+        status: "completed" as const,
+        completedAt: new Date().toISOString(),
+      });
 
     await expect(cancelTrainingSession(user0, start.jobId)).rejects.toThrow(/already/);
     findSpy.mockRestore();
