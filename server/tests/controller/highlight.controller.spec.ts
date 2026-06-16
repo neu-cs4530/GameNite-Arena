@@ -125,6 +125,10 @@ describe("POST /api/highlight/list", () => {
     await supertest(app)
       .post("/api/highlight/create")
       .send({ auth: caster, payload: { broadcastId, note: "first" } });
+    // Space the two saves apart so their capturedAt timestamps differ — without
+    // this they can land in the same millisecond and the newest-first order is
+    // ambiguous.
+    await new Promise((resolve) => setTimeout(resolve, 10));
     await supertest(app)
       .post("/api/highlight/create")
       .send({ auth: caster, payload: { broadcastId, note: "second" } });

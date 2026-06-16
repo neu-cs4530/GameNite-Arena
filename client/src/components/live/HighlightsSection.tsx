@@ -90,22 +90,28 @@ export default function HighlightsSection({ broadcastId }: { broadcastId: string
         </p>
       ) : (
         <ul className="ga-highlights-section__list" data-testid="highlights-list">
-          {highlights.map((h) => (
-            <li key={h.highlightId} className="ga-highlights-section__item">
-              <span className="ga-highlights-section__note">
-                {h.note || `${h.moves.length}-move clip`}
-              </span>
-              <span className="ga-highlights-section__time">
-                {replayGameNames[h.gameKey]} (<TimeAgo date={h.capturedAt} />)
-              </span>
-              <Link
-                to={`/replays/${h.gameId}?from=${h.startIndex}&clip=${h.moves.length}`}
-                className="ga-highlights-section__watch"
-              >
-                Watch ↗
-              </Link>
-            </li>
-          ))}
+          {highlights.map((h) => {
+            // Old highlights may predate the clip fields — default them.
+            const moveCount = h.moves?.length ?? 0;
+            const gameName = h.gameKey ? replayGameNames[h.gameKey] : "Match";
+            const watchTo =
+              moveCount > 0
+                ? `/replays/${h.gameId}?from=${h.startIndex ?? 0}&clip=${moveCount}`
+                : `/replays/${h.gameId}`;
+            return (
+              <li key={h.highlightId} className="ga-highlights-section__item">
+                <span className="ga-highlights-section__note">
+                  {h.note || `${moveCount}-move clip`}
+                </span>
+                <span className="ga-highlights-section__time">
+                  {gameName} (<TimeAgo date={h.capturedAt} />)
+                </span>
+                <Link to={watchTo} className="ga-highlights-section__watch">
+                  Watch ↗
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>
