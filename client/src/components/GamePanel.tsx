@@ -82,6 +82,14 @@ export default function GamePanel({
     recoverySettled,
   });
 
+  // The game is over once the position itself is finished OR a result has
+  // arrived (a forfeit/abandonment ends the game while the board position is
+  // still mid-game). When it's over, the board must stop accepting moves —
+  // render it read-only the way a spectator (userPlayerIndex < 0) sees it, so
+  // a forfeited/lost game can't be played on.
+  const gameOver = done || effectiveResult !== null;
+  const boardPlayerIndex = gameOver ? -1 : userPlayerIndex;
+
   // The queue session (if any) ties this game to an auto-requeue run and
   // tells the recap when the viewer's MODEL held the seat. Read once — the
   // session only changes through the recap strip below.
@@ -127,7 +135,7 @@ export default function GamePanel({
         <div className="gameFrame">
           <GameDispatch
             gameId={gameId}
-            userPlayerIndex={userPlayerIndex}
+            userPlayerIndex={boardPlayerIndex}
             players={players}
             view={view}
           />
