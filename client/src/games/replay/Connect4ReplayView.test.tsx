@@ -60,4 +60,54 @@ describe("Connect4ReplayView", () => {
     render(<Connect4ReplayView view={view} participants={[]} />);
     expect(screen.getByText(/won/i)).toHaveTextContent("—");
   });
+
+  it("highlights the AI landing cell as a green ghost disc on an empty column", () => {
+    // Column 1 is empty in both rows; the lowest empty row is row 1.
+    const view = { board: BOARD, nextPlayer: 0, winningEntry: null } as Connect4View;
+    render(<Connect4ReplayView view={view} participants={PLAYERS} aiMove={1} />);
+
+    const target = screen.getByTestId("c4-ai-target");
+    expect(target.className).toContain("c4-cell--ai");
+    // Empty target cell renders the AI ghost disc.
+    expect(screen.getByLabelText("AI would drop here")).toBeInTheDocument();
+  });
+
+  it("lands the AI ghost on the lowest empty row when the column is partly filled", () => {
+    // Column 2: top empty, bottom occupied. The reduce must skip the filled
+    // bottom row and keep the highest (row 0) empty landing.
+    const partial: Connect4View["board"] = [
+      ["R", "Y", "."],
+      ["Y", "R", "R"],
+    ];
+    const view = { board: partial, nextPlayer: 0, winningEntry: null } as Connect4View;
+    render(<Connect4ReplayView view={view} participants={PLAYERS} aiMove={2} />);
+
+    // Landing row is 0 (only empty cell in column 2), shown at cell 0-2.
+    expect(screen.getByTestId("c4-ai-target")).toBe(
+      screen.getByLabelText("AI would drop here").parentElement,
+    );
+  });
+
+  it("does not mark an AI target when the suggested column is out of range", () => {
+    const view = { board: BOARD, nextPlayer: 0, winningEntry: null } as Connect4View;
+    render(<Connect4ReplayView view={view} participants={PLAYERS} aiMove={99} />);
+    expect(screen.queryByTestId("c4-ai-target")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("AI would drop here")).not.toBeInTheDocument();
+  });
+
+  it("does not mark an AI target for a negative suggested column", () => {
+    const view = { board: BOARD, nextPlayer: 0, winningEntry: null } as Connect4View;
+    render(<Connect4ReplayView view={view} participants={PLAYERS} aiMove={-1} />);
+    expect(screen.queryByTestId("c4-ai-target")).not.toBeInTheDocument();
+  });
+
+  it("ignores the AI suggestion once the game is over", () => {
+    const view = {
+      board: BOARD,
+      nextPlayer: 1,
+      winningEntry: [[0, 0]],
+    } as unknown as Connect4View;
+    render(<Connect4ReplayView view={view} participants={PLAYERS} aiMove={1} />);
+    expect(screen.queryByTestId("c4-ai-target")).not.toBeInTheDocument();
+  });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import React from "react";
 import LeaderboardBoard from "./LeaderboardBoard.tsx";
@@ -43,6 +44,16 @@ function makeEntry(
   };
 }
 
+/** A daily entry carrying today's rating delta (drives the "Today's Δ" UI). */
+function makeDailyEntry(
+  rank: number,
+  username: string,
+  ratingDelta: number,
+  entityType: "human" | "ai" = "human",
+): LeaderboardEntry {
+  return { ...makeEntry(rank, username, entityType), ratingDelta };
+}
+
 function makePage(entries: LeaderboardEntry[]): LeaderboardPage {
   return {
     entries,
@@ -61,6 +72,12 @@ function renderBoard(props: { compact?: boolean } = {}) {
       <LeaderboardBoard gameKey="nim" {...props} />
     </MemoryRouter>,
   );
+}
+
+/** The filter controls live behind a collapsed toggle — open it first. */
+async function openFilters(): Promise<void> {
+  await userEvent.click(screen.getByTestId("filter-toggle"));
+  await screen.findByTestId("filter-bar-panel");
 }
 
 beforeEach(() => {
@@ -162,5 +179,126 @@ describe("LeaderboardBoard — self strip", () => {
     await waitFor(() => {
       expect(screen.queryByTestId("lb-self-empty")).not.toBeInTheDocument();
     });
+  });
+});
+
+describe("LeaderboardBoard — filters drive activeCount & refetch", () => {
+  it("counts the entity filter as active and refetches when 'Humans' is picked", async () => {
+    mockedGetLeaderboard.mockResolvedValue(makePage([makeEntry(1, "bob")]));
+    renderBoard();
+    await screen.findByTestId("lb-rows");
+    await openFilters();
+
+    await userEvent.click(screen.getByRole("radio", { name: "Humans" }));
+
+    await waitFor(() =>
+      expect(mockedGetLeaderboard).toHaveBeenLastCalledWith(
+        "nim",
+        expect.objectContaining({ type: "human" }),
+      ),
+    );
+  });
+
+  it("counts the period filter as active and refetches for 'Today'", async () => {
+    mockedGetLeaderboard.mockResolvedValue(makePage([makeEntry(1, "bob")]));
+    renderBoard();
+    await screen.findByTestId("lb-rows");
+    await openFilters();
+
+    await userEvent.click(screen.getByRole("radio", { name: "Today" }));
+
+    await waitFor(() =>
+      expect(mockedGetLeaderboard).toHaveBeenLastCalledWith(
+        "nim",
+        expect.objectContaining({ period: "daily" }),
+      ),
+    );
+  });
+
+  it("counts a name search as active and filters rows client-side", async () => {
+    mockedGetLeaderboard.mockResolvedValue(makePage([makeEntry(1, "alice"), makeEntry(2, "bob")]));
+    renderBoard();
+    await screen.findByTestId("lb-rows");
+    await openFilters();
+
+    await userEvent.type(screen.getByTestId("lb-search"), "bob");
+
+    // the debounced search commits → summary reflects the single match
+    await waitFor(() => expect(screen.getByTestId("lb-summary")).toHaveTextContent("1 ranked"));
+    // the search does NOT trigger a refetch — it's a client-side filter
+    expect(mockedGetLeaderboard).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the 'nobody matches' empty state when a search matches no one", async () => {
+    mockedGetLeaderboard.mockResolvedValue(makePage([makeEntry(1, "alice"), makeEntry(2, "bob")]));
+    renderBoard();
+    await screen.findByTestId("lb-rows");
+    await openFilters();
+
+    await userEvent.type(screen.getByTestId("lb-search"), "zzzznobody");
+
+    const empty = await screen.findByTestId("lb-empty");
+    // entries exist but none match → the "search" title, no "play a match" body
+    expect(empty).toHaveTextContent(/nobody matches/i);
+    expect(empty).not.toHaveTextContent(/play a rated match/i);
+  });
+});
+
+describe("LeaderboardBoard — daily period UI", () => {
+  it("shows the viewer's 'Today's Δ' tile with a positive (success) tone", async () => {
+    mockedGetLeaderboard.mockResolvedValue(makePage([makeDailyEntry(1, "alice", 14)]));
+    renderBoard();
+    await screen.findByTestId("lb-self-strip");
+    await openFilters();
+
+    await userEvent.click(screen.getByRole("radio", { name: "Today" }));
+
+    const delta = await screen.findByTestId("lb-self-delta");
+    expect(delta).toHaveTextContent("+14");
+  });
+
+  it("renders a negative self delta (danger tone)", async () => {
+    mockedGetLeaderboard.mockResolvedValue(makePage([makeDailyEntry(1, "alice", -9)]));
+    renderBoard();
+    await screen.findByTestId("lb-self-strip");
+    await openFilters();
+
+    await userEvent.click(screen.getByRole("radio", { name: "Today" }));
+
+    const delta = await screen.findByTestId("lb-self-delta");
+    expect(delta).toHaveTextContent("-9");
+  });
+
+  it("renders a flat self delta of zero (default tone)", async () => {
+    mockedGetLeaderboard.mockResolvedValue(makePage([makeDailyEntry(1, "alice", 0)]));
+    renderBoard();
+    await screen.findByTestId("lb-self-strip");
+    await openFilters();
+
+    await userEvent.click(screen.getByRole("radio", { name: "Today" }));
+
+    expect(await screen.findByTestId("lb-self-delta")).toBeInTheDocument();
+  });
+
+  it("renders each row's daily delta badge across positive, negative and flat", async () => {
+    mockedGetLeaderboard.mockResolvedValue(
+      makePage([
+        makeDailyEntry(1, "alice", 12),
+        makeDailyEntry(2, "bob", -7),
+        makeDailyEntry(3, "cara", 0),
+      ]),
+    );
+    renderBoard();
+    await screen.findByTestId("lb-rows");
+    await openFilters();
+
+    await userEvent.click(screen.getByRole("radio", { name: "Today" }));
+
+    // each row shows its "Δ today" badge after the daily refetch
+    await waitFor(() => {
+      expect(screen.getByText("+12 today")).toBeInTheDocument();
+    });
+    expect(screen.getByText("-7 today")).toBeInTheDocument();
+    expect(screen.getByText("+0 today")).toBeInTheDocument();
   });
 });

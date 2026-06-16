@@ -4,6 +4,7 @@ import { HINT_PENALTY } from "@gamenite/shared";
 import { app } from "../src/app.ts";
 import { dailyPuzzleKey, type MatchRecord } from "../src/models.ts";
 import {
+  DeploymentRepo,
   MatchRepo,
   PuzzleAttemptRepo,
   PuzzleHintRepo,
@@ -12,6 +13,10 @@ import {
 } from "../src/repository.ts";
 import { getUserByUsername } from "../src/services/auth.service.ts";
 import { DEFAULT_RATING, DEFAULT_RD, DEFAULT_VOLATILITY } from "../src/services/glicko2.service.ts";
+import {
+  resetInferenceClientForTests,
+  setInferenceClientForTests,
+} from "../src/services/inferenceClient.ts";
 import { invalidatePuzzleLeaderboardCache } from "../src/services/puzzleLeaderboard.service.ts";
 import { dayBefore } from "../src/services/puzzleStreak.util.ts";
 
@@ -485,6 +490,97 @@ describe("POST /api/puzzle/:gameKey/attempt", () => {
         hintsUsed: 0,
       }),
     );
+  });
+});
+
+describe("POST /api/puzzle/:gameKey/attempt/ai", () => {
+  // Registers an active nim deployment owned by the given user and returns its id.
+  async function seedDeployment(username: string): Promise<string> {
+    const user = (await getUserByUsername(username))!;
+    const deploymentId = `dep-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    await DeploymentRepo.set(deploymentId, {
+      modelId: `model-${deploymentId}`,
+      userId: user.userId,
+      gameKey: "nim",
+      displayName: "AI Test Model",
+      status: "active",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    return deploymentId;
+  }
+
+  it("should return 404 for an unknown game", async () => {
+    response = await supertest(app)
+      .post("/api/puzzle/notagame/attempt/ai")
+      .send({ auth: auth1, payload: { deploymentId: "dep-x", date: today() } });
+    expect(response.status).toBe(404);
+  });
+
+  it("should return 400 for a poorly-formed payload", async () => {
+    await seedPuzzle(today());
+
+    // missing deploymentId
+    response = await supertest(app)
+      .post("/api/puzzle/nim/attempt/ai")
+      .send({ auth: auth1, payload: { date: today() } });
+    expect(response.status).toBe(400);
+  });
+
+  it("should return 403 with bad auth", async () => {
+    await seedPuzzle(today());
+
+    response = await supertest(app)
+      .post("/api/puzzle/nim/attempt/ai")
+      .send({ auth: authBad, payload: { deploymentId: "dep-x", date: today() } });
+    expect(response.status).toBe(403);
+  });
+
+  it("should return 404 when no puzzle exists for the pinned date", async () => {
+    // valid + owned + active deployment, but no puzzle seeded for today: the
+    // service resolves the seat, then returns null on the missing puzzle.
+    const deploymentId = await seedDeployment("user1");
+
+    response = await supertest(app)
+      .post("/api/puzzle/nim/attempt/ai")
+      .send({ auth: auth1, payload: { deploymentId, date: today() } });
+    expect(response.status).toBe(404);
+  });
+
+  it("should return 400 when the deployment fails validation (not owned)", async () => {
+    await seedPuzzle(today());
+    // deployment belongs to user0, but user1 is calling: resolveAiSeatForQueue
+    // throws, which the controller surfaces as a 400 with the reason.
+    const deploymentId = await seedDeployment("user0");
+
+    response = await supertest(app)
+      .post("/api/puzzle/nim/attempt/ai")
+      .send({ auth: auth1, payload: { deploymentId, date: today() } });
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({ error: expect.any(String) });
+  });
+
+  it("should grade and rate the model's move like a human attempt on success", async () => {
+    await seedPuzzle(today());
+    const deploymentId = await seedDeployment("user1");
+
+    // the model returns the winning move (take 1, leaving 5 ≡ 1 mod 4)
+    setInferenceClientForTests({
+      loadModel: () => Promise.resolve({}),
+      requestMove: () => Promise.resolve({ move: 1 }),
+    });
+    try {
+      response = await supertest(app)
+        .post("/api/puzzle/nim/attempt/ai")
+        .send({ auth: auth1, payload: { deploymentId, date: today() } });
+    } finally {
+      resetInferenceClientForTests();
+    }
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.rated).toBe(true);
+    expect(response.body.solutionMove).toBe(1);
   });
 });
 
