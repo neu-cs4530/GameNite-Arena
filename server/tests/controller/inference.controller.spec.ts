@@ -3,7 +3,7 @@ import express from "express";
 import supertest from "supertest";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { inferenceRouter } from "../../src/controllers/inference.controller.ts";
+import { getArtifact, inferenceRouter } from "../../src/controllers/inference.controller.ts";
 import { ARTIFACT_ROOT, artifactRefForModel } from "../../src/services/artifactStore.service.ts";
 
 /* ---------------------------------------------------------------------------
@@ -117,5 +117,27 @@ describe("GET /api/inference/artifact/:modelId", () => {
       .get("/api/inference/artifact/%2Fetc%2Fpasswd")
       .set("Authorization", `Bearer ${TOKEN}`);
     expect(res.status).not.toBe(200);
+  });
+
+  it("404s when the file resolves but res.download fails mid-stream", async () => {
+    // STORED_MODEL is seeded (beforeEach), so the ref resolves and we reach
+    // res.download; force its callback to fire with an error to exercise the
+    // post-resolve failure path.
+    let status = 0;
+    const res = {
+      headersSent: false,
+      status(code: number) {
+        status = code;
+        return this;
+      },
+      send() {
+        return this;
+      },
+      download(_file: string, _name: string, _opts: unknown, cb: (err: Error) => void) {
+        cb(new Error("stream broke"));
+      },
+    };
+    await getArtifact({ params: { modelId: STORED_MODEL } } as never, res as never);
+    expect(status).toBe(404);
   });
 });
