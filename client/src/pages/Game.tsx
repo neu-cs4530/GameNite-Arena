@@ -9,6 +9,7 @@ import HighlightButton from "../components/live/HighlightButton.tsx";
 import GoLiveButton from "../components/live/GoLiveButton.tsx";
 import ForfeitButton from "../components/game/ForfeitButton.tsx";
 import useAuth from "../hooks/useAuth.ts";
+import { parseQueueSession, queueSessionKey, viewerOwnsAiSeat } from "../util/requeuePolicy.ts";
 
 export default function Game() {
   const { gameId } = useParams();
@@ -35,13 +36,24 @@ export default function Game() {
 
   const isPlayer = !!game && game.players.some((p) => p.username === username);
 
+  // "My AI is playing for me": the viewer isn't a seat by username, but the
+  // model they deployed (this tab's queue session) holds an AI seat in this
+  // game. They watch the match, yet must still be able to forfeit it.
+  const ownsAiSeat =
+    !!game &&
+    viewerOwnsAiSeat(
+      parseQueueSession(window.sessionStorage.getItem(queueSessionKey(game.type))),
+      game.players,
+    );
+  const canForfeit = isPlayer || ownsAiSeat;
+
   return (
     game && (
       <div className="gameWrapper">
-        {isPlayer && game.status === "active" && (
+        {canForfeit && game.status === "active" && (
           <div className="gameToolbar">
-            <GoLiveButton gameId={game.gameId} />
-            <HighlightButton gameId={game.gameId} />
+            {isPlayer && <GoLiveButton gameId={game.gameId} />}
+            {isPlayer && <HighlightButton gameId={game.gameId} />}
             <ForfeitButton gameId={game.gameId} />
           </div>
         )}

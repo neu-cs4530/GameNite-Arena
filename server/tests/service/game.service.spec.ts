@@ -1115,4 +1115,61 @@ describe("forfeitGame (player resigns)", () => {
     // The position is untouched by the rejected moves.
     expect((await GameRepo.get(gameId)).state).toEqual({ remaining: 12, nextPlayer: 0 });
   });
+
+  it("lets the OWNER of a deployed AI forfeit the game it is playing for them", async () => {
+    // The user's model holds the seat (game.players carries the DEPLOYMENT id,
+    // never the owner's userId) — the owner watches but must still be able to
+    // pull the plug. Ownership is resolved through the deployment record.
+    const user1 = (await getUserByUsername("user1"))!;
+    const myBot: AIParticipant = { deploymentId: "dep-mine", modelId: "m1", displayName: "MyBot" };
+    await DeploymentRepo.set("dep-mine", {
+      modelId: "m1",
+      userId: user0.userId,
+      gameKey: "nim",
+      displayName: "MyBot",
+      status: "active",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    const gameId = await seedNimGame({
+      players: [myBot.deploymentId, user1.userId], // seat 0 = my AI, seat 1 = human opponent
+      aiPlayers: [myBot, null],
+      state: { remaining: 9, nextPlayer: 0 },
+      rated: false,
+    });
+
+    // user0 owns the AI in seat 0 but is NOT listed in game.players.
+    const { gameResult } = await forfeitGame(gameId, user0);
+
+    expect(gameResult).toEqual({ outcome: "forfeit", winnerId: user1.userId });
+    expect((await GameRepo.get(gameId)).done).toBe(true);
+  });
+
+  it("rejects a forfeit from someone who neither plays nor owns a seated AI", async () => {
+    const user1 = (await getUserByUsername("user1"))!;
+    const stranger = (await getUserByUsername("user2"))!;
+    const myBot: AIParticipant = {
+      deploymentId: "dep-mine2",
+      modelId: "m2",
+      displayName: "MyBot2",
+    };
+    await DeploymentRepo.set("dep-mine2", {
+      modelId: "m2",
+      userId: user0.userId, // owned by user0, NOT the stranger
+      gameKey: "nim",
+      displayName: "MyBot2",
+      status: "active",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    const gameId = await seedNimGame({
+      players: [myBot.deploymentId, user1.userId],
+      aiPlayers: [myBot, null],
+      state: { remaining: 9, nextPlayer: 0 },
+      rated: false,
+    });
+
+    await expect(forfeitGame(gameId, stranger)).rejects.toThrow(/weren't playing/);
+    expect((await GameRepo.get(gameId)).done).toBe(false);
+  });
 });
