@@ -11,7 +11,7 @@ import { connect4GameService } from "../games/connect4.ts";
 import { checkersGameService } from "../games/checkers.ts";
 import { type GameViewUpdates, type UserWithId } from "../types.ts";
 import { type AIParticipant, type MatchResult } from "../models.ts";
-import { GameRepo } from "../repository.ts";
+import { DeploymentRepo, GameRepo } from "../repository.ts";
 import * as inferenceClient from "./inferenceClient.ts";
 
 /**
@@ -288,11 +288,30 @@ export async function forfeitGame(gameId: string, user: UserWithId): Promise<Gam
   if (!game) throw new Error(`user ${user.username} forfeited an invalid game`);
   if (!game.state) throw new Error(`user ${user.username} forfeited a game that hadn't started`);
   if (game.done) throw new Error(`user ${user.username} forfeited a game that was already over`);
-  const playerIndex = game.players.findIndex((userId) => userId === user.userId);
-  if (playerIndex < 0) {
+
+  // The resigning user either holds a seat directly (a human player) OR owns
+  // the deployed model sitting in an AI seat — the "my AI is playing for me"
+  // case, where the owner watches the match but must still be able to pull the
+  // plug. AI seats store the deployment id, not the owner, so ownership is
+  // resolved through the deployment record (the same userId join used to prove
+  // ownership at queue time). gameId alone is enough; the client never gets to
+  // name the seat, so a stranger can't forfeit someone else's AI game.
+  let seat = game.players.findIndex((id) => id === user.userId);
+  if (seat < 0) {
+    for (let i = 0; i < game.aiPlayers.length; i += 1) {
+      const ai = game.aiPlayers[i];
+      if (!ai) continue;
+      const deployment = await DeploymentRepo.find(ai.deploymentId);
+      if (deployment && deployment.userId === user.userId) {
+        seat = i;
+        break;
+      }
+    }
+  }
+  if (seat < 0) {
     throw new Error(`user ${user.username} forfeited a game they weren't playing`);
   }
-  return forfeitSeat(gameId, playerIndex);
+  return forfeitSeat(gameId, seat);
 }
 
 /**

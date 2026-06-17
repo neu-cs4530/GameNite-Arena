@@ -10,6 +10,7 @@ import {
   remainingGames,
   serializeQueueSession,
   shouldRequeue,
+  viewerOwnsAiSeat,
   type QueueSession,
 } from "./requeuePolicy.ts";
 
@@ -224,5 +225,33 @@ describe("modelSeatFor", () => {
       ],
     };
     expect(modelSeatFor(s, result, [{ isAi: false }])).toBeNull();
+  });
+});
+
+describe("viewerOwnsAiSeat", () => {
+  // An AI seat's `username` is the deployment id.
+  const aiSeat = { username: "dep-1", isAi: true };
+  const human = { username: "alice", isAi: false };
+
+  it("is false without a queue session", () => {
+    expect(viewerOwnsAiSeat(null, [aiSeat, human])).toBe(false);
+  });
+
+  it("is false when the session carries no deploymentId", () => {
+    expect(viewerOwnsAiSeat(session(), [aiSeat, human])).toBe(false);
+  });
+
+  it("is true when the session's deployment holds an AI seat in this game", () => {
+    expect(viewerOwnsAiSeat(session({ deploymentId: "dep-1" }), [aiSeat, human])).toBe(true);
+  });
+
+  it("is false when the session's deployment is NOT a seat in this game", () => {
+    expect(viewerOwnsAiSeat(session({ deploymentId: "dep-other" }), [aiSeat, human])).toBe(false);
+  });
+
+  it("is false when a same-named seat isn't actually an AI", () => {
+    expect(viewerOwnsAiSeat(session({ deploymentId: "dep-1" }), [{ username: "dep-1" }])).toBe(
+      false,
+    );
   });
 });

@@ -155,3 +155,20 @@ export function modelSeatFor(
   const aiSeated = players.some((p) => p.isAi === true);
   return inResult || aiSeated ? modelId : null;
 }
+
+/**
+ * Whether the viewer's OWN deployed model holds an AI seat in THIS game (the
+ * "my AI is playing for me" case). An AI seat's `username` is the deployment
+ * id, so we match the session's `deploymentId` against the seated AI players
+ * — available mid-game, no result event needed. Session-scoped (the tab that
+ * ran deploy-and-play carries the QueueSession); the server re-validates
+ * ownership on the actual forfeit, so this is only a UI hint.
+ */
+export function viewerOwnsAiSeat(
+  session: QueueSession | null,
+  players: ReadonlyArray<{ username: string; isAi?: boolean }>,
+): boolean {
+  const deploymentId = session?.deploymentId;
+  if (deploymentId === undefined) return false;
+  return players.some((p) => p.isAi === true && p.username === deploymentId);
+}
